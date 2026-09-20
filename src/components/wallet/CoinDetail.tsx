@@ -19,6 +19,8 @@ import CheckIcon from '@mui/icons-material/Check';
 import DnsIcon from '@mui/icons-material/Dns';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import _QRCodeDefault from 'react-qr-code';
@@ -42,6 +44,7 @@ import {
   walletReadyAtom,
 } from '../../state/global/system';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
+import { CoinImage } from './CoinImage';
 import type { ChainConfig } from '../../config/chains';
 import {
   PreparedTransactionPreview,
@@ -59,6 +62,15 @@ import {
 import { requestWithTimeout } from '../../common/functions';
 import { foreignWalletAvailability } from '../../common/homeWalletCapabilities';
 import {
+  describeBridgeError,
+  isUnlockRequiredError,
+} from '../../common/bridgeErrors';
+import {
+  getCachedAccountUnlocked,
+  invalidateCachedAccountUnlocked,
+  setCachedAccountUnlocked,
+} from '../../common/accountUnlockState';
+import {
   EMPTY_STRING,
   TIME_MINUTES_3,
   TIME_MINUTES_5,
@@ -67,6 +79,7 @@ import {
 import { TransactionRow, type TxRow } from './TransactionRow';
 import {
   isUnlockedResult,
+  qortBridgeProtocol,
   qortSendActionForActions,
   requestQortActions,
   requestQortBalance,
@@ -99,10 +112,43 @@ async function ensureAccountUnlocked(
   if (chain.isNative && !qortCanUnlock) return true;
   if (!chain.isNative && chain.homeWallet?.requiresUnlockedAccount === false)
     return true;
+
+  // The unlock-state cache is only ever populated from Home's qdnRequest
+  // GET_SELECTED_ACCOUNT/UNLOCK_SELECTED_ACCOUNT. A native (QORT) send
+  // whose unlock call actually goes through qortalRequest (Qortal Core, or
+  // any host where qortalRequest is preferred - see qortBridge()) must not
+  // trust or populate that cache, since it says nothing about the
+  // qortalRequest-selected account's lock state. Foreign-coin unlocks
+  // always go through qdnRequest directly, so they're unaffected.
+  const usesQdnRequestForUnlock =
+    !chain.isNative || qortBridgeProtocol() === 'qdnRequest';
+
+  if (usesQdnRequestForUnlock) {
+    // Skip the redundant UNLOCK_SELECTED_ACCOUNT round-trip when we already
+    // know the account is unlocked (from AppLayout's mount check, a
+    // previous send, or GET_SELECTED_ACCOUNT below).
+    if (getCachedAccountUnlocked() === true) return true;
+
+    try {
+      const account = (await qdnRequest({
+        action: 'GET_SELECTED_ACCOUNT',
+      })) as { isUnlocked?: boolean } | null;
+      if (account?.isUnlocked === true) {
+        setCachedAccountUnlocked(true);
+        return true;
+      }
+    } catch {
+      /* GET_SELECTED_ACCOUNT isn't supported everywhere - fall through and
+         attempt the unlock directly, as before. */
+    }
+  }
+
   const result = await (chain.isNative
     ? requestQortUnlock()
     : qdnRequest({ action: 'UNLOCK_SELECTED_ACCOUNT' }));
-  return isUnlockedResult(result);
+  const unlocked = isUnlockedResult(result);
+  if (usesQdnRequestForUnlock) setCachedAccountUnlocked(unlocked);
+  return unlocked;
 }
 
 export function CoinDetail({ chain }: Props) {
@@ -122,6 +168,8 @@ export function CoinDetail({ chain }: Props) {
   const [address, setAddress] = useState<string>(EMPTY_STRING);
   const [balance, setBalance] = useState<string | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(true);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [txError, setTxError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [loadingTx, setLoadingTx] = useState(true);
   const [expandedTx, setExpandedTx] = useState<number | null>(null);
@@ -147,10 +195,11 @@ export function CoinDetail({ chain }: Props) {
   const [foreignFeePerByte, setForeignFeePerByte] = useState<string>('');
   const [feeLoading, setFeeLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sendResult, setSendResult] = useState<'success' | 'error' | null>(
-    null
-  );
+  const [sendResult, setSendResult] = useState<
+    'success' | 'error' | 'pending' | null
+  >(null);
   const [sendResponse, setSendResponse] = useState<SendCoinResult | null>(null);
+  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
 
   // SHOW_ACTIONS capability flags (updated on mount)
   const [canSend, setCanSend] = useState(false);
@@ -171,6 +220,9 @@ export function CoinDetail({ chain }: Props) {
   const addressReadRevision = useRef(0);
   const balanceReadRevision = useRef(0);
   const transactionReadRevision = useRef(0);
+  const postSendRefreshTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   // ARRR initialization state
   const cancelSyncRef = useRef(false);
@@ -181,6 +233,12 @@ export function CoinDetail({ chain }: Props) {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      // Cancel the post-send refresh timer below so it can't fire (and
+      // trigger a balance/transaction read) after unmount.
+      if (postSendRefreshTimeoutRef.current) {
+        clearTimeout(postSendRefreshTimeoutRef.current);
+        postSendRefreshTimeoutRef.current = null;
+      }
     };
   }, []);
   const [arrrSyncing, setArrrSyncing] = useState(isARRR);
@@ -205,6 +263,7 @@ export function CoinDetail({ chain }: Props) {
 
     let outerCount = 0;
     let innerCount = 0;
+    let lastSyncError: unknown = null;
 
     try {
       while (!cancelSyncRef.current) {
@@ -213,7 +272,8 @@ export function CoinDetail({ chain }: Props) {
           status = await qdnRequest({
             action: 'GET_ARRR_SYNC_STATUS',
           } as any);
-        } catch {
+        } catch (err) {
+          lastSyncError = err;
           break;
         }
         if (cancelSyncRef.current) return;
@@ -242,22 +302,33 @@ export function CoinDetail({ chain }: Props) {
 
         await new Promise<void>((r) => setTimeout(r, ARRR_POLL_MS));
       }
-    } catch {
-      /* */
+    } catch (err) {
+      lastSyncError = err;
     }
 
     if (cancelSyncRef.current) return;
     setArrrSyncFailed(true);
     setArrrSyncing(false);
-    setArrrSyncStatus('Sync failed — try a different server.');
+    if (lastSyncError != null) {
+      const decoded = describeBridgeError(lastSyncError);
+      console.warn('[wallet] arrr sync', decoded.message);
+      setArrrSyncStatus(
+        `Sync failed: ${decoded.message} — try a different server.`
+      );
+    } else {
+      setArrrSyncStatus('Sync failed — try a different server.');
+    }
     try {
       const servers = await qdnRequest({
         action: 'GET_CROSSCHAIN_SERVER_INFO',
         coin: 'ARRR',
       } as any);
       if (Array.isArray(servers)) setArrrServers(servers);
-    } catch {
-      /* */
+    } catch (err) {
+      console.warn(
+        '[wallet] arrr server list',
+        describeBridgeError(err).message
+      );
     }
   }, []);
 
@@ -306,13 +377,16 @@ export function CoinDetail({ chain }: Props) {
   const fetchBalance = useCallback(async () => {
     if (!chain.isNative && !canReadBalanceRef.current) {
       setBalance(null);
+      setBalanceError(null);
       setLoadingBalance(false);
       return;
     }
     const revision = balanceReadRevision.current;
     setLoadingBalance(true);
-    const MAX_ATTEMPTS = 3;
+    setBalanceError(null);
+    const MAX_ATTEMPTS = 2; // one retry, and only if the error is retryable
     const RETRY_DELAY = 1500;
+    let lastError: unknown = null;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY));
       if (!isMountedRef.current || revision !== balanceReadRevision.current)
@@ -337,12 +411,17 @@ export function CoinDetail({ chain }: Props) {
         setBalance(result);
         setLoadingBalance(false);
         return;
-      } catch {
-        /* retry */
+      } catch (err) {
+        lastError = err;
+        const decoded = describeBridgeError(err);
+        if (!decoded.retryable) break;
       }
     }
     if (isMountedRef.current && revision === balanceReadRevision.current) {
+      const decoded = describeBridgeError(lastError);
+      console.warn('[wallet] balance', chain.ticker, decoded.message);
       setBalance(null);
+      setBalanceError(decoded.message);
       setLoadingBalance(false);
     }
   }, [canReadBalance, chain]);
@@ -493,6 +572,7 @@ export function CoinDetail({ chain }: Props) {
     }
     const revision = transactionReadRevision.current;
     setLoadingTx(true);
+    setTxError(null);
     try {
       if (chain.isNative) {
         const wallet = await requestWalletForChain(chain);
@@ -520,20 +600,36 @@ export function CoinDetail({ chain }: Props) {
             recipient: tx.recipient,
           };
         });
-        if (revision === transactionReadRevision.current) setTransactions(rows);
+        if (
+          isMountedRef.current &&
+          revision === transactionReadRevision.current
+        )
+          setTransactions(rows);
       } else {
         const res = await requestWithTimeout(
           { action: 'GET_USER_WALLET_TRANSACTIONS', coin: chain.coinEnum },
           TIME_MINUTES_5
         );
         const txs = Array.isArray(res) ? res : [];
-        if (revision === transactionReadRevision.current)
+        if (
+          isMountedRef.current &&
+          revision === transactionReadRevision.current
+        )
           setTransactions(chain.coinEnum === 'ARRR' ? [...txs].reverse() : txs);
       }
-    } catch {
-      if (revision === transactionReadRevision.current) setTransactions([]);
+    } catch (err) {
+      if (
+        isMountedRef.current &&
+        revision === transactionReadRevision.current
+      ) {
+        const decoded = describeBridgeError(err);
+        console.warn('[wallet] transactions', chain.ticker, decoded.message);
+        setTransactions([]);
+        setTxError(decoded.message);
+      }
     } finally {
-      if (revision === transactionReadRevision.current) setLoadingTx(false);
+      if (isMountedRef.current && revision === transactionReadRevision.current)
+        setLoadingTx(false);
     }
   }, [canReadTransactions, chain]);
 
@@ -564,6 +660,7 @@ export function CoinDetail({ chain }: Props) {
     setStaleAddressWarning(false);
     setSendResult(null);
     setSendResponse(null);
+    setSendErrorMessage(null);
     setNativeFee(chain.isNative ? String(chain.defaultFee) : '');
     setForeignFeePerByte('');
     setSendOpen(true);
@@ -626,8 +723,11 @@ export function CoinDetail({ chain }: Props) {
     if (!canSendRef.current || !canConfirmSend) return;
 
     setSending(true);
+    setSendErrorMessage(null);
     try {
-      if (!(await ensureAccountUnlocked(chain, qortCanUnlock))) return;
+      if (!(await ensureAccountUnlocked(chain, qortCanUnlock))) {
+        throw new Error('Unable to unlock the account. Please try again.');
+      }
 
       let effectiveRecipient = recipient;
       if (recipientMode === 'name') {
@@ -658,6 +758,9 @@ export function CoinDetail({ chain }: Props) {
           effectiveRecipient,
           parseFloat(amount)
         );
+        if (res == null || typeof res !== 'object') {
+          throw new Error('Home returned no send result');
+        }
         if (res?.accepted === false)
           throw new Error(res.error ?? `${qortSendAction} failed`);
         result = res as any;
@@ -675,18 +778,58 @@ export function CoinDetail({ chain }: Props) {
         if (chain.coinEnum !== 'ARRR' && foreignFeePerByte !== '') {
           payload.feePerByte = foreignFeePerByte.trim();
         }
-        result = (await qdnRequest(payload as any)) as SendCoinResult | null;
+        const foreignResult = (await qdnRequest(payload as any)) as
+          | (SendCoinResult & {
+              accepted?: boolean;
+              foreignOutcome?: 'unknown' | 'mismatch';
+              error?: string;
+            })
+          | null;
+
+        if (foreignResult == null || typeof foreignResult !== 'object') {
+          throw new Error('Home returned no send result');
+        }
+
+        // Foreign SEND_COIN resolves (rather than throws) with
+        // accepted:false when Home can't confirm the broadcast outcome -
+        // never treat that as success.
+        if (foreignResult.accepted === false) {
+          const decoded = describeBridgeError(
+            foreignResult.error ?? foreignResult
+          );
+          if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
+          console.warn('[wallet] send failed', chain.ticker, decoded);
+          setSendResponse(null);
+          setSendErrorMessage(decoded.message);
+          setSendResult(
+            foreignResult.foreignOutcome === 'unknown' ||
+              foreignResult.foreignOutcome === 'mismatch'
+              ? 'pending'
+              : 'error'
+          );
+          return;
+        }
+        result = foreignResult;
       }
       setSendResponse(result);
       setSendResult('success');
       setStaleAddressWarning(false);
 
-      window.setTimeout(() => {
+      if (postSendRefreshTimeoutRef.current) {
+        clearTimeout(postSendRefreshTimeoutRef.current);
+      }
+      postSendRefreshTimeoutRef.current = setTimeout(() => {
+        postSendRefreshTimeoutRef.current = null;
+        if (!isMountedRef.current) return;
         fetchBalance();
         fetchTransactions();
       }, TIME_SECONDS_3);
-    } catch {
+    } catch (err) {
+      const decoded = describeBridgeError(err);
+      if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
+      console.warn('[wallet] send failed', chain.ticker, decoded);
       setSendResponse(null);
+      setSendErrorMessage(decoded.message);
       setSendResult('error');
     } finally {
       setSending(false);
@@ -697,6 +840,7 @@ export function CoinDetail({ chain }: Props) {
     setSendOpen(false);
     setSendResult(null);
     setSendResponse(null);
+    setSendErrorMessage(null);
     setAmount('');
     setSendMax(false);
     setRecipient(EMPTY_STRING);
@@ -803,14 +947,12 @@ export function CoinDetail({ chain }: Props) {
         >
           <ArrowBackIcon fontSize="small" />
         </IconButton>
-        {coinImageUrl && (
-          <Box
-            component="img"
-            src={coinImageUrl}
-            alt={chain.ticker}
-            sx={{ height: 24, width: 24, objectFit: 'contain' }}
-          />
-        )}
+        <CoinImage
+          url={coinImageUrl}
+          ticker={chain.ticker}
+          size={24}
+          placeholderSx={{ fontSize: '0.7rem' }}
+        />
         <Box
           sx={{
             fontWeight: tokens.typography.weightBold,
@@ -928,37 +1070,18 @@ export function CoinDetail({ chain }: Props) {
               gap: 3,
             }}
           >
-            {coinImageUrl ? (
-              <Box
-                component="img"
-                src={coinImageUrl}
-                alt="ARRR"
-                sx={{
-                  height: 56,
-                  width: 56,
-                  objectFit: 'contain',
-                  opacity: arrrSyncFailed ? 0.35 : 0.75,
-                }}
-              />
-            ) : (
-              <Box
-                sx={{
-                  height: 56,
-                  width: 56,
-                  borderRadius: '50%',
-                  bgcolor: 'rgba(128,128,128,0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.2rem',
-                  fontWeight: tokens.typography.weightBold,
-                  color: 'rgba(128,128,128,0.5)',
-                  opacity: arrrSyncFailed ? 0.35 : 0.75,
-                }}
-              >
-                A
-              </Box>
-            )}
+            <CoinImage
+              url={coinImageUrl}
+              ticker="ARRR"
+              size={56}
+              imgSx={{ opacity: arrrSyncFailed ? 0.35 : 0.75 }}
+              placeholderSx={{
+                bgcolor: 'rgba(128,128,128,0.15)',
+                fontSize: '1.2rem',
+                color: 'rgba(128,128,128,0.5)',
+                opacity: arrrSyncFailed ? 0.35 : 0.75,
+              }}
+            />
             {arrrSyncing && (
               <CircularProgress size={36} sx={{ color: c.accent }} />
             )}
@@ -1066,32 +1189,17 @@ export function CoinDetail({ chain }: Props) {
                   width: '100%',
                 }}
               >
-                {coinImageUrl ? (
-                  <Box
-                    component="img"
-                    src={coinImageUrl}
-                    alt={chain.ticker}
-                    sx={{ height: 56, width: 56, objectFit: 'contain', mb: 2 }}
-                  />
-                ) : (
-                  <Box
-                    sx={{
-                      height: 56,
-                      width: 56,
-                      borderRadius: '50%',
-                      bgcolor: 'rgba(128,128,128,0.15)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.2rem',
-                      fontWeight: tokens.typography.weightBold,
-                      color: 'rgba(128,128,128,0.5)',
-                      mb: 2,
-                    }}
-                  >
-                    {chain.ticker[0]}
-                  </Box>
-                )}
+                <CoinImage
+                  url={coinImageUrl}
+                  ticker={chain.ticker}
+                  size={56}
+                  sx={{ mb: 2 }}
+                  placeholderSx={{
+                    bgcolor: 'rgba(128,128,128,0.15)',
+                    fontSize: '1.2rem',
+                    color: 'rgba(128,128,128,0.5)',
+                  }}
+                />
                 {loadingBalance ? (
                   <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
                 ) : (
@@ -1154,6 +1262,39 @@ export function CoinDetail({ chain }: Props) {
                           ? formatFiat(pricePerUnit, currency)
                           : '-'}
                       </Box>
+                      {balanceError && (
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.75,
+                            mt: 0.5,
+                          }}
+                        >
+                          <Tooltip title={balanceError} placement="top">
+                            <Box
+                              sx={{
+                                fontSize: '0.75rem',
+                                color: c.error,
+                                maxWidth: 220,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {t('balance_unavailable')}
+                            </Box>
+                          </Tooltip>
+                          <IconButton
+                            size="small"
+                            onClick={fetchBalance}
+                            aria-label="retry balance"
+                            sx={{ color: c.error }}
+                          >
+                            <RefreshIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Box>
+                      )}
                     </Box>
                   </>
                 )}
@@ -1268,6 +1409,27 @@ export function CoinDetail({ chain }: Props) {
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
                   <CircularProgress size={28} sx={{ color: c.accent }} />
                 </Box>
+              ) : transactions.length === 0 && txError ? (
+                <Box
+                  sx={{
+                    py: 6,
+                    textAlign: 'center',
+                    color: c.error,
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  <Tooltip title={txError} placement="top">
+                    <Box component="span">{t('transactions_unavailable')}</Box>
+                  </Tooltip>
+                  <IconButton
+                    size="small"
+                    onClick={fetchTransactions}
+                    aria-label="retry transactions"
+                    sx={{ color: c.error, ml: 0.5 }}
+                  >
+                    <RefreshIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
               ) : transactions.length === 0 ? (
                 <Box
                   sx={{
@@ -1376,11 +1538,33 @@ export function CoinDetail({ chain }: Props) {
                   />
                 )}
               </Box>
+            ) : sendResult === 'pending' ? (
+              <Box sx={{ textAlign: 'center', py: 3, color: c.warning }}>
+                <WarningAmberIcon sx={{ fontSize: 40, mb: 1 }} />
+                <Typography sx={{ fontWeight: tokens.typography.weightBold }}>
+                  {t('send_dialog.send_pending_title')}
+                </Typography>
+                <Typography sx={{ fontSize: '0.8rem', mt: 0.5 }}>
+                  {t('send_dialog.send_pending_hint')}
+                </Typography>
+                {sendErrorMessage && (
+                  <Typography
+                    sx={{ fontSize: '0.75rem', mt: 1, color: c.textSecondary }}
+                  >
+                    {sendErrorMessage}
+                  </Typography>
+                )}
+              </Box>
             ) : sendResult === 'error' ? (
               <Box sx={{ textAlign: 'center', py: 3, color: c.error }}>
                 <Typography sx={{ fontWeight: tokens.typography.weightBold }}>
                   {t('send_dialog.send_failed')}
                 </Typography>
+                {sendErrorMessage && (
+                  <Typography sx={{ fontSize: '0.8rem', mt: 1 }}>
+                    {sendErrorMessage}
+                  </Typography>
+                )}
               </Box>
             ) : (
               <>

@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { Box, Button, CircularProgress, IconButton } from '@mui/material';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  Tooltip,
+} from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
@@ -18,7 +24,8 @@ export function UnifiedHistory() {
   const isClassic = uiStyle === 'classic';
   const navigate = useNavigate();
   const { chains } = useSupportedChains();
-  const { rows, loadingChains, errorChains } = useUnifiedHistory(chains);
+  const { rows, loadingChains, errorChains, errorMessages } =
+    useUnifiedHistory(chains);
 
   const [filter, setFilter] = useState<Filter>('all');
   const [expandedTxKey, setExpandedTxKey] = useState<string | null>(null);
@@ -91,8 +98,29 @@ export function UnifiedHistory() {
         }}
       >
         {errorChains.length > 0 && (
-          <Box sx={{ mb: 2, fontSize: '0.75rem', color: c.textSecondary }}>
-            Failed to load: {errorChains.join(', ')}
+          <Box
+            sx={{
+              mb: 2,
+              fontSize: '0.75rem',
+              color: c.textSecondary,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1,
+            }}
+          >
+            <Box component="span">Failed to load:</Box>
+            {errorChains.map((ticker, i) => (
+              <Tooltip
+                key={ticker}
+                title={errorMessages[ticker] ?? ''}
+                placement="top"
+              >
+                <Box component="span">
+                  {ticker}
+                  {i < errorChains.length - 1 ? ',' : ''}
+                </Box>
+              </Tooltip>
+            ))}
           </Box>
         )}
 

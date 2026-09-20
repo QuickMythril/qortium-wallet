@@ -10,6 +10,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import SendIcon from '@mui/icons-material/Send';
 import { useAtomValue } from 'jotai';
 import { useNavigate } from 'react-router-dom';
@@ -19,10 +20,13 @@ import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
 import { useColors } from '../../theme/ColorTokensContext';
 import { tokens } from '../../theme/tokens';
 import { requestWalletForChain } from '../../common/walletBridge';
+import { CoinImage } from './CoinImage';
 
 interface CoinListRowProps {
   chain: ChainConfig;
   balance: string | null;
+  balanceError?: string;
+  onRetryBalance?: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
   loading: boolean;
@@ -53,6 +57,8 @@ async function copyText(text: string): Promise<void> {
 export function CoinListRow({
   chain,
   balance,
+  balanceError,
+  onRetryBalance,
   canReceive,
   canSend,
   loading,
@@ -177,32 +183,13 @@ export function CoinListRow({
         <Box sx={{ width: 36, flexShrink: 0 }} />
       )}
 
-      {coinImageUrl ? (
-        <Box
-          component="img"
-          src={coinImageUrl}
-          alt=""
-          sx={{ width: 36, height: 36, objectFit: 'contain', flexShrink: 0 }}
-        />
-      ) : (
-        <Box
-          aria-hidden="true"
-          sx={{
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            bgcolor: c.controlHover,
-            color: c.textSecondary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: tokens.typography.weightBold,
-            flexShrink: 0,
-          }}
-        >
-          {chain.ticker[0]}
-        </Box>
-      )}
+      <CoinImage
+        url={coinImageUrl}
+        ticker={chain.ticker}
+        size={36}
+        alt=""
+        placeholderSx={{ bgcolor: c.controlHover, color: c.textSecondary }}
+      />
 
       <Box sx={{ minWidth: 0, flex: '1 1 180px' }}>
         <Box
@@ -274,6 +261,27 @@ export function CoinListRow({
             <Skeleton width={72} sx={{ ml: 'auto' }} />
           ) : balance !== null ? (
             balance
+          ) : balanceError ? (
+            <Tooltip title={balanceError} placement="top">
+              <Box
+                component="span"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRetryBalance?.(chain);
+                }}
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.25,
+                  fontSize: '0.75rem',
+                  cursor: onRetryBalance ? 'pointer' : 'default',
+                  color: c.error,
+                }}
+              >
+                unavailable
+                {onRetryBalance && <RefreshIcon sx={{ fontSize: 12 }} />}
+              </Box>
+            </Tooltip>
           ) : (
             '—'
           )}

@@ -18,6 +18,8 @@
     "transfer_coin": "העבר {{ coin }}"
   },
   "address": "כתובת:",
+  "balance_unavailable": "היתרה אינה זמינה",
+  "transactions_unavailable": "העסקאות אינן זמינות",
   "amount": "סכום",
   "balance": "יתרה:",
   "balance_available": "יתרה זמינה:",
@@ -55,6 +57,8 @@
     "confirm_send": "אשר שליחה",
     "transaction_sent": "העסקה נשלחה",
     "send_failed": "משהו השתבש. אנא נסה שוב.",
+    "send_pending_title": "מצב העסקה אינו ידוע",
+    "send_pending_hint": "לא הצלחנו לאשר שהעסקה בוצעה. אל תנסה שוב - בדוק את העסקאות הממתינות ב-Home קודם.",
     "amount_invalid": "הזן סכום חיובי עם עד {{ decimals }} ספרות עשרוניות.",
     "recipient_invalid": "כתובת המקבל נדרשת ועד 256 תווים.",
     "fee_per_byte_invalid": "הזן עמלה חיובית לבייט עם עד 8 ספרות עשרוניות."

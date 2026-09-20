@@ -18,6 +18,8 @@
     "transfer_coin": "{{ coin }} átutalása"
   },
   "address": "cím:",
+  "balance_unavailable": "az egyenleg nem érhető el",
+  "transactions_unavailable": "a tranzakciók nem érhetők el",
   "amount": "összeg",
   "balance": "egyenleg:",
   "balance_available": "elérhető egyenleg:",
@@ -55,6 +57,8 @@
     "confirm_send": "küldés megerősítése",
     "transaction_sent": "tranzakció elküldve",
     "send_failed": "valami hiba történt. kérjük, próbáld újra.",
+    "send_pending_title": "a tranzakció állapota ismeretlen",
+    "send_pending_hint": "nem tudtuk megerősíteni, hogy ez átment. ne próbáld újra - előbb nézd meg a függőben lévő tranzakciókat a Home-ban.",
     "amount_invalid": "adj meg egy pozitív összeget legfeljebb {{ decimals }} tizedesjeggyel.",
     "recipient_invalid": "a címzett címe kötelező és legfeljebb 256 karakter lehet.",
     "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel."

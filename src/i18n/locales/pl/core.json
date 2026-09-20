@@ -18,6 +18,8 @@
     "transfer_coin": "prześlij {{ coin }}"
   },
   "address": "adres:",
+  "balance_unavailable": "saldo niedostępne",
+  "transactions_unavailable": "transakcje niedostępne",
   "amount": "kwota",
   "balance": "saldo:",
   "balance_available": "dostępne saldo:",
@@ -55,6 +57,8 @@
     "confirm_send": "potwierdź wysłanie",
     "transaction_sent": "transakcja wysłana",
     "send_failed": "coś poszło nie tak. spróbuj ponownie.",
+    "send_pending_title": "status transakcji nieznany",
+    "send_pending_hint": "nie mogliśmy potwierdzić, że transakcja się powiodła. nie próbuj ponownie - najpierw sprawdź oczekujące transakcje w Home.",
     "amount_invalid": "wprowadź dodatnią kwotę z maksymalnie {{ decimals }} miejscami dziesiętnymi.",
     "recipient_invalid": "adres odbiorcy jest wymagany i może mieć maksymalnie 256 znaków.",
     "fee_per_byte_invalid": "wprowadź dodatnią opłatę za bajt z maksymalnie 8 miejscami dziesiętnymi."

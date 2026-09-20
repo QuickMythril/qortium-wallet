@@ -18,6 +18,8 @@
     "transfer_coin": "överför {{ coin }}"
   },
   "address": "adress:",
+  "balance_unavailable": "saldot är inte tillgängligt",
+  "transactions_unavailable": "transaktioner är inte tillgängliga",
   "amount": "belopp",
   "balance": "saldo:",
   "balance_available": "tillgängligt saldo:",
@@ -55,6 +57,8 @@
     "confirm_send": "bekräfta sändning",
     "transaction_sent": "transaktion skickad",
     "send_failed": "något gick fel. försök igen.",
+    "send_pending_title": "transaktionsstatus okänd",
+    "send_pending_hint": "vi kunde inte bekräfta att detta gick igenom. försök inte igen - kontrollera väntande transaktioner i Home först.",
     "amount_invalid": "ange ett positivt belopp med upp till {{ decimals }} decimaler.",
     "recipient_invalid": "mottagarens adress är obligatorisk och får vara högst 256 tecken.",
     "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler."

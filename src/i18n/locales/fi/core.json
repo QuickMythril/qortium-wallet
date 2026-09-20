@@ -18,6 +18,8 @@
     "transfer_coin": "siirrä {{ coin }}"
   },
   "address": "osoite:",
+  "balance_unavailable": "saldo ei ole käytettävissä",
+  "transactions_unavailable": "tapahtumat eivät ole käytettävissä",
   "amount": "määrä",
   "balance": "saldo:",
   "balance_available": "käytettävissä oleva saldo:",
@@ -55,6 +57,8 @@
     "confirm_send": "vahvista lähetys",
     "transaction_sent": "tapahtuma lähetetty",
     "send_failed": "jotain meni pieleen. yritä uudelleen.",
+    "send_pending_title": "tapahtuman tila tuntematon",
+    "send_pending_hint": "emme voineet vahvistaa, että tämä meni läpi. älä yritä uudelleen - tarkista odottavat tapahtumat Homessa ensin.",
     "amount_invalid": "syötä positiivinen määrä enintään {{ decimals }} desimaalilla.",
     "recipient_invalid": "vastaanottajan osoite on pakollinen ja saa olla enintään 256 merkkiä.",
     "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla."

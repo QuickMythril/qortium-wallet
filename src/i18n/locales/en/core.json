@@ -18,6 +18,8 @@
     "transfer_coin": "transfer {{ coin }}"
   },
   "address": "address:",
+  "balance_unavailable": "balance unavailable",
+  "transactions_unavailable": "transactions unavailable",
   "contact_card_my_card_title": "my contact card",
   "contact_card_address_loading": "loading address…",
   "contact_card_switch_publish": "publish",
@@ -74,6 +76,8 @@
     "confirm_send": "confirm send",
     "transaction_sent": "transaction sent",
     "send_failed": "something went wrong. please try again.",
+    "send_pending_title": "transaction status unknown",
+    "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
     "amount_invalid": "enter a positive amount with up to {{ decimals }} decimals.",
     "recipient_invalid": "recipient address is required and must be 256 characters or less.",
     "fee_per_byte_invalid": "enter a positive fee per byte with up to 8 decimals.",

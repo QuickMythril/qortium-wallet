@@ -18,6 +18,8 @@
     "transfer_coin": "Kanna üle {{ coin }}"
   },
   "address": "aadress:",
+  "balance_unavailable": "saldo pole saadaval",
+  "transactions_unavailable": "tehingud pole saadaval",
   "amount": "summa",
   "balance": "jääk:",
   "balance_available": "saadaval olev jääk:",
@@ -55,6 +57,8 @@
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
+    "send_pending_title": "transaction status unknown",
+    "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."

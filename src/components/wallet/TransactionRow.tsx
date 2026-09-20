@@ -8,6 +8,7 @@ import { tokens } from '../../theme/tokens';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
 import type { ChainConfig } from '../../config/chains';
 import { epochToAgo } from '../../common/functions';
+import { CoinImage } from './CoinImage';
 
 export interface TxRow {
   txHash?: string;
@@ -116,14 +117,12 @@ export function TransactionRow({
               flexShrink: 0,
             }}
           >
-            {coinImageUrl && (
-              <Box
-                component="img"
-                src={coinImageUrl}
-                alt={chain.ticker}
-                sx={{ height: 16, width: 16, objectFit: 'contain' }}
-              />
-            )}
+            <CoinImage
+              url={coinImageUrl}
+              ticker={chain.ticker}
+              size={16}
+              placeholderSx={{ fontSize: '0.5rem' }}
+            />
             <Box
               sx={{
                 fontSize: '0.6rem',

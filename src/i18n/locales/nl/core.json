@@ -18,6 +18,8 @@
     "transfer_coin": "{{ coin }} overmaken"
   },
   "address": "adres:",
+  "balance_unavailable": "saldo niet beschikbaar",
+  "transactions_unavailable": "transacties niet beschikbaar",
   "amount": "bedrag",
   "balance": "saldo:",
   "balance_available": "beschikbaar saldo:",
@@ -55,6 +57,8 @@
     "confirm_send": "verzending bevestigen",
     "transaction_sent": "transactie verzonden",
     "send_failed": "er is iets misgegaan. probeer het opnieuw.",
+    "send_pending_title": "transactiestatus onbekend",
+    "send_pending_hint": "we konden niet bevestigen dat dit is gelukt. probeer het niet opnieuw - controleer eerst de openstaande transacties in Home.",
     "amount_invalid": "voer een positief bedrag in met maximaal {{ decimals }} decimalen.",
     "recipient_invalid": "adres van ontvanger is verplicht en mag maximaal 256 tekens bevatten.",
     "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen."

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Box, IconButton, Skeleton, Tooltip } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SendIcon from '@mui/icons-material/Send';
 import CheckIcon from '@mui/icons-material/Check';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate } from 'react-router-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
@@ -26,6 +27,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useSupportedChains } from '../../hooks/useSupportedChains';
 import { useMarketPrices } from '../../hooks/useMarketPrices';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
+import { useRetryingImageSrc } from '../../hooks/useRetryingImageSrc';
 import { useAssetHoldings } from '../../hooks/useAssetHoldings';
 import { CoinListRow } from './CoinListRow';
 import { AssetBlock } from './AssetBlock';
@@ -58,6 +60,7 @@ import {
 } from '../../common/walletBridge';
 import { requestAssetActions } from '../../common/assetBridge';
 import { foreignWalletAvailability } from '../../common/homeWalletCapabilities';
+import { describeBridgeError } from '../../common/bridgeErrors';
 
 type WalletItem =
   | { kind: 'chain'; key: string; chain: ChainConfig }
@@ -85,6 +88,8 @@ const TILE_MIN_PX: Record<number, number> = {
 interface BlockProps {
   chain: ChainConfig;
   balance: string | null;
+  balanceError?: string;
+  onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
   loading: boolean;
@@ -94,9 +99,13 @@ interface BlockProps {
   isDragging?: boolean;
 }
 
-function CoinBlock({
+// Exported (in addition to being used internally by CoinGrid) so it can be
+// tested in isolation, e.g. the image onError/retry behavior.
+export function CoinBlock({
   chain,
   balance,
+  balanceError,
+  onRetryBalance,
   canReceive,
   canSend,
   loading,
@@ -114,6 +123,10 @@ function CoinBlock({
   const fetchedRef = useRef(false);
   const receiveRevision = useRef(0);
   const coinImageUrl = useCoinImageUrl(chain.ticker);
+  const { src: coinImageSrc, onError: onCoinImageError } = useRetryingImageSrc(
+    coinImageUrl,
+    chain.ticker
+  );
   const isClassic = uiStyle === 'classic';
 
   useEffect(() => {
@@ -237,11 +250,12 @@ function CoinBlock({
           justifyContent: 'center',
         }}
       >
-        {coinImageUrl ? (
+        {coinImageSrc ? (
           <Box
             component="img"
-            src={coinImageUrl}
+            src={coinImageSrc}
             alt={chain.ticker}
+            onError={onCoinImageError}
             sx={{
               position: 'absolute',
               width: '100%',
@@ -372,6 +386,27 @@ function CoinBlock({
             />
           ) : balance !== null ? (
             balance
+          ) : balanceError ? (
+            <Tooltip title={balanceError} placement="top">
+              <Box
+                component="span"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetryBalance(chain);
+                }}
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.25,
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                  color: hovered ? c.accentText : c.error,
+                }}
+              >
+                unavailable
+                <RefreshIcon sx={{ fontSize: 12 }} />
+              </Box>
+            </Tooltip>
           ) : (
             '—'
           )}
@@ -418,6 +453,8 @@ function CoinBlock({
 function SortableCoinItem({
   chain,
   balance,
+  balanceError,
+  onRetryBalance,
   canReceive,
   canSend,
   loading,
@@ -428,6 +465,8 @@ function SortableCoinItem({
 }: {
   chain: ChainConfig;
   balance: string | null;
+  balanceError?: string;
+  onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
   loading: boolean;
@@ -460,6 +499,8 @@ function SortableCoinItem({
         <CoinListRow
           chain={chain}
           balance={balance}
+          balanceError={balanceError}
+          onRetryBalance={onRetryBalance}
           canReceive={canReceive}
           canSend={canSend}
           loading={loading}
@@ -475,6 +516,8 @@ function SortableCoinItem({
         <CoinBlock
           chain={chain}
           balance={balance}
+          balanceError={balanceError}
+          onRetryBalance={onRetryBalance}
           canReceive={canReceive}
           canSend={canSend}
           loading={loading}
@@ -558,6 +601,9 @@ export function CoinGrid() {
   const prices = useMarketPrices();
   const [balances, setBalances] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [balanceErrors, setBalanceErrors] = useState<Record<string, string>>(
+    {}
+  );
   const [canSendNative, setCanSendNative] = useState(false);
   const [foreignActions, setForeignActions] = useState<string[]>([]);
   const foreignActionRevision = useRef(0);
@@ -771,6 +817,85 @@ export function CoinGrid() {
     );
   };
 
+  // Fetch a single chain's balance, retrying once (not the previous blind
+  // 3x) and only when the decoded error says the failure is retryable.
+  // Shared by the initial concurrency-limited load below and the manual
+  // per-coin retry affordance.
+  const fetchChainBalance = useCallback(
+    async (chain: ChainConfig, isCancelled: () => boolean) => {
+      if (
+        !chain.isNative &&
+        !foreignWalletAvailability(chain, foreignActions).canReadBalance
+      ) {
+        if (!isCancelled()) {
+          setBalances((prev) => ({ ...prev, [chain.key]: null }));
+          setBalanceErrors((prev) => {
+            const next = { ...prev };
+            delete next[chain.key];
+            return next;
+          });
+          setLoading((prev) => ({ ...prev, [chain.key]: false }));
+        }
+        return;
+      }
+
+      const MAX_ATTEMPTS = 2; // one retry, and only if the error is retryable
+      const RETRY_DELAY = 1200;
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY));
+        if (isCancelled()) return;
+        try {
+          let balance: string;
+          if (chain.isNative) {
+            const res = await requestQortBalance();
+            balance = String(parseFloat(String(res ?? 0)));
+          } else {
+            const res = await requestWithTimeout(
+              { action: 'GET_WALLET_BALANCE', coin: chain.coinEnum },
+              45000
+            );
+            if (res?.error) throw new Error(res.error);
+            // GET_WALLET_BALANCE returns satoshis; convert to coin units
+            const divisor = Math.pow(10, chain.decimalPlaces);
+            balance = res != null ? String(Number(res) / divisor) : '0';
+          }
+          if (isCancelled()) return;
+          setBalances((prev) => ({ ...prev, [chain.key]: balance }));
+          setBalanceErrors((prev) => {
+            const next = { ...prev };
+            delete next[chain.key];
+            return next;
+          });
+          setLoading((prev) => ({ ...prev, [chain.key]: false }));
+          return;
+        } catch (err) {
+          lastError = err;
+          const decoded = describeBridgeError(err);
+          if (!decoded.retryable) break;
+        }
+      }
+
+      if (!isCancelled()) {
+        const decoded = describeBridgeError(lastError);
+        console.warn('[wallet] balance', chain.ticker, decoded.message);
+        setBalances((prev) => ({ ...prev, [chain.key]: null }));
+        setBalanceErrors((prev) => ({ ...prev, [chain.key]: decoded.message }));
+        setLoading((prev) => ({ ...prev, [chain.key]: false }));
+      }
+    },
+    [foreignActions]
+  );
+
+  const retryChainBalanceRef = useRef(fetchChainBalance);
+  retryChainBalanceRef.current = fetchChainBalance;
+
+  const retryBalance = useCallback((chain: ChainConfig) => {
+    setLoading((prev) => ({ ...prev, [chain.key]: true }));
+    void retryChainBalanceRef.current(chain, () => false);
+  }, []);
+
   // Balance loading with concurrency limit
   useEffect(() => {
     if (!walletReady) return;
@@ -800,50 +925,9 @@ export function CoinGrid() {
 
     chains.forEach(async (chain) => {
       await acquire();
-      const MAX_ATTEMPTS = 3;
-      const RETRY_DELAY = 1200;
       try {
         if (cancelled) return;
-        if (
-          !chain.isNative &&
-          !foreignWalletAvailability(chain, foreignActions).canReadBalance
-        ) {
-          if (!cancelled) {
-            setBalances((prev) => ({ ...prev, [chain.key]: null }));
-            setLoading((prev) => ({ ...prev, [chain.key]: false }));
-          }
-          return;
-        }
-        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-          if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY));
-          if (cancelled) return;
-          try {
-            let balance: string;
-            if (chain.isNative) {
-              const res = await requestQortBalance();
-              balance = String(parseFloat(String(res ?? 0)));
-            } else {
-              const res = await requestWithTimeout(
-                { action: 'GET_WALLET_BALANCE', coin: chain.coinEnum },
-                45000
-              );
-              if (res?.error) throw new Error(res.error);
-              // GET_WALLET_BALANCE returns satoshis; convert to coin units
-              const divisor = Math.pow(10, chain.decimalPlaces);
-              balance = res != null ? String(Number(res) / divisor) : '0';
-            }
-            if (cancelled) return;
-            setBalances((prev) => ({ ...prev, [chain.key]: balance }));
-            setLoading((prev) => ({ ...prev, [chain.key]: false }));
-            return;
-          } catch {
-            /* retry */
-          }
-        }
-        if (!cancelled) {
-          setBalances((prev) => ({ ...prev, [chain.key]: null }));
-          setLoading((prev) => ({ ...prev, [chain.key]: false }));
-        }
+        await fetchChainBalance(chain, () => cancelled);
       } finally {
         release();
       }
@@ -851,7 +935,7 @@ export function CoinGrid() {
     return () => {
       cancelled = true;
     };
-  }, [chains, foreignActions, walletReady]);
+  }, [chains, fetchChainBalance, walletReady]);
 
   const isCustom = sortMode === 'custom';
   const isClassic = uiStyle === 'classic';
@@ -900,6 +984,8 @@ export function CoinGrid() {
                       key={item.key}
                       chain={item.chain}
                       balance={balances[item.key] ?? null}
+                      balanceError={balanceErrors[item.key]}
+                      onRetryBalance={retryBalance}
                       canReceive={item.chain.isNative || foreign.canReceive}
                       canSend={
                         item.chain.isNative ? canSendNative : foreign.canSend

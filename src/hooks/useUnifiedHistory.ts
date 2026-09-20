@@ -8,6 +8,7 @@ import {
   requestQortWallet,
 } from '../common/walletBridge';
 import { foreignWalletAvailability } from '../common/homeWalletCapabilities';
+import { describeBridgeError } from '../common/bridgeErrors';
 
 export interface UnifiedTxRow extends TxRow {
   chain: ChainConfig;
@@ -17,6 +18,8 @@ export interface UseUnifiedHistoryResult {
   rows: UnifiedTxRow[];
   loadingChains: string[];
   errorChains: string[];
+  /** Decoded failure message per ticker in errorChains - never swallowed. */
+  errorMessages: Record<string, string>;
 }
 
 async function fetchChainTxs(chain: ChainConfig): Promise<TxRow[]> {
@@ -60,6 +63,9 @@ export function useUnifiedHistory(
   const [rows, setRows] = useState<UnifiedTxRow[]>([]);
   const [loadingChains, setLoadingChains] = useState<string[]>([]);
   const [errorChains, setErrorChains] = useState<string[]>([]);
+  const [errorMessages, setErrorMessages] = useState<Record<string, string>>(
+    {}
+  );
   const [foreignActions, setForeignActions] = useState<string[]>([]);
 
   const addRows = useCallback((newRows: UnifiedTxRow[]) => {
@@ -122,6 +128,7 @@ export function useUnifiedHistory(
     setLoadingChains(readableChains.map((chain) => chain.ticker));
     setRows([]);
     setErrorChains([]);
+    setErrorMessages({});
 
     let cancelled = false;
 
@@ -129,8 +136,16 @@ export function useUnifiedHistory(
       try {
         const txs = await fetchChainTxs(chain);
         if (!cancelled) addRows(txs.map((row) => ({ ...row, chain })));
-      } catch {
-        if (!cancelled) setErrorChains((prev) => [...prev, chain.ticker]);
+      } catch (err) {
+        if (!cancelled) {
+          const decoded = describeBridgeError(err);
+          console.warn('[wallet] history', chain.ticker, decoded.message);
+          setErrorChains((prev) => [...prev, chain.ticker]);
+          setErrorMessages((prev) => ({
+            ...prev,
+            [chain.ticker]: decoded.message,
+          }));
+        }
       } finally {
         if (!cancelled)
           setLoadingChains((prev) => prev.filter((t) => t !== chain.ticker));
@@ -142,5 +157,5 @@ export function useUnifiedHistory(
     };
   }, [addRows, chainKeys, foreignActions]);
 
-  return { rows, loadingChains, errorChains };
+  return { rows, loadingChains, errorChains, errorMessages };
 }
