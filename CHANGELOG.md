@@ -2,7 +2,7 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## Unreleased
+## [1.7.10] - 2026-09-20 (QuickMythril fork test build, published as APP/QortiumHomeTest/Wallet)
 
 ### Added
 
