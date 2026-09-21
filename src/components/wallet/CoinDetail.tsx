@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Button,
@@ -30,6 +30,7 @@ import _QRCodeDefault from 'react-qr-code';
 const QRCode = ((_QRCodeDefault as any).default ??
   _QRCodeDefault) as typeof _QRCodeDefault;
 import { useAtomValue } from 'jotai';
+import { useAuth } from 'qapp-core';
 import { NumericFormat as _NumericFormat } from 'react-number-format';
 import { useMarketPrices } from '../../hooks/useMarketPrices';
 import { copyToClipboard, formatFiat } from '../../common/functions';
@@ -63,6 +64,7 @@ import { requestWithTimeout } from '../../common/functions';
 import { foreignWalletAvailability } from '../../common/homeWalletCapabilities';
 import {
   describeBridgeError,
+  isCoreSpendContextBugError,
   isUnlockRequiredError,
 } from '../../common/bridgeErrors';
 import {
@@ -70,6 +72,16 @@ import {
   invalidateCachedAccountUnlocked,
   setCachedAccountUnlocked,
 } from '../../common/accountUnlockState';
+import { invalidateCachedBalance } from '../../common/balanceCache';
+import {
+  accountKey as pendingSendsAccountKey,
+  addPendingSend,
+  getPendingSendsForChain,
+  registerPendingSendsSubscriber,
+  subscribePendingSendConfirmed,
+  subscribePendingSends,
+} from '../../common/pendingSends';
+import { useSuggestedFee } from '../../hooks/useSuggestedFee';
 import {
   EMPTY_STRING,
   TIME_MINUTES_3,
@@ -97,6 +109,12 @@ interface Props {
 
 interface SendCoinResult {
   prepared?: PreparedTransaction;
+  /** A plain Qortal host's SEND_COIN returns the Qortal transaction object, which carries this. */
+  signature?: string;
+  /** Home 2's native QORT send (SEND_QORT/PAYMENT via qortalRequest routed through Home) uses this field name instead. */
+  transactionSignature?: string;
+  amount?: string | number;
+  recipient?: string;
 }
 
 // ARRR sync loop limits: 36 × 5 s = 3 min for "not initialized", 60 × 5 s = 5 min for "initializing"
@@ -104,6 +122,12 @@ const ARRR_OUTER_MAX = 36;
 const ARRR_INNER_MAX = 60;
 const ARRR_POLL_MS = 5000;
 const RECIPIENT_NAME_LOOKUP_DEBOUNCE_MS = 800;
+
+// While the QORT coin page is open, its balance is polled every 60 s (a
+// single cheap GET_BALANCE) so an incoming payment is noticed without the
+// user leaving and re-entering the page (round 2, item C). Foreign coins
+// keep the existing 3-minute combined balance+tx poll below.
+const NATIVE_BALANCE_POLL_MS = 60000;
 
 async function ensureAccountUnlocked(
   chain: ChainConfig,
@@ -157,6 +181,11 @@ export function CoinDetail({ chain }: Props) {
   const uiStyle = useAtomValue(uiStyleAtom);
   const currency = useAtomValue(currencyAtom);
   const walletReady = useAtomValue(walletReadyAtom);
+  // Home's selected-account identity (distinct from `address` below, which
+  // is this chain's own wallet address) - used to key the shared balance
+  // cache and pending-send tracker so an account switch can never show
+  // one account's data under another (round 2 review finding 1).
+  const { address: homeAccount } = useAuth();
   const prices = useMarketPrices();
   const pricePerUnit = prices[chain.coinEnum];
   const navigate = useNavigate();
@@ -191,15 +220,20 @@ export function CoinDetail({ chain }: Props) {
   const [resolution, setResolution] = useState<ContactResolution | null>(null);
   const [resolvingRecipient, setResolvingRecipient] = useState(false);
   const [staleAddressWarning, setStaleAddressWarning] = useState(false);
-  const [nativeFee, setNativeFee] = useState<string>('');
-  const [foreignFeePerByte, setForeignFeePerByte] = useState<string>('');
-  const [feeLoading, setFeeLoading] = useState(false);
+  const suggestedFee = useSuggestedFee(chain);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<
     'success' | 'error' | 'pending' | null
   >(null);
   const [sendResponse, setSendResponse] = useState<SendCoinResult | null>(null);
   const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
+  const [sendErrorIsCoreBug, setSendErrorIsCoreBug] = useState(false);
+  // Bumped whenever the shared pendingSends module notifies a change for
+  // this account+chain, so `pendingSendRows` (below) re-reads it. The
+  // module - not local state - is the source of truth (round 2 review
+  // finding 2), since it keeps tracking/polling across CoinDetail
+  // unmounting when the user navigates to the grid and back.
+  const [pendingSendsVersion, setPendingSendsVersion] = useState(0);
 
   // SHOW_ACTIONS capability flags (updated on mount)
   const [canSend, setCanSend] = useState(false);
@@ -220,6 +254,10 @@ export function CoinDetail({ chain }: Props) {
   const addressReadRevision = useRef(0);
   const balanceReadRevision = useRef(0);
   const transactionReadRevision = useRef(0);
+  // Seeded whenever fetchBalance resolves - the native 60 s poll compares
+  // against this, never the `balance` state value captured when that
+  // effect happened to (re)run (round 2 review finding 3).
+  const lastKnownBalanceRef = useRef<string | null>(null);
   const postSendRefreshTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -240,6 +278,20 @@ export function CoinDetail({ chain }: Props) {
         postSendRefreshTimeoutRef.current = null;
       }
     };
+  }, []);
+
+  // A send dialog opened via a deep link (?send=true, or the Home `wallet`
+  // assignment-role link) sets sendOpen=true directly from the lazy
+  // initializer above, bypassing openSend()'s fee lookup entirely - that
+  // was round 2 item D's root cause. Load the suggested fee here too,
+  // without touching the recipient/amount openSend() would otherwise reset
+  // (those are deliberately pre-filled from the URL for this path).
+  useEffect(() => {
+    if (sendOpen) {
+      suggestedFee.reset();
+      void suggestedFee.load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [arrrSyncing, setArrrSyncing] = useState(isARRR);
   const [arrrSyncStatus, setArrrSyncStatus] = useState(
@@ -409,6 +461,11 @@ export function CoinDetail({ chain }: Props) {
         if (!isMountedRef.current || revision !== balanceReadRevision.current)
           return;
         setBalance(result);
+        // Seeds the native 60 s poll's change comparison (below) - a ref
+        // updated only when a real fetch resolves, never the value the
+        // component happened to render with when that effect was set up
+        // (round 2 review finding 3).
+        lastKnownBalanceRef.current = result;
         setLoadingBalance(false);
         return;
       } catch (err) {
@@ -642,12 +699,43 @@ export function CoinDetail({ chain }: Props) {
     if (!walletReady || !arrrSynced) return;
     fetchBalance();
     fetchTransactions();
+
+    // Native QORT: poll just the balance every 60 s (cheap - one GET_BALANCE)
+    // so an incoming payment is noticed while this page is open, and only
+    // re-fetch the (more expensive) transaction history when the balance
+    // actually changed. Foreign coins keep the existing combined 3-minute
+    // poll below (their balance reads go through Electrum via Core).
+    if (chain.isNative) {
+      const id = setInterval(async () => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        if (!isMountedRef.current) return;
+        try {
+          const res = await requestQortBalance();
+          const next = String(parseFloat(String(res ?? 0)));
+          if (!isMountedRef.current) return;
+          // Compare against the ref seeded by fetchBalance's own last
+          // resolution, not a value captured when this effect was set up -
+          // otherwise the very first tick always "changes" from null.
+          if (next !== lastKnownBalanceRef.current) {
+            lastKnownBalanceRef.current = next;
+            setBalance(next);
+            setBalanceError(null);
+            fetchTransactions();
+          }
+        } catch {
+          /* a transient poll failure isn't worth surfacing - the next tick retries */
+        }
+      }, NATIVE_BALANCE_POLL_MS);
+      return () => clearInterval(id);
+    }
+
     const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchBalance();
       fetchTransactions();
     }, TIME_MINUTES_3);
     return () => clearInterval(id);
-  }, [fetchBalance, fetchTransactions, arrrSynced, walletReady]);
+  }, [fetchBalance, fetchTransactions, arrrSynced, walletReady, chain]);
 
   const openSend = useCallback(async () => {
     setAmount('');
@@ -661,26 +749,75 @@ export function CoinDetail({ chain }: Props) {
     setSendResult(null);
     setSendResponse(null);
     setSendErrorMessage(null);
-    setNativeFee(chain.isNative ? String(chain.defaultFee) : '');
-    setForeignFeePerByte('');
+    setSendErrorIsCoreBug(false);
+    suggestedFee.reset();
     setSendOpen(true);
-    if (chain.isNative || chain.coinEnum === 'ARRR') return;
-    setFeeLoading(true);
-    try {
-      const res = await qdnRequest({
-        action: 'GET_FOREIGN_FEE',
-        coin: chain.coinEnum,
-        type: 'TRADE',
-      } as any);
-      const live =
-        res?.fee ??
-        (typeof res === 'number' || typeof res === 'string' ? res : null);
-      if (live != null) setForeignFeePerByte(String(live));
-    } catch {
-      /* omit fee and let Home/Core choose the default */
-    }
-    setFeeLoading(false);
-  }, [chain.coinEnum, chain.defaultFee, chain.isNative]);
+    await suggestedFee.load();
+  }, [suggestedFee]);
+
+  // Register as a pendingSends subscriber for as long as this page is
+  // mounted, so the shared poller (module-level; see pendingSends.ts) keeps
+  // running for this send even if it was actually accepted while a
+  // *different* CoinDetail instance (or none) was mounted, and keeps
+  // running after this page is left for the grid (round 2 review finding
+  // 2). Also react to entries changing (added/confirmed/timed-out) and to
+  // a confirmation specifically, which is the module's signal to refetch
+  // history here rather than waiting for the next periodic poll.
+  useEffect(() => {
+    const unregister = registerPendingSendsSubscriber();
+    const unsubscribeEntries = subscribePendingSends(() => {
+      setPendingSendsVersion((v) => v + 1);
+    });
+    const unsubscribeConfirmed = subscribePendingSendConfirmed(
+      (confirmedAccount, confirmedChainKey) => {
+        if (confirmedAccount !== pendingSendsAccountKey(homeAccount)) return;
+        if (confirmedChainKey !== chain.key) return;
+        if (!isMountedRef.current) return;
+        fetchTransactions();
+      }
+    );
+    return () => {
+      unregister();
+      unsubscribeEntries();
+      unsubscribeConfirmed();
+    };
+  }, [homeAccount, chain.key, fetchTransactions]);
+
+  // Every currently-tracked pending send for this account+chain, from the
+  // shared module - not local state, so it survives a navigate-away-and-
+  // back and reflects a confirmation/timeout the module made while this
+  // page wasn't mounted at all.
+  const pendingSendRows = useMemo(
+    () => getPendingSendsForChain(homeAccount, chain.key),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [homeAccount, chain.key, pendingSendsVersion]
+  );
+
+  // Merge the optimistic pending row(s) on top of the fetched transaction
+  // list, without waiting for the next periodic history refresh to show
+  // them and without mutating `transactions` itself. Deduped by signature -
+  // once the real confirmed row appears in `transactions`, the synthetic
+  // pending row for the same signature is dropped so it's never shown
+  // twice.
+  const displayedTransactions = useMemo(() => {
+    if (pendingSendRows.length === 0) return transactions;
+    const confirmedHashes = new Set(
+      transactions.map((row) => row.txHash).filter(Boolean)
+    );
+    const stillPending = pendingSendRows.filter(
+      (entry) => !confirmedHashes.has(entry.txHash)
+    );
+    if (stillPending.length === 0) return transactions;
+    const pendingRows: TxRow[] = stillPending.map((entry) => ({
+      txHash: entry.txHash,
+      totalAmount: entry.totalAmount,
+      recipient: entry.recipient,
+      sender: entry.sender,
+      pending: true,
+      pendingTimedOut: entry.timedOut,
+    }));
+    return [...pendingRows, ...transactions];
+  }, [transactions, pendingSendRows]);
 
   useEffect(() => {
     if (recipientMode !== 'name') return;
@@ -724,6 +861,7 @@ export function CoinDetail({ chain }: Props) {
 
     setSending(true);
     setSendErrorMessage(null);
+    setSendErrorIsCoreBug(false);
     try {
       if (!(await ensureAccountUnlocked(chain, qortCanUnlock))) {
         throw new Error('Unable to unlock the account. Please try again.');
@@ -751,19 +889,54 @@ export function CoinDetail({ chain }: Props) {
       if (!canSendRef.current) return;
 
       let result: SendCoinResult | null = null;
+      let nativeSignature: string | undefined;
       if (chain.isNative) {
         if (!qortSendAction) return;
-        const res = await requestQortSend(
+        const res = (await requestQortSend(
           qortSendAction,
           effectiveRecipient,
           parseFloat(amount)
-        );
+        )) as
+          | (SendCoinResult & {
+              accepted?: boolean;
+              // Home 2's ambiguous-broadcast result uses `outcome`, not
+              // `foreignOutcome` (that field name is the foreign-send
+              // shape below) - see broadcastHomeV2Payment.
+              outcome?: 'unknown' | 'mismatch';
+              errorType?: string;
+              error?: string;
+            })
+          | null;
         if (res == null || typeof res !== 'object') {
           throw new Error('Home returned no send result');
         }
-        if (res?.accepted === false)
-          throw new Error(res.error ?? `${qortSendAction} failed`);
-        result = res as any;
+        if (res.accepted === false) {
+          // Mirrors the foreign SEND_COIN handling below: Home resolves
+          // (rather than throws) with accepted:false when it can't confirm
+          // the broadcast outcome - never treat that as success, and never
+          // as a hard error either when the outcome is merely unknown.
+          const decoded = describeBridgeError(
+            res.error ?? `${qortSendAction} failed`
+          );
+          if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
+          console.warn('[wallet] send failed', chain.ticker, decoded);
+          setSendResponse(null);
+          setSendErrorMessage(decoded.message);
+          setSendErrorIsCoreBug(isCoreSpendContextBugError(decoded));
+          setSendResult(
+            res.outcome === 'unknown' || res.outcome === 'mismatch'
+              ? 'pending'
+              : 'error'
+          );
+          return;
+        }
+        result = res;
+        nativeSignature =
+          typeof res.transactionSignature === 'string'
+            ? res.transactionSignature
+            : typeof res.signature === 'string'
+              ? res.signature
+              : undefined;
       } else {
         const payload: Record<string, unknown> = {
           action: 'SEND_COIN',
@@ -775,8 +948,8 @@ export function CoinDetail({ chain }: Props) {
         } else {
           payload.amount = amount;
         }
-        if (chain.coinEnum !== 'ARRR' && foreignFeePerByte !== '') {
-          payload.feePerByte = foreignFeePerByte.trim();
+        if (chain.coinEnum !== 'ARRR' && suggestedFee.fee !== '') {
+          payload.feePerByte = suggestedFee.fee.trim();
         }
         const foreignResult = (await qdnRequest(payload as any)) as
           | (SendCoinResult & {
@@ -801,6 +974,7 @@ export function CoinDetail({ chain }: Props) {
           console.warn('[wallet] send failed', chain.ticker, decoded);
           setSendResponse(null);
           setSendErrorMessage(decoded.message);
+          setSendErrorIsCoreBug(isCoreSpendContextBugError(decoded));
           setSendResult(
             foreignResult.foreignOutcome === 'unknown' ||
               foreignResult.foreignOutcome === 'mismatch'
@@ -815,21 +989,54 @@ export function CoinDetail({ chain }: Props) {
       setSendResult('success');
       setStaleAddressWarning(false);
 
-      if (postSendRefreshTimeoutRef.current) {
-        clearTimeout(postSendRefreshTimeoutRef.current);
+      // The grid's cached balance for this coin is now stale - drop it so
+      // the next time it's shown it re-fetches instead of rendering a
+      // pre-send amount (round 2, item B's "just sent from" trigger).
+      invalidateCachedBalance(homeAccount, chain.key);
+
+      if (chain.isNative && nativeSignature) {
+        // Show the sent transaction immediately as a pending row and poll
+        // for its confirmation (round 2, item A) instead of the blind
+        // fixed-delay refresh below, which has no truth source. Prefer the
+        // amount/recipient Home actually echoes back in the result over
+        // the local form state, since that's what was actually broadcast.
+        // Tracked in the shared pendingSends module (not local state) so
+        // it keeps polling/rendering correctly across navigating away from
+        // this page and back (round 2 review finding 2).
+        const resultAmount = result?.amount;
+        const resultRecipient = result?.recipient;
+        addPendingSend({
+          account: homeAccount,
+          chain,
+          txHash: nativeSignature,
+          totalAmount:
+            resultAmount != null
+              ? -Math.round(parseFloat(String(resultAmount)) * 1e8)
+              : -Math.round(parseFloat(amount) * 1e8),
+          recipient:
+            typeof resultRecipient === 'string'
+              ? resultRecipient
+              : effectiveRecipient,
+          sender: address || undefined,
+        });
+      } else {
+        if (postSendRefreshTimeoutRef.current) {
+          clearTimeout(postSendRefreshTimeoutRef.current);
+        }
+        postSendRefreshTimeoutRef.current = setTimeout(() => {
+          postSendRefreshTimeoutRef.current = null;
+          if (!isMountedRef.current) return;
+          fetchBalance();
+          fetchTransactions();
+        }, TIME_SECONDS_3);
       }
-      postSendRefreshTimeoutRef.current = setTimeout(() => {
-        postSendRefreshTimeoutRef.current = null;
-        if (!isMountedRef.current) return;
-        fetchBalance();
-        fetchTransactions();
-      }, TIME_SECONDS_3);
     } catch (err) {
       const decoded = describeBridgeError(err);
       if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
       console.warn('[wallet] send failed', chain.ticker, decoded);
       setSendResponse(null);
       setSendErrorMessage(decoded.message);
+      setSendErrorIsCoreBug(isCoreSpendContextBugError(decoded));
       setSendResult('error');
     } finally {
       setSending(false);
@@ -841,6 +1048,7 @@ export function CoinDetail({ chain }: Props) {
     setSendResult(null);
     setSendResponse(null);
     setSendErrorMessage(null);
+    setSendErrorIsCoreBug(false);
     setAmount('');
     setSendMax(false);
     setRecipient(EMPTY_STRING);
@@ -849,18 +1057,15 @@ export function CoinDetail({ chain }: Props) {
     setResolution(null);
     setResolvingRecipient(false);
     setStaleAddressWarning(false);
-    setNativeFee('');
-    setForeignFeePerByte('');
+    suggestedFee.reset();
     setSearchParams({});
   };
 
-  const sendFeeInputValue = chain.isNative ? nativeFee : foreignFeePerByte;
+  const sendFeeInputValue = suggestedFee.fee;
   const sendFeeLabel = chain.isNative
     ? t('send_dialog.optional_custom_fee', { coin: chain.ticker })
     : t('send_dialog.optional_fee_per_byte', { coin: chain.ticker });
-  const setSendFeeInputValue = chain.isNative
-    ? setNativeFee
-    : setForeignFeePerByte;
+  const setSendFeeInputValue = suggestedFee.setFee;
   const canUseForeignSendMax = !chain.isNative && chain.coinEnum !== 'ARRR';
   const amountIsValid =
     canUseForeignSendMax && sendMax
@@ -870,10 +1075,11 @@ export function CoinDetail({ chain }: Props) {
   const foreignFeeIsValid =
     chain.isNative ||
     chain.coinEnum === 'ARRR' ||
-    isOptionalPositiveDecimal(foreignFeePerByte, 8);
+    isOptionalPositiveDecimal(suggestedFee.fee, 8);
   const canConfirmSend =
     canSend &&
     !sending &&
+    !suggestedFee.loading &&
     amountIsValid &&
     recipientIsValid &&
     foreignFeeIsValid &&
@@ -884,7 +1090,7 @@ export function CoinDetail({ chain }: Props) {
   const showFeeError =
     !chain.isNative &&
     chain.coinEnum !== 'ARRR' &&
-    foreignFeePerByte !== '' &&
+    suggestedFee.fee !== '' &&
     !foreignFeeIsValid;
 
   const handleCopyHash = (i: number, hash: string) => {
@@ -1409,7 +1615,7 @@ export function CoinDetail({ chain }: Props) {
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
                   <CircularProgress size={28} sx={{ color: c.accent }} />
                 </Box>
-              ) : transactions.length === 0 && txError ? (
+              ) : displayedTransactions.length === 0 && txError ? (
                 <Box
                   sx={{
                     py: 6,
@@ -1430,7 +1636,7 @@ export function CoinDetail({ chain }: Props) {
                     <RefreshIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 </Box>
-              ) : transactions.length === 0 ? (
+              ) : displayedTransactions.length === 0 ? (
                 <Box
                   sx={{
                     py: 6,
@@ -1443,12 +1649,12 @@ export function CoinDetail({ chain }: Props) {
                   No transactions yet
                 </Box>
               ) : (
-                transactions.map((row, i) => (
+                displayedTransactions.map((row, i) => (
                   <TransactionRow
                     key={i}
                     row={row}
                     index={i}
-                    isLastRow={i === transactions.length - 1}
+                    isLastRow={i === displayedTransactions.length - 1}
                     chain={chain}
                     userAddress={address}
                     expanded={expandedTx === i}
@@ -1554,6 +1760,13 @@ export function CoinDetail({ chain }: Props) {
                     {sendErrorMessage}
                   </Typography>
                 )}
+                {sendErrorIsCoreBug && (
+                  <Typography
+                    sx={{ fontSize: '0.75rem', mt: 1, color: c.warning }}
+                  >
+                    {t('send_dialog.core_spend_context_bug_hint')}
+                  </Typography>
+                )}
               </Box>
             ) : sendResult === 'error' ? (
               <Box sx={{ textAlign: 'center', py: 3, color: c.error }}>
@@ -1563,6 +1776,11 @@ export function CoinDetail({ chain }: Props) {
                 {sendErrorMessage && (
                   <Typography sx={{ fontSize: '0.8rem', mt: 1 }}>
                     {sendErrorMessage}
+                  </Typography>
+                )}
+                {sendErrorIsCoreBug && (
+                  <Typography sx={{ fontSize: '0.75rem', mt: 1 }}>
+                    {t('send_dialog.core_spend_context_bug_hint')}
                   </Typography>
                 )}
               </Box>
@@ -1616,7 +1834,7 @@ export function CoinDetail({ chain }: Props) {
                       disabled={sending || !balance}
                       onClick={() => {
                         const bal = parseFloat(balance ?? '0');
-                        const feeVal = parseFloat(nativeFee || '0');
+                        const feeVal = parseFloat(suggestedFee.fee || '0');
                         const factor = Math.pow(10, chain.decimalPlaces);
                         setAmount(
                           String(
@@ -1784,11 +2002,15 @@ export function CoinDetail({ chain }: Props) {
                 {!chain.isNative && (
                   <TextField
                     label={sendFeeLabel}
-                    value={feeLoading ? 'Loading…' : sendFeeInputValue}
+                    value={
+                      suggestedFee.loading
+                        ? t('send_dialog.fee_loading')
+                        : sendFeeInputValue
+                    }
                     onChange={(e) => setSendFeeInputValue(e.target.value)}
                     fullWidth
-                    disabled={sending || feeLoading}
-                    type={feeLoading ? 'text' : 'number'}
+                    disabled={sending || suggestedFee.loading}
+                    type={suggestedFee.loading ? 'text' : 'number'}
                     inputProps={{ step: 'any', min: 0 }}
                     error={showFeeError}
                     helperText={
@@ -1796,7 +2018,7 @@ export function CoinDetail({ chain }: Props) {
                         ? t('send_dialog.fee_per_byte_invalid')
                         : chain.coinEnum === 'ARRR'
                           ? t('send_dialog.arrr_fixed_fee')
-                          : !feeLoading && !foreignFeePerByte
+                          : !suggestedFee.loading && suggestedFee.failed
                             ? t('send_dialog.fee_lookup_unavailable')
                             : undefined
                     }

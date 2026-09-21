@@ -6,6 +6,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate } from 'react-router-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { useAuth } from 'qapp-core';
 import {
   DndContext,
   PointerSensor,
@@ -61,6 +62,22 @@ import {
 import { requestAssetActions } from '../../common/assetBridge';
 import { foreignWalletAvailability } from '../../common/homeWalletCapabilities';
 import { describeBridgeError } from '../../common/bridgeErrors';
+import {
+  BALANCE_CACHE_TTL_MS,
+  getCachedBalance,
+  isBalanceCacheFresh,
+  setCachedBalance,
+  subscribeBalanceCache,
+} from '../../common/balanceCache';
+import { registerPendingSendsSubscriber } from '../../common/pendingSends';
+import { useDocumentVisible } from '../../hooks/useDocumentVisible';
+
+// While the grid is mounted, QORT's balance is polled every 60 s (a single
+// cheap GET_BALANCE) so an incoming payment is noticed without opening the
+// coin page (round 2, item C). Foreign coins are not polled here - their
+// balance reads go through Electrum via Core and keep the existing
+// cache-freshness cadence below.
+const NATIVE_BALANCE_POLL_MS = 60000;
 
 type WalletItem =
   | { kind: 'chain'; key: string; chain: ChainConfig }
@@ -594,6 +611,10 @@ function SortableAssetItem({
 
 export function CoinGrid() {
   const { chains } = useSupportedChains();
+  // Home's selected-account identity - keys the shared balance cache so an
+  // account switch can never render a stale account's balances under the
+  // newly-selected one (round 2 review finding 1).
+  const { address: account } = useAuth();
   const c = useColors();
   const uiStyle = useAtomValue(uiStyleAtom);
   const currency = useAtomValue(currencyAtom);
@@ -605,7 +626,10 @@ export function CoinGrid() {
     {}
   );
   const [canSendNative, setCanSendNative] = useState(false);
-  const [foreignActions, setForeignActions] = useState<string[]>([]);
+  // null = "not fetched yet this session" (distinct from a fetched-but-empty
+  // array) - the balance pass below must not treat the pre-first-fetch gap
+  // as a real capability change (round 2, item B).
+  const [foreignActions, setForeignActions] = useState<string[] | null>(null);
   const foreignActionRevision = useRef(0);
   const [canSendAssets, setCanSendAssets] = useState<
     Record<AssetNetwork, boolean>
@@ -640,8 +664,13 @@ export function CoinGrid() {
             setForeignActions([]);
           });
       };
+      // Deliberately does not clear foreignActions to [] before refreshing:
+      // that transient empty-capability state briefly made every foreign
+      // coin's computed availability look "changed" to the balance-cache
+      // pass below, defeating the "unchanged capability set -> no refetch"
+      // rule (round 2, item B) on every bridge-state event, not just real
+      // host swaps. A failed refresh still falls through to [] below.
       const handleBridgeChange = () => {
-        setForeignActions([]);
         void refreshForeignActions();
       };
       refreshForeignActions();
@@ -820,12 +849,14 @@ export function CoinGrid() {
   // Fetch a single chain's balance, retrying once (not the previous blind
   // 3x) and only when the decoded error says the failure is retryable.
   // Shared by the initial concurrency-limited load below and the manual
-  // per-coin retry affordance.
+  // per-coin retry affordance. Every outcome (success, unavailable, or
+  // failure) is written into the shared balance cache (round 2, item B) so
+  // a remounted grid can render instantly instead of re-fetching everything.
   const fetchChainBalance = useCallback(
     async (chain: ChainConfig, isCancelled: () => boolean) => {
       if (
         !chain.isNative &&
-        !foreignWalletAvailability(chain, foreignActions).canReadBalance
+        !foreignWalletAvailability(chain, foreignActions ?? []).canReadBalance
       ) {
         if (!isCancelled()) {
           setBalances((prev) => ({ ...prev, [chain.key]: null }));
@@ -835,6 +866,7 @@ export function CoinGrid() {
             return next;
           });
           setLoading((prev) => ({ ...prev, [chain.key]: false }));
+          setCachedBalance(account, chain.key, { balance: null });
         }
         return;
       }
@@ -869,6 +901,7 @@ export function CoinGrid() {
             return next;
           });
           setLoading((prev) => ({ ...prev, [chain.key]: false }));
+          setCachedBalance(account, chain.key, { balance });
           return;
         } catch (err) {
           lastError = err;
@@ -883,9 +916,13 @@ export function CoinGrid() {
         setBalances((prev) => ({ ...prev, [chain.key]: null }));
         setBalanceErrors((prev) => ({ ...prev, [chain.key]: decoded.message }));
         setLoading((prev) => ({ ...prev, [chain.key]: false }));
+        setCachedBalance(account, chain.key, {
+          balance: null,
+          error: decoded.message,
+        });
       }
     },
-    [foreignActions]
+    [foreignActions, account]
   );
 
   const retryChainBalanceRef = useRef(fetchChainBalance);
@@ -896,17 +933,81 @@ export function CoinGrid() {
     void retryChainBalanceRef.current(chain, () => false);
   }, []);
 
-  // Balance loading with concurrency limit
-  useEffect(() => {
-    if (!walletReady) return;
+  // Per-chain foreign-capability fingerprint from the last completed pass,
+  // used below to tell "the SHOW_ACTIONS array changed identity" apart from
+  // "this coin's actual send/receive/read capabilities changed" - only the
+  // latter should force a re-fetch (round 2, item B).
+  const lastAvailabilityKeyRef = useRef<Record<string, string>>({});
+  // The account the currently-rendered `balances`/`balanceErrors` state was
+  // last built for - lets a real account switch (the same grid instance
+  // re-rendering with a new `account`, e.g. once Home's SELECTED_ACCOUNT_
+  // CHANGED re-authenticates) clear the previous account's values instead
+  // of merely not overwriting them (round 2 review finding 1: seeding only
+  // *adds* cache hits, so without this, a value that has no cache entry
+  // under the new account - most of them, right after a switch - would
+  // keep showing the old account's last-rendered balance indefinitely).
+  const lastAccountRef = useRef<string | null | undefined>(undefined);
+
+  // Seeds every chain's render from the shared cache (instant on a remount
+  // within the freshness window), then fetches only the chains that are
+  // missing, stale, or whose foreign capability set actually changed -
+  // never the whole grid just because a component remounted or a
+  // qortiumBridgeStateChanged event fired with an unchanged capability set.
+  const runBalancePass = useCallback((): (() => void) => {
+    if (!walletReady) return () => {};
 
     let cancelled = false;
 
-    const init: Record<string, boolean> = {};
-    chains.forEach((c) => {
-      init[c.key] = true;
+    const accountChanged = lastAccountRef.current !== account;
+    lastAccountRef.current = account;
+    if (accountChanged) lastAvailabilityKeyRef.current = {};
+
+    setBalances((prev) => {
+      const next = accountChanged ? {} : { ...prev };
+      chains.forEach((chain) => {
+        const cached = getCachedBalance(account, chain.key);
+        if (cached) next[chain.key] = cached.balance;
+      });
+      return next;
     });
-    setLoading(init);
+    setBalanceErrors((prev) => {
+      const next = accountChanged ? {} : { ...prev };
+      chains.forEach((chain) => {
+        const cached = getCachedBalance(account, chain.key);
+        if (cached?.error) next[chain.key] = cached.error;
+        else if (cached) delete next[chain.key];
+      });
+      return next;
+    });
+
+    const toFetch: ChainConfig[] = [];
+    const loadingPatch: Record<string, boolean> = {};
+    chains.forEach((chain) => {
+      // Foreign capabilities aren't known yet this session (the initial
+      // SHOW_ACTIONS call hasn't resolved) - defer the decision entirely
+      // rather than recording a key computed from an empty placeholder,
+      // which would look like a real capability change the moment the
+      // real SHOW_ACTIONS result arrives and force a spurious re-fetch.
+      if (!chain.isNative && foreignActions === null) return;
+
+      const availabilityKey = chain.isNative
+        ? 'native'
+        : JSON.stringify(
+            foreignWalletAvailability(chain, foreignActions ?? [])
+          );
+      const previousKey = lastAvailabilityKeyRef.current[chain.key];
+      const availabilityChanged =
+        previousKey !== undefined && previousKey !== availabilityKey;
+      lastAvailabilityKeyRef.current[chain.key] = availabilityKey;
+
+      if (availabilityChanged || !isBalanceCacheFresh(account, chain.key)) {
+        toFetch.push(chain);
+        loadingPatch[chain.key] = true;
+      } else {
+        loadingPatch[chain.key] = false;
+      }
+    });
+    setLoading((prev) => ({ ...prev, ...loadingPatch }));
 
     let slots = 2;
     const waiting: Array<() => void> = [];
@@ -923,7 +1024,7 @@ export function CoinGrid() {
       else slots++;
     };
 
-    chains.forEach(async (chain) => {
+    toFetch.forEach(async (chain) => {
       await acquire();
       try {
         if (cancelled) return;
@@ -932,10 +1033,106 @@ export function CoinGrid() {
         release();
       }
     });
+
     return () => {
       cancelled = true;
     };
-  }, [chains, fetchChainBalance, walletReady]);
+  }, [chains, fetchChainBalance, foreignActions, walletReady, account]);
+
+  useEffect(() => {
+    const cancel = runBalancePass();
+    return cancel;
+  }, [runBalancePass]);
+
+  // "Page becomes visible again after being hidden for > 2 minutes" also
+  // re-runs the freshness pass (round 2, item B) - the cache-TTL check
+  // above already covers the "hidden for less than the freshness window"
+  // case, since the same 2-minute window applies to both.
+  useDocumentVisible(() => {
+    runBalancePass();
+  }, BALANCE_CACHE_TTL_MS);
+
+  // QORT-only fast balance poll while the grid is mounted (round 2, item
+  // C). Kept separate from the cache-freshness pass above, which is tuned
+  // for "don't hammer every coin on every remount", not "notice an
+  // incoming payment within a minute".
+  useEffect(() => {
+    if (!walletReady) return;
+    const qortChain = chains.find((chain) => chain.isNative);
+    if (!qortChain) return;
+
+    let cancelled = false;
+    let lastBalance = getCachedBalance(account, qortChain.key)?.balance ?? null;
+    const id = setInterval(async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const res = await requestQortBalance();
+        const next = String(parseFloat(String(res ?? 0)));
+        if (cancelled || next === lastBalance) return;
+        lastBalance = next;
+        setBalances((prev) => ({ ...prev, [qortChain.key]: next }));
+        setBalanceErrors((prev) => {
+          const nextErrors = { ...prev };
+          delete nextErrors[qortChain.key];
+          return nextErrors;
+        });
+        setLoading((prev) => ({ ...prev, [qortChain.key]: false }));
+        setCachedBalance(account, qortChain.key, { balance: next });
+      } catch {
+        /* a transient poll failure isn't worth surfacing - the next tick retries */
+      }
+    }, NATIVE_BALANCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [chains, walletReady, account]);
+
+  // Mirror any balance-cache write into local render state while the grid
+  // is mounted - not just the writes this component made itself. The
+  // pendingSends module refreshes a coin's cached balance the moment a
+  // confirmation lands (round 2, item A), which can happen while the user
+  // is looking at the grid rather than the coin page; without this
+  // subscription that fresh value would sit in the cache unseen until the
+  // next freshness pass (round 2 review finding 2).
+  useEffect(() => {
+    return subscribeBalanceCache(() => {
+      setBalances((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        chains.forEach((chain) => {
+          const cached = getCachedBalance(account, chain.key);
+          if (cached && next[chain.key] !== cached.balance) {
+            next[chain.key] = cached.balance;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+      setBalanceErrors((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        chains.forEach((chain) => {
+          const cached = getCachedBalance(account, chain.key);
+          if (cached?.error && next[chain.key] !== cached.error) {
+            next[chain.key] = cached.error;
+            changed = true;
+          } else if (cached && !cached.error && chain.key in next) {
+            delete next[chain.key];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    });
+  }, [chains, account]);
+
+  // Keep the shared pendingSends poller running for as long as the grid is
+  // mounted, even with no pending row of its own to show - navigating from
+  // the coin page to the grid (or starting on the grid) must not pause
+  // confirmation tracking (round 2 review finding 2).
+  useEffect(() => registerPendingSendsSubscriber(), []);
 
   const isCustom = sortMode === 'custom';
   const isClassic = uiStyle === 'classic';
@@ -977,7 +1174,7 @@ export function CoinGrid() {
                 (() => {
                   const foreign = foreignWalletAvailability(
                     item.chain,
-                    foreignActions
+                    foreignActions ?? []
                   );
                   return (
                     <SortableCoinItem

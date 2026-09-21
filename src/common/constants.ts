@@ -32,6 +32,7 @@ export const TIME_SECONDS_3: number = 3 * TIME_SECONDS_1;
 export const TIME_SECONDS_4: number = 4 * TIME_SECONDS_1;
 export const TIME_SECONDS_5: number = 5 * TIME_SECONDS_1;
 export const TIME_SECONDS_10: number = 10 * TIME_SECONDS_1;
+export const TIME_SECONDS_15: number = 15 * TIME_SECONDS_1;
 export const TIME_SECONDS_20: number = 20 * TIME_SECONDS_1;
 export const TIME_SECONDS_40: number = 40 * TIME_SECONDS_1;
 

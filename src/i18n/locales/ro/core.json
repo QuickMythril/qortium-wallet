@@ -53,12 +53,14 @@
     "optional_custom_fee": "taxă personalizată opțională ({{ coin }})",
     "optional_fee_per_byte": "taxă opțională pe byte ({{ coin }})",
     "arrr_fixed_fee": "taxa de rețea ARRR este fixă - această valoare este doar pentru afișare",
+    "fee_loading": "se încarcă taxa…",
     "fee_lookup_unavailable": "căutarea taxei nu este disponibilă - se va folosi valoarea implicită Home/Core",
     "confirm_send": "confirmă trimiterea",
     "transaction_sent": "tranzacție trimisă",
     "send_failed": "ceva a mers greșit. încearcă din nou.",
     "send_pending_title": "starea tranzacției este necunoscută",
     "send_pending_hint": "nu am putut confirma că aceasta a trecut. nu încerca din nou - verifică mai întâi tranzacțiile în așteptare din Home.",
+    "core_spend_context_bug_hint": "Qortium Core-ul tău trebuie actualizat (eroare de serializare spend-context); aceasta nu este o problemă de portofel sau sold.",
     "amount_invalid": "introdu o sumă pozitivă cu cel mult {{ decimals }} zecimale.",
     "recipient_invalid": "adresa destinatarului este obligatorie și poate avea cel mult 256 de caractere.",
     "fee_per_byte_invalid": "introdu o taxă pozitivă pe byte cu cel mult 8 zecimale."
@@ -200,5 +202,9 @@
   "total_amount": "sumă totală",
   "transactions": "lista tranzacțiilor",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "în așteptarea confirmării",
+    "pending_timeout": "neconfirmată - verifică mai târziu"
+  },
   "wallets": "portofele"
 }

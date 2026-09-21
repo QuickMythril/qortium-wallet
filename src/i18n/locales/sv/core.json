@@ -53,12 +53,14 @@
     "optional_custom_fee": "valfri anpassad avgift ({{ coin }})",
     "optional_fee_per_byte": "valfri avgift per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR-nätverksavgiften är fast - det här värdet visas bara",
+    "fee_loading": "läser in avgift…",
     "fee_lookup_unavailable": "avgiftsuppslag ej tillgängligt - Home/Core-standard används",
     "confirm_send": "bekräfta sändning",
     "transaction_sent": "transaktion skickad",
     "send_failed": "något gick fel. försök igen.",
     "send_pending_title": "transaktionsstatus okänd",
     "send_pending_hint": "vi kunde inte bekräfta att detta gick igenom. försök inte igen - kontrollera väntande transaktioner i Home först.",
+    "core_spend_context_bug_hint": "Din Qortium Core behöver uppdateras (spend-context-serialiseringsfel); detta är inte ett problem med plånboken eller saldot.",
     "amount_invalid": "ange ett positivt belopp med upp till {{ decimals }} decimaler.",
     "recipient_invalid": "mottagarens adress är obligatorisk och får vara högst 256 tecken.",
     "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler."
@@ -200,5 +202,9 @@
   "total_amount": "totalt belopp",
   "transactions": "transaktionslista",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "väntar på bekräftelse",
+    "pending_timeout": "obekräftad - kontrollera senare"
+  },
   "wallets": "plånböcker"
 }

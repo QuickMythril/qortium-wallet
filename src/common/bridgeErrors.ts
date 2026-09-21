@@ -71,3 +71,17 @@ export function isUnlockRequiredError(decoded: DecodedBridgeError): boolean {
   const haystack = `${decoded.code ?? ''} ${decoded.message}`.toLowerCase();
   return haystack.includes('unlock');
 }
+
+// A foreign send rejected with this text is a known Qortium Core
+// spend-context serialization bug (fixed in Core after 1.8.0), not a
+// wallet, balance, or user-recipient problem - see round 2 item E.
+const CORE_SPEND_CONTEXT_BUG_SUBSTRING = 'previous transaction hash is invalid';
+
+/** True when a decoded send-error message matches the known Core spend-context serialization bug. */
+export function isCoreSpendContextBugError(
+  decoded: DecodedBridgeError
+): boolean {
+  return decoded.message
+    .toLowerCase()
+    .includes(CORE_SPEND_CONTEXT_BUG_SUBSTRING);
+}

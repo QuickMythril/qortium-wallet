@@ -53,12 +53,14 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "جارٍ تحميل الرسوم…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
     "send_pending_title": "transaction status unknown",
     "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "يحتاج Qortium Core الخاص بك إلى التحديث (خطأ في تسلسل سياق الإنفاق)؛ هذه ليست مشكلة في المحفظة أو الرصيد.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
@@ -200,5 +202,9 @@
   "total_amount": "المبلغ الإجمالي",
   "transactions": "قائمة المعاملات",
   "transaction_hash": "تجزئة TX",
+  "transaction_status": {
+    "pending_confirmation": "بانتظار التأكيد",
+    "pending_timeout": "غير مؤكدة - تحقق لاحقًا"
+  },
   "wallets": "المحافظ"
 }

@@ -17,6 +17,8 @@ import {
   invalidateCachedAccountUnlocked,
   setCachedAccountUnlocked,
 } from './common/accountUnlockState';
+import { clearBalanceCache } from './common/balanceCache';
+import { clearPendingSends } from './common/pendingSends';
 
 export default function AppLayout() {
   useIframe();
@@ -48,6 +50,12 @@ export default function AppLayout() {
         // The newly-selected account's lock state is unknown until the next
         // GET_SELECTED_ACCOUNT / unlock check re-verifies it.
         invalidateCachedAccountUnlocked();
+        // A different account's cached balances/errors and tracked pending
+        // sends must never be shown under the newly-selected account, even
+        // for the few minutes before their own freshness windows would
+        // have expired them (round 2 review finding 1).
+        clearBalanceCache();
+        clearPendingSends();
         authenticateUser().catch(() => {});
       }
     }

@@ -53,12 +53,14 @@
     "optional_custom_fee": "可选自定义手续费 ({{ coin }})",
     "optional_fee_per_byte": "可选每字节手续费 ({{ coin }})",
     "arrr_fixed_fee": "ARRR网络手续费固定不变 - 此值仅供显示",
+    "fee_loading": "正在加载手续费…",
     "fee_lookup_unavailable": "手续费查询不可用 - 将使用 Home/Core 默认值",
     "confirm_send": "确认发送",
     "transaction_sent": "交易已发送",
     "send_failed": "发生错误。请重试。",
     "send_pending_title": "交易状态未知",
     "send_pending_hint": "我们无法确认这笔交易是否成功。请勿重试 - 请先在 Home 中查看待处理交易。",
+    "core_spend_context_bug_hint": "您的 Qortium Core 需要更新(spend-context 序列化错误);这不是钱包或余额的问题。",
     "amount_invalid": "请输入最多 {{ decimals }} 位小数的正数金额。",
     "recipient_invalid": "收款地址为必填项，且不得超过256个字符。",
     "fee_per_byte_invalid": "请输入最多8位小数的正数每字节手续费。"
@@ -200,5 +202,9 @@
   "total_amount": "总金额",
   "transactions": "交易列表",
   "transaction_hash": "TX 哈希",
+  "transaction_status": {
+    "pending_confirmation": "待确认",
+    "pending_timeout": "未确认 - 请稍后查看"
+  },
   "wallets": "钱包"
 }

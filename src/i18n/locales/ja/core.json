@@ -53,12 +53,14 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "手数料を読み込み中…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
     "send_pending_title": "transaction status unknown",
     "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "お使いのQortium Coreの更新が必要です(spend-contextのシリアライズの不具合)。これはウォレットや残高の問題ではありません。",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
@@ -201,5 +203,9 @@
   "total_amount": "合計金額",
   "transactions": "トランザクション一覧",
   "transaction_hash": "TX ハッシュ",
+  "transaction_status": {
+    "pending_confirmation": "承認待ち",
+    "pending_timeout": "未確認 - 後で確認してください"
+  },
   "wallets": "ウォレット"
 }

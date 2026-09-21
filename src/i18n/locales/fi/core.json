@@ -53,12 +53,14 @@
     "optional_custom_fee": "valinnainen mukautettu maksu ({{ coin }})",
     "optional_fee_per_byte": "valinnainen maksu per tavu ({{ coin }})",
     "arrr_fixed_fee": "ARRR-verkon maksu on kiinteä - tämä arvo on vain näyttöä varten",
+    "fee_loading": "ladataan maksua…",
     "fee_lookup_unavailable": "maksuhaku ei ole käytettävissä - Home/Core-oletusta käytetään",
     "confirm_send": "vahvista lähetys",
     "transaction_sent": "tapahtuma lähetetty",
     "send_failed": "jotain meni pieleen. yritä uudelleen.",
     "send_pending_title": "tapahtuman tila tuntematon",
     "send_pending_hint": "emme voineet vahvistaa, että tämä meni läpi. älä yritä uudelleen - tarkista odottavat tapahtumat Homessa ensin.",
+    "core_spend_context_bug_hint": "Qortium Core -sovelluksesi täytyy päivittää (spend-context-sarjallistus); tämä ei ole lompakko- tai saldo-ongelma.",
     "amount_invalid": "syötä positiivinen määrä enintään {{ decimals }} desimaalilla.",
     "recipient_invalid": "vastaanottajan osoite on pakollinen ja saa olla enintään 256 merkkiä.",
     "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla."
@@ -200,5 +202,9 @@
   "total_amount": "kokonaismäärä",
   "transactions": "tapahtumaluettelo",
   "transaction_hash": "TX-hash",
+  "transaction_status": {
+    "pending_confirmation": "odottaa vahvistusta",
+    "pending_timeout": "vahvistamaton - tarkista myöhemmin"
+  },
   "wallets": "lompakot"
 }

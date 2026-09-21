@@ -2,6 +2,21 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.11] - 2026-09-20 (QuickMythril fork test build)
+
+### Added
+
+- A QORT send now appears immediately in the coin's transaction list as a "pending confirmation" row (with its signature, amount, and recipient), tracked in a shared module (`src/common/pendingSends.ts`) and polled every 15 s against `SEARCH_TRANSACTIONS`/`GET_QORTAL_TRANSACTIONS` (`confirmationStatus: 'BOTH'`) until a block height is seen, then flips to confirmed and refreshes the QORT balance exactly once. Tracking survives navigating away from the coin page to the main grid and back - a single poller keeps running as long as either is open. If no confirmation appears within an absolute 30-minute wall-clock deadline (checked on every poll and when the app becomes visible again, not an active-poll count) the row is marked "unconfirmed - check later" instead of polling forever.
+- A shared, module-level balance cache (`src/common/balanceCache.ts`) keyed by the selected Home account and chain, with a 2-minute freshness window. The main coin grid renders cached balances instantly on every mount and only re-fetches a coin when its cache is stale, when it was just sent from or just confirmed, on the manual retry button, or when the page becomes visible again after being hidden for more than 2 minutes. A `qortiumBridgeStateChanged` event no longer forces a whole-grid refetch unless a coin's actual capability set changed. Switching Home accounts clears both this cache and the pending-send tracker above, so one account's balances or in-flight sends can never appear under another.
+- While the coin grid or the QORT coin page is open, QORT's balance is polled every 60 s (a single cheap `GET_BALANCE`) so an incoming payment is noticed without opening the coin page; on the coin page, a balance change also refreshes that coin's transaction history. Foreign coins are not polled on this interval and keep their existing 3-minute cadence. All of this polling pauses while the document is hidden.
+- A shared `useSuggestedFee` hook now loads the suggested fee for every path that opens a send form, including a deep link (`?send=true`, or the Home `wallet` assignment-role link) that previously bypassed the fee lookup entirely - this is what made the grid's quick-send action show no suggested fee even though the coin page's own Send button did. The fee field now shows a "loading fee…" state and Send stays disabled until the lookup resolves or fails.
+- A foreign send rejected with a message containing "previous transaction hash is invalid" (a known Qortium Core spend-context serialization bug, fixed in Core after 1.8.0) now shows an additional one-line hint that this is a Core-update issue, not a wallet or balance problem.
+
+### Fixed
+
+- A native QORT send that Home can't confirm the broadcast outcome for (`accepted:false`, `outcome: 'unknown'` or `'mismatch'`) now shows the same "transaction status unknown - don't retry" state as an ambiguous foreign send, instead of always being treated as a hard failure.
+- The QORT coin page's 60-second balance poll no longer compares against a value captured when the poll effect happened to start (always empty on the very first tick); it now compares against the balance the last real fetch actually resolved, so an unchanged balance never triggers a spurious history refetch.
+
 ## [1.7.10] - 2026-09-20 (QuickMythril fork test build, published as APP/QortiumHomeTest/Wallet)
 
 ### Added

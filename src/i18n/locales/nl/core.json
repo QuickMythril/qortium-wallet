@@ -53,12 +53,14 @@
     "optional_custom_fee": "optionele aangepaste vergoeding ({{ coin }})",
     "optional_fee_per_byte": "optionele vergoeding per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR-netwerkvergoeding is vast - deze waarde is alleen ter weergave",
+    "fee_loading": "vergoeding laden…",
     "fee_lookup_unavailable": "vergoedingsopzoeking niet beschikbaar - standaard van Home/Core wordt gebruikt",
     "confirm_send": "verzending bevestigen",
     "transaction_sent": "transactie verzonden",
     "send_failed": "er is iets misgegaan. probeer het opnieuw.",
     "send_pending_title": "transactiestatus onbekend",
     "send_pending_hint": "we konden niet bevestigen dat dit is gelukt. probeer het niet opnieuw - controleer eerst de openstaande transacties in Home.",
+    "core_spend_context_bug_hint": "Je Qortium Core moet worden bijgewerkt (spend-context-serialisatiefout); dit is geen wallet- of saldoprobleem.",
     "amount_invalid": "voer een positief bedrag in met maximaal {{ decimals }} decimalen.",
     "recipient_invalid": "adres van ontvanger is verplicht en mag maximaal 256 tekens bevatten.",
     "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen."
@@ -200,5 +202,9 @@
   "total_amount": "totaalbedrag",
   "transactions": "lijst met transacties",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "wacht op bevestiging",
+    "pending_timeout": "onbevestigd - later controleren"
+  },
   "wallets": "portemonnees"
 }

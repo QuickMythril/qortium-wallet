@@ -53,12 +53,14 @@
     "optional_custom_fee": "opcionális egyéni díj ({{ coin }})",
     "optional_fee_per_byte": "opcionális díj byte-onként ({{ coin }})",
     "arrr_fixed_fee": "az ARRR hálózati díj rögzített - ez az érték csak megjelenítési célokat szolgál",
+    "fee_loading": "díj betöltése…",
     "fee_lookup_unavailable": "a díjlekérdezés nem érhető el - a Home/Core alapértelmezett értéket használja",
     "confirm_send": "küldés megerősítése",
     "transaction_sent": "tranzakció elküldve",
     "send_failed": "valami hiba történt. kérjük, próbáld újra.",
     "send_pending_title": "a tranzakció állapota ismeretlen",
     "send_pending_hint": "nem tudtuk megerősíteni, hogy ez átment. ne próbáld újra - előbb nézd meg a függőben lévő tranzakciókat a Home-ban.",
+    "core_spend_context_bug_hint": "A Qortium Core-odat frissíteni kell (spend-context szerializációs hiba); ez nem a tárca vagy az egyenleg hibája.",
     "amount_invalid": "adj meg egy pozitív összeget legfeljebb {{ decimals }} tizedesjeggyel.",
     "recipient_invalid": "a címzett címe kötelező és legfeljebb 256 karakter lehet.",
     "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel."
@@ -200,5 +202,9 @@
   "total_amount": "teljes összeg",
   "transactions": "tranzakciók listája",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "megerősítésre vár",
+    "pending_timeout": "nincs megerősítve - nézd meg később"
+  },
   "wallets": "tárcák"
 }

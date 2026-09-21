@@ -53,12 +53,14 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "chargement des frais…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
     "send_pending_title": "transaction status unknown",
     "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "Votre Qortium Core doit être mis à jour (sérialisation du spend-context) ; ce n'est pas un problème de portefeuille ou de solde.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
@@ -200,5 +202,9 @@
   "total_amount": "montant total",
   "transactions": "liste des transactions",
   "transaction_hash": "Hachage TX",
+  "transaction_status": {
+    "pending_confirmation": "en attente de confirmation",
+    "pending_timeout": "non confirmée - vérifiez plus tard"
+  },
   "wallets": "portefeuilles"
 }

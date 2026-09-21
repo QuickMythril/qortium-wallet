@@ -53,12 +53,14 @@
     "optional_custom_fee": "opcjonalna niestandardowa opłata ({{ coin }})",
     "optional_fee_per_byte": "opcjonalna opłata za bajt ({{ coin }})",
     "arrr_fixed_fee": "opłata sieciowa ARRR jest stała - ta wartość służy tylko do wyświetlania",
+    "fee_loading": "wczytywanie opłaty…",
     "fee_lookup_unavailable": "wyszukiwanie opłat niedostępne - zostanie użyta domyślna wartość Home/Core",
     "confirm_send": "potwierdź wysłanie",
     "transaction_sent": "transakcja wysłana",
     "send_failed": "coś poszło nie tak. spróbuj ponownie.",
     "send_pending_title": "status transakcji nieznany",
     "send_pending_hint": "nie mogliśmy potwierdzić, że transakcja się powiodła. nie próbuj ponownie - najpierw sprawdź oczekujące transakcje w Home.",
+    "core_spend_context_bug_hint": "Twój Qortium Core wymaga aktualizacji (błąd serializacji spend-context); to nie jest problem portfela ani salda.",
     "amount_invalid": "wprowadź dodatnią kwotę z maksymalnie {{ decimals }} miejscami dziesiętnymi.",
     "recipient_invalid": "adres odbiorcy jest wymagany i może mieć maksymalnie 256 znaków.",
     "fee_per_byte_invalid": "wprowadź dodatnią opłatę za bajt z maksymalnie 8 miejscami dziesiętnymi."
@@ -200,5 +202,9 @@
   "total_amount": "łączna kwota",
   "transactions": "lista transakcji",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "oczekuje na potwierdzenie",
+    "pending_timeout": "niepotwierdzona - sprawdź później"
+  },
   "wallets": "portfele"
 }

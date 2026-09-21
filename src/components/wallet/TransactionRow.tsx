@@ -2,6 +2,7 @@ import { Box, IconButton } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import { useAtomValue } from 'jotai';
+import { useTranslation } from 'react-i18next';
 import { uiStyleAtom } from '../../state/global/system';
 import { useColors } from '../../theme/ColorTokensContext';
 import { tokens } from '../../theme/tokens';
@@ -19,6 +20,10 @@ export interface TxRow {
   recipient?: string;
   inputs?: { address: string; amount: number; addressInWallet?: boolean }[];
   outputs?: { address: string; amount: number; addressInWallet?: boolean }[];
+  /** A just-sent row shown before the poll has confirmed it (round 2, item A). */
+  pending?: boolean;
+  /** The 30-minute confirmation poll gave up without ever seeing a block height. */
+  pendingTimedOut?: boolean;
 }
 
 interface TransactionRowProps {
@@ -48,6 +53,7 @@ export function TransactionRow({
   showCoinBadge,
 }: TransactionRowProps) {
   const c = useColors();
+  const { t } = useTranslation('core');
   const uiStyle = useAtomValue(uiStyleAtom);
   const isClassic = uiStyle === 'classic';
   const coinImageUrl = useCoinImageUrl(chain.ticker);
@@ -182,13 +188,19 @@ export function TransactionRow({
         <Box
           sx={{
             fontSize: '0.7rem',
-            color: c.textSecondary,
+            color: row.pending ? c.warning : c.textSecondary,
             whiteSpace: 'nowrap',
             letterSpacing: '0.04em',
             flexShrink: 0,
           }}
         >
-          {row.timestamp ? epochToAgo(row.timestamp) : 'Unconfirmed'}
+          {row.pendingTimedOut
+            ? t('transaction_status.pending_timeout')
+            : row.pending
+              ? t('transaction_status.pending_confirmation')
+              : row.timestamp
+                ? epochToAgo(row.timestamp)
+                : 'Unconfirmed'}
         </Box>
       </Box>
 
