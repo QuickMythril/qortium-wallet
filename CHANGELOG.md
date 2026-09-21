@@ -2,6 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.13] - 2026-09-20 (QuickMythril fork test build)
+
+### Fixed
+
+- Qortal asset images now actually show. `useAssetImageUrl` previously resolved a Qortal image via `GET_QDN_RESOURCE_URL` and loaded it as a cross-origin `<img src>` pointed at the Qortal node's own origin (CSP-limited in Home, and the node answered HTTP 503 for a freshly-requested, never-rendered image) - it never appeared, on either network but especially Qortal. It now fetches the image's bytes through the same bridge as every other asset read (`FETCH_QDN_RESOURCE` with `encoding: 'base64'`, following Q-Assets' own asset-detail-page convention), sniffs the decoded header against an allow-list of real image formats (PNG/JPEG/GIF/WebP/SVG - anything else, or anything that fails to decode, is rejected and never rendered), and renders a same-origin `data:<mime>;base64,...` URL. The fallback chain (issuer image, then the shared `Q-Assets` default avatar on Qortal only, then the placeholder) is unchanged. A `data:` URL never 503s, so the retry-while-Core-is-still-building behavior that used to live at the `<img onError>` level now lives at the fetch level instead (three retries at 1.5s/4s/10s before giving up to the placeholder, never cached as a permanent failure); the issuer's QDN name still surfaces as soon as it's resolved, independently of how long the image fetch/retry takes.
+- The chain badge no longer sits in an absolutely-positioned corner of the circular asset tile, where the tile's own `overflow: hidden` circle crop clipped it, and no longer duplicates the plain-text "qortium"/"qortal" label that used to sit under the asset name on rows and tiles. The badge now replaces that plain-text label in place (rows, tiles, and the detail page header); nothing inside the circular avatar/image wrapper carries the badge on any of the three surfaces.
+
 ## [1.7.12] - 2026-09-20 (QuickMythril fork test build)
 
 ### Added

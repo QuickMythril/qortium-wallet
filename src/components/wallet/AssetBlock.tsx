@@ -10,7 +10,6 @@ import { formatAssetBalance } from '../../utils/assetAmount';
 import type { AssetHolding } from '../../utils/Types';
 import { requestAssetWallet } from '../../common/assetBridge';
 import { useAssetImageUrl } from '../../hooks/useAssetImageUrl';
-import { useRetryingImageSrc } from '../../hooks/useRetryingImageSrc';
 import { ChainBadge } from './ChainBadge';
 
 interface AssetBlockProps {
@@ -37,13 +36,14 @@ export function AssetBlock({
 
   const balance = formatAssetBalance(asset.balance, asset.isDivisible);
   const label = asset.name || `Asset #${asset.assetId}`;
-  const { url: assetImageUrl, issuerName } = useAssetImageUrl(asset.network, {
+  // A resolved image is already a `data:` URL fetched (and, if needed,
+  // retried) inside the hook itself - no further onError/retry needed here,
+  // unlike a coin icon's THUMBNAIL http URL.
+  const { url: assetImageSrc, issuerName } = useAssetImageUrl(asset.network, {
     assetId: asset.assetId,
     name: asset.name,
     owner: asset.owner,
   });
-  const { src: assetImageSrc, onError: onAssetImageError } =
-    useRetryingImageSrc(assetImageUrl, label);
 
   const handleMouseEnter = () => {
     setHovered(true);
@@ -110,17 +110,6 @@ export function AssetBlock({
         opacity: isDragging ? 0.85 : 1,
       }}
     >
-      {/* Chain-of-origin badge - always rendered, independent of hover/image
-          state, so Qortium and Qortal tiles stay distinguishable even with
-          the letter-circle placeholder alone. */}
-      <Box sx={{ position: 'absolute', top: 6, right: 6, zIndex: 1 }}>
-        <ChainBadge
-          network={asset.network}
-          assetId={asset.assetId}
-          issuerName={issuerName}
-        />
-      </Box>
-
       <Box
         sx={{
           position: 'relative',
@@ -136,7 +125,6 @@ export function AssetBlock({
             component="img"
             src={assetImageSrc}
             alt=""
-            onError={onAssetImageError}
             sx={{
               position: 'absolute',
               width: '100%',
@@ -253,15 +241,12 @@ export function AssetBlock({
         >
           {label}
         </Box>
-        <Box
-          sx={{
-            fontSize: '0.5rem',
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-            color: hovered ? c.accentText : c.textSecondary,
-          }}
-        >
-          {asset.network}
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <ChainBadge
+            network={asset.network}
+            assetId={asset.assetId}
+            issuerName={issuerName}
+          />
         </Box>
         <Box
           sx={{
