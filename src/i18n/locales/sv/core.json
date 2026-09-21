@@ -68,8 +68,13 @@
     "send_pending_hint": "vi kunde inte bekräfta att detta gick igenom. försök inte igen - kontrollera väntande transaktioner i Home först.",
     "core_spend_context_bug_hint": "Din Qortium Core behöver uppdateras (spend-context-serialiseringsfel); detta är inte ett problem med plånboken eller saldot.",
     "amount_invalid": "ange ett positivt belopp med upp till {{ decimals }} decimaler.",
+    "amount_below_minimum": "minimum är {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "belopp plus uppskattad avgift kan överstiga ditt saldo",
     "recipient_invalid": "mottagarens adress är obligatorisk och får vara högst 256 tecken.",
-    "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler."
+    "recipient_invalid_coin": "inte en giltig {{ ticker }}-adress",
+    "doge_dgb_look_alike": "DOGE- och DGB-legacyadresser liknar varandra - dubbelkolla myntet.",
+    "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler.",
+    "resolution_invalid_coin_address": "kontaktens {{ ticker }}-adress är inte giltig"
   },
   "prepared_transaction": {
     "title": "förberedd transaktion",

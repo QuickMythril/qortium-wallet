@@ -68,8 +68,13 @@
     "send_pending_hint": "לא הצלחנו לאשר שהעסקה בוצעה. אל תנסה שוב - בדוק את העסקאות הממתינות ב-Home קודם.",
     "core_spend_context_bug_hint": "ה-Qortium Core שלך זקוק לעדכון (תקלת סריאליזציה של הקשר ההוצאה); זו אינה בעיה בארנק או ביתרה.",
     "amount_invalid": "הזן סכום חיובי עם עד {{ decimals }} ספרות עשרוניות.",
+    "amount_below_minimum": "המינימום הוא {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "הסכום בתוספת העמלה המשוערת עשוי לחרוג מהיתרה שלך",
     "recipient_invalid": "כתובת המקבל נדרשת ועד 256 תווים.",
-    "fee_per_byte_invalid": "הזן עמלה חיובית לבייט עם עד 8 ספרות עשרוניות."
+    "recipient_invalid_coin": "כתובת {{ ticker }} לא תקינה",
+    "doge_dgb_look_alike": "כתובות DOGE ו-DGB מדור קודם נראות דומות - בדוק שוב את המטבע.",
+    "fee_per_byte_invalid": "הזן עמלה חיובית לבייט עם עד 8 ספרות עשרוניות.",
+    "resolution_invalid_coin_address": "כתובת ה-{{ ticker }} של איש הקשר אינה תקינה"
   },
   "prepared_transaction": {
     "title": "עסקה מוכנה",

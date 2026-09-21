@@ -68,8 +68,13 @@
     "send_pending_hint": "nem tudtuk megerősíteni, hogy ez átment. ne próbáld újra - előbb nézd meg a függőben lévő tranzakciókat a Home-ban.",
     "core_spend_context_bug_hint": "A Qortium Core-odat frissíteni kell (spend-context szerializációs hiba); ez nem a tárca vagy az egyenleg hibája.",
     "amount_invalid": "adj meg egy pozitív összeget legfeljebb {{ decimals }} tizedesjeggyel.",
+    "amount_below_minimum": "a minimum {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "az összeg és a becsült díj együtt meghaladhatja az egyenleged",
     "recipient_invalid": "a címzett címe kötelező és legfeljebb 256 karakter lehet.",
-    "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel."
+    "recipient_invalid_coin": "nem érvényes {{ ticker }} cím",
+    "doge_dgb_look_alike": "A DOGE és a DGB régi típusú címei hasonlóak - ellenőrizd újra az érmét.",
+    "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel.",
+    "resolution_invalid_coin_address": "a kapcsolat {{ ticker }} címe nem érvényes"
   },
   "prepared_transaction": {
     "title": "előkészített tranzakció",

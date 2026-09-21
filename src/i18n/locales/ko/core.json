@@ -68,8 +68,13 @@
     "send_pending_hint": "이 거래가 성공했는지 확인할 수 없습니다. 다시 시도하지 마세요 - 먼저 Home에서 대기 중인 거래를 확인하세요.",
     "core_spend_context_bug_hint": "Qortium Core를 업데이트해야 합니다 (spend-context 직렬화 오류). 지갑이나 잔액 문제가 아닙니다.",
     "amount_invalid": "소수점 {{ decimals }}자리 이하의 양수 금액을 입력하세요.",
+    "amount_below_minimum": "최소 금액은 {{ min }} {{ coin }}입니다",
+    "amount_exceeds_balance_with_fee": "금액과 예상 수수료의 합이 잔액을 초과할 수 있습니다",
     "recipient_invalid": "수신자 주소는 필수이며 256자 이하여야 합니다.",
-    "fee_per_byte_invalid": "소수점 8자리 이하의 양수 바이트당 수수료를 입력하세요."
+    "recipient_invalid_coin": "유효한 {{ ticker }} 주소가 아닙니다",
+    "doge_dgb_look_alike": "DOGE와 DGB의 레거시 주소는 비슷해 보입니다 - 코인을 다시 확인하세요.",
+    "fee_per_byte_invalid": "소수점 8자리 이하의 양수 바이트당 수수료를 입력하세요.",
+    "resolution_invalid_coin_address": "연락처의 {{ ticker }} 주소가 유효하지 않습니다"
   },
   "prepared_transaction": {
     "title": "준비된 거래",

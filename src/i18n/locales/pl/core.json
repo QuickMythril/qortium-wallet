@@ -68,8 +68,13 @@
     "send_pending_hint": "nie mogliśmy potwierdzić, że transakcja się powiodła. nie próbuj ponownie - najpierw sprawdź oczekujące transakcje w Home.",
     "core_spend_context_bug_hint": "Twój Qortium Core wymaga aktualizacji (błąd serializacji spend-context); to nie jest problem portfela ani salda.",
     "amount_invalid": "wprowadź dodatnią kwotę z maksymalnie {{ decimals }} miejscami dziesiętnymi.",
+    "amount_below_minimum": "minimum to {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "kwota plus szacowana opłata może przekroczyć twoje saldo",
     "recipient_invalid": "adres odbiorcy jest wymagany i może mieć maksymalnie 256 znaków.",
-    "fee_per_byte_invalid": "wprowadź dodatnią opłatę za bajt z maksymalnie 8 miejscami dziesiętnymi."
+    "recipient_invalid_coin": "nieprawidłowy adres {{ ticker }}",
+    "doge_dgb_look_alike": "starsze adresy DOGE i DGB wyglądają podobnie - sprawdź jeszcze raz monetę.",
+    "fee_per_byte_invalid": "wprowadź dodatnią opłatę za bajt z maksymalnie 8 miejscami dziesiętnymi.",
+    "resolution_invalid_coin_address": "adres {{ ticker }} kontaktu jest nieprawidłowy"
   },
   "prepared_transaction": {
     "title": "przygotowana transakcja",

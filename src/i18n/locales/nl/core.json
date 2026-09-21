@@ -68,8 +68,13 @@
     "send_pending_hint": "we konden niet bevestigen dat dit is gelukt. probeer het niet opnieuw - controleer eerst de openstaande transacties in Home.",
     "core_spend_context_bug_hint": "Je Qortium Core moet worden bijgewerkt (spend-context-serialisatiefout); dit is geen wallet- of saldoprobleem.",
     "amount_invalid": "voer een positief bedrag in met maximaal {{ decimals }} decimalen.",
+    "amount_below_minimum": "minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "bedrag plus de geschatte vergoeding kan uw saldo overschrijden",
     "recipient_invalid": "adres van ontvanger is verplicht en mag maximaal 256 tekens bevatten.",
-    "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen."
+    "recipient_invalid_coin": "geen geldig {{ ticker }}-adres",
+    "doge_dgb_look_alike": "DOGE- en DGB-legacyadressen lijken op elkaar - controleer de munt nog eens.",
+    "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen.",
+    "resolution_invalid_coin_address": "het {{ ticker }}-adres van het contact is niet geldig"
   },
   "prepared_transaction": {
     "title": "voorbereide transactie",

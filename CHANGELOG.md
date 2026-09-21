@@ -2,6 +2,14 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.14] - 2026-09-21 (QuickMythril fork test build)
+
+### Added
+
+- The main "All Transactions" unified history page now renders each account's pending (not-yet-confirmed) sends - across every chain, not just the coin page - with the same "pending confirmation" styling CoinDetail already used, at the top of the list, deduped against the fetched rows by signature and cleared automatically the moment the shared poller (`src/common/pendingSends.ts`) sees a confirmation. The page also registers as a poller subscriber itself for as long as it's open, so tracking keeps working even if it's the only pending-sends-aware view currently mounted.
+- The send form now validates the recipient address against the selected coin's real address format - a base58check decode (version byte + checksum) for BTC/LTC/DOGE/RVN/DGB/DASH/NMC/FIRO/QORT, and a bech32 (BIP173) decode + checksum for the segwit chains (BTC `bc1...`, LTC `ltc1...`, DGB `dgb1...`) - instead of only checking that something non-empty and under 256 characters was typed. An invalid address now shows "not a valid `<TICKER>` address" inline and disables Send; a resolved Qortal name or contact card still bypasses this raw-address check, since it already carries a real resolved address. Version bytes are taken directly from Core's `org.qortium.crosschain.BitcoinyChainSpecs.java`; DASH, NMC, and FIRO validators are new, the rest replace the previous regex-only checks. No dependency was added for this - both base58 decoding and the SHA-256 checksum are small, dependency-free implementations in `src/utils/addressValidation.ts`.
+- The send form now warns before submit, rather than only after Core rejects it: `src/config/minimums.ts` declares Core's own minimum non-dust output per foreign chain (BTC 546, LTC 100000, DOGE 100000000, DGB 546, RVN 2730, NMC 546, FIRO 1000, DASH 546 sats/atomic-units - sourced from `BitcoinyChainSpecs.java`), and an amount below it now shows "minimum is X `<TICKER>`" inline and disables Send. Separately, once the balance is known, a non-blocking warning appears when the amount plus an estimated fee (fee-per-byte × 250 bytes for foreign coins, the fixed fee for QORT) would exceed it - this never blocks Send and is skipped entirely for send-max.
+
 ## [1.7.13] - 2026-09-20 (QuickMythril fork test build)
 
 ### Fixed

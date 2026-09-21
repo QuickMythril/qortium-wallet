@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -9,12 +9,19 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
+import { useAuth } from 'qapp-core';
 import { uiStyleAtom } from '../../state/global/system';
 import { useColors } from '../../theme/ColorTokensContext';
 import { tokens } from '../../theme/tokens';
 import { useSupportedChains } from '../../hooks/useSupportedChains';
 import { useUnifiedHistory } from '../../hooks/useUnifiedHistory';
+import type { UnifiedTxRow } from '../../hooks/useUnifiedHistory';
 import { TransactionRow } from './TransactionRow';
+import {
+  getPendingSendsForChain,
+  registerPendingSendsSubscriber,
+  subscribePendingSends,
+} from '../../common/pendingSends';
 
 type Filter = 'all' | 'received' | 'sent';
 
@@ -23,6 +30,7 @@ export function UnifiedHistory() {
   const uiStyle = useAtomValue(uiStyleAtom);
   const isClassic = uiStyle === 'classic';
   const navigate = useNavigate();
+  const { address: homeAccount } = useAuth();
   const { chains } = useSupportedChains();
   const { rows, loadingChains, errorChains, errorMessages } =
     useUnifiedHistory(chains);
@@ -31,12 +39,61 @@ export function UnifiedHistory() {
   const [expandedTxKey, setExpandedTxKey] = useState<string | null>(null);
   const [copiedHashKey, setCopiedHashKey] = useState<string | null>(null);
 
+  // Keep the shared pendingSends poller running for as long as this page
+  // is mounted (Routes.tsx swaps CoinGrid out for UnifiedHistory, same as
+  // it does for CoinDetail - see pendingSends.ts), and re-render whenever
+  // an entry is added, confirmed, or times out.
+  const [pendingSendsVersion, setPendingSendsVersion] = useState(0);
+  useEffect(() => {
+    const unregister = registerPendingSendsSubscriber();
+    const unsubscribeEntries = subscribePendingSends(() => {
+      setPendingSendsVersion((v) => v + 1);
+    });
+    return () => {
+      unregister();
+      unsubscribeEntries();
+    };
+  }, []);
+
+  // Every currently-tracked pending send, for the selected account, across
+  // every supported chain - merged on top of the fetched rows below.
+  // Deduped by signature so a pending row is dropped the moment the real
+  // confirmed transaction shows up in `rows` (same rule CoinDetail uses).
+  const pendingRows = useMemo(() => {
+    const confirmedHashes = new Set(
+      rows.map((row) => row.txHash).filter(Boolean)
+    );
+    const withChain = chains.flatMap((chain) =>
+      getPendingSendsForChain(homeAccount, chain.key).map((entry) => ({
+        entry,
+        chain,
+      }))
+    );
+    withChain.sort((a, b) => b.entry.createdAt - a.entry.createdAt);
+    return withChain
+      .filter(({ entry }) => !confirmedHashes.has(entry.txHash))
+      .map(
+        ({ entry, chain }): UnifiedTxRow => ({
+          txHash: entry.txHash,
+          totalAmount: entry.totalAmount,
+          recipient: entry.recipient,
+          sender: entry.sender,
+          pending: true,
+          pendingTimedOut: entry.timedOut,
+          chain,
+        })
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chains, homeAccount, rows, pendingSendsVersion]);
+
+  const allRows = pendingRows.length === 0 ? rows : [...pendingRows, ...rows];
+
   const hasArrr = chains.some((ch) => ch.coinEnum === 'ARRR');
   const totalNonArrr = chains.filter((ch) => ch.coinEnum !== 'ARRR').length;
   const loadedCount = totalNonArrr - loadingChains.length;
   const stillLoading = loadingChains.length > 0;
 
-  const filteredRows = rows.filter((row) => {
+  const filteredRows = allRows.filter((row) => {
     if (filter === 'received') return (row.totalAmount ?? 0) > 0;
     if (filter === 'sent') return (row.totalAmount ?? 0) <= 0;
     return true;

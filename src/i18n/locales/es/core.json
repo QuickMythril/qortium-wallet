@@ -68,8 +68,13 @@
     "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
     "core_spend_context_bug_hint": "Tu Qortium Core necesita actualizarse (serialización de spend-context); esto no es un problema de la wallet ni del saldo.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
+    "amount_below_minimum": "Minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
-    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
+    "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
+    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
+    "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"
   },
   "prepared_transaction": {
     "title": "Prepared transaction",

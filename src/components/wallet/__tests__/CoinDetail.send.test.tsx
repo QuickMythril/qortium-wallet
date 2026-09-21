@@ -75,6 +75,34 @@ const btcChain: ChainConfig = {
   },
 };
 
+const dgbChain: ChainConfig = {
+  key: 'DGB',
+  name: 'DigiByte',
+  ticker: 'DGB',
+  coinEnum: 'DGB',
+  route: 'digibyte',
+  defaultFee: 0.001,
+  isNative: false,
+  decimalPlaces: 8,
+  activeNetwork: 'MAIN',
+  supportsHtlc: true,
+  supportsLocalChainTrades: true,
+  homeWallet: {
+    contract: HOME_WALLET_CONTRACT,
+    implemented: true,
+    protocol: 'qdnRequest',
+    read: true,
+    readMode: 'PUBLIC_NODE',
+    receive: true,
+    receiveMode: 'HOME_LOCAL',
+    requiresUnlockedAccount: true,
+    send: true,
+    serverManagement: true,
+    sendMode: 'HOME_SIGNED_PUBLIC_NODE',
+    serverManagementMode: 'HOME_LOCAL',
+  },
+};
+
 const qortChain: ChainConfig = {
   key: 'QORT',
   name: 'Qortal',
@@ -204,7 +232,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'qort-recipient-address'
+      'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -217,7 +245,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     );
     expect(qortalRequestMock).toHaveBeenCalledWith({
       action: 'SEND_QORT',
-      recipient: 'qort-recipient-address',
+      recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
       amount: 1.25,
     });
     expect(qortalRequestMock).not.toHaveBeenCalledWith({
@@ -257,7 +285,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'qort-recipient-address'
+      'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -300,7 +328,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'qort-recipient-address'
+      'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -362,7 +390,7 @@ describe('CoinDetail foreign send flow', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -372,7 +400,7 @@ describe('CoinDetail foreign send flow', () => {
     expect(payload).toMatchObject({
       action: 'SEND_COIN',
       coin: 'BTC',
-      recipient: 'btc-recipient-address',
+      recipient: '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu',
       amount: '1.25',
       feePerByte: '0.0002',
     });
@@ -396,7 +424,7 @@ describe('CoinDetail foreign send flow', () => {
     expect(screen.getByLabelText(/amount \(BTC\)/i)).toBeDisabled();
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -406,7 +434,7 @@ describe('CoinDetail foreign send flow', () => {
     expect(payload).toMatchObject({
       action: 'SEND_COIN',
       coin: 'BTC',
-      recipient: 'btc-recipient-address',
+      recipient: '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu',
       sendMax: true,
       feePerByte: '0.0002',
     });
@@ -428,7 +456,7 @@ describe('CoinDetail foreign send flow', () => {
     const confirm = screen.getByRole('button', { name: /confirm send/i });
 
     await user.type(amountInput, '0');
-    await user.type(recipientInput, 'btc-recipient-address');
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
     expect(confirm).toBeDisabled();
 
     await user.clear(amountInput);
@@ -444,6 +472,161 @@ describe('CoinDetail foreign send flow', () => {
     expect(sendCalls(qdnRequestMock)).toHaveLength(0);
   });
 
+  // Round 4, item B: per-coin address validation (real base58check, not a
+  // generic length/shape check).
+  it('shows a coin-specific error and blocks Send for a recipient that fails the checksum', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const confirm = screen.getByRole('button', { name: /confirm send/i });
+
+    await user.type(amountInput, '1');
+    // Well-formed length/shape, but not a real base58check-encoded address.
+    await user.type(recipientInput, 'btc-recipient-address');
+
+    expect(
+      await screen.findByText(/not a valid BTC address/i)
+    ).toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    expect(sendCalls(qdnRequestMock)).toHaveLength(0);
+  });
+
+  it("accepts a real checksummed address and doesn't show the coin-specific error", async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+
+    await user.type(amountInput, '1');
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+    expect(
+      screen.queryByText(/not a valid BTC address/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm send/i })).toBeEnabled();
+  });
+
+  // Round 4 review item 3: DOGE and DGB share Core's P2PKH version byte
+  // (30) - a valid address can't be told apart as one coin vs. the other
+  // by decoding alone (see the NOTE on validateDogeAddress() in
+  // addressValidation.ts), so the form shows a soft, non-blocking
+  // reminder instead of trying to (wrongly) distinguish them.
+  it('shows a soft, non-blocking note that DOGE and DGB legacy addresses look alike', async () => {
+    const user = userEvent.setup();
+    renderDetail(dgbChain);
+
+    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await screen.findByLabelText(/amount \(DGB\)/i);
+    await waitFor(() =>
+      expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(
+        0.0002
+      )
+    );
+
+    expect(
+      screen.getByText(/DOGE and DGB legacy addresses look alike/i)
+    ).toBeInTheDocument();
+
+    // Informational only - never blocks Send.
+    await user.type(screen.getByLabelText(/amount \(DGB\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      'DLhVrzoqSXssQxcKkXt7Cr1ny8uG9gSCHR'
+    );
+    expect(screen.getByRole('button', { name: /confirm send/i })).toBeEnabled();
+  });
+
+  it('does not show the DOGE/DGB look-alike note for a coin unrelated to the collision (BTC)', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+
+    expect(
+      screen.queryByText(/DOGE and DGB legacy addresses look alike/i)
+    ).not.toBeInTheDocument();
+  });
+
+  // Round 4, item C: dust minimum (Core's own declared minNonDustOutput -
+  // 546 sats for BTC) and balance-vs-(amount+fee) warning.
+  it('blocks Send and shows an inline minimum message for an amount below the dust threshold', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const confirm = screen.getByRole('button', { name: /confirm send/i });
+
+    await user.type(amountInput, '0.000005'); // 500 sats < 546 sat minimum
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+    expect(
+      await screen.findByText(/minimum is 0\.00000546 BTC/i)
+    ).toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    expect(sendCalls(qdnRequestMock)).toHaveLength(0);
+  });
+
+  it('allows an amount exactly at the dust minimum', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+
+    await user.type(amountInput, '0.00000546'); // exactly 546 sats
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+    expect(
+      screen.queryByText(/minimum is 0\.00000546 BTC/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm send/i })).toBeEnabled();
+  });
+
+  it('shows a non-blocking warning when amount plus the estimated fee exceeds the balance', async () => {
+    // The balance fetch is gated on walletReadyAtom (see CoinDetail's
+    // fetchBalance-triggering effect) - none of this describe block's
+    // other tests need a loaded balance, so it's off by default here.
+    getDefaultStore().set(walletReadyAtom, true);
+    try {
+      const user = userEvent.setup();
+      renderDetail();
+
+      await openSendDialog(user);
+      await waitFor(() =>
+        expect(
+          screen.getByText(/balance:/i).closest('div')?.textContent
+        ).toMatch(/1\.23456789\s*BTC/)
+      );
+      const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+      const recipientInput = screen.getByLabelText(/recipient address/i);
+
+      // Balance is 1.23456789 BTC (123456789 sats from GET_WALLET_BALANCE).
+      // The default suggested fee is 0.0002 BTC/byte * 250 bytes = 0.05
+      // BTC, so 1.2 + 0.05 = 1.25 > the balance.
+      await user.type(amountInput, '1.2');
+      await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+      expect(
+        await screen.findByText(
+          /amount plus the estimated fee may exceed your balance/i
+        )
+      ).toBeInTheDocument();
+      // A balance warning is informational only - it never blocks Send.
+      expect(
+        screen.getByRole('button', { name: /confirm send/i })
+      ).toBeEnabled();
+    } finally {
+      getDefaultStore().set(walletReadyAtom, false);
+    }
+  });
+
   it('revokes an open send dialog immediately on a bridge-state change', async () => {
     const user = userEvent.setup();
     renderDetail();
@@ -452,7 +635,7 @@ describe('CoinDetail foreign send flow', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     const confirm = screen.getByRole('button', { name: /confirm send/i });
     expect(confirm).toBeEnabled();
@@ -497,7 +680,7 @@ describe('CoinDetail foreign send flow', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -517,7 +700,7 @@ describe('CoinDetail foreign send flow', () => {
       await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
       await user.type(
         screen.getByLabelText(/recipient address/i),
-        'btc-recipient-address'
+        '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
       );
       await user.click(screen.getByRole('button', { name: /confirm send/i }));
       await screen.findByText(/transaction sent/i);
@@ -641,7 +824,7 @@ describe('CoinDetail foreign capability refusal', () => {
     await userEvent.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await userEvent.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     const confirm = screen.getByRole('button', { name: /confirm send/i });
     expect(confirm).toBeDisabled();
@@ -699,7 +882,7 @@ describe('CoinDetail recipient-by-name flow', () => {
     const user = userEvent.setup();
     vi.mocked(resolveContactModule.resolveContact).mockResolvedValue({
       status: 'resolved',
-      address: 'btc-resolved-address',
+      address: '16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf',
       coin: 'BTC',
       name: 'Alice',
     });
@@ -714,7 +897,7 @@ describe('CoinDetail recipient-by-name flow', () => {
 
     expect(
       await screen.findByText(
-        /sending to Alice's BTC address: btc-resolved-address/i
+        /sending to Alice's BTC address: 16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf/i
       )
     ).toBeInTheDocument();
 
@@ -723,8 +906,49 @@ describe('CoinDetail recipient-by-name flow', () => {
 
     await waitFor(() => expect(sendCalls(qdnRequestMock)).toHaveLength(1));
     expect(sendCalls(qdnRequestMock)[0]).toMatchObject({
-      recipient: 'btc-resolved-address',
+      recipient: '16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf',
     });
+  });
+
+  // Round 4 review item 2: a resolved name/contact card supplies its
+  // address verbatim (resolveContact.ts) - that address is exactly as
+  // untrusted as one typed directly, so it must be validated too, not
+  // just trusted because "a name resolved".
+  it('disables Confirm Send when a resolved contact address is not valid for this coin (wrong chain)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveContactModule.resolveContact).mockResolvedValue({
+      status: 'resolved',
+      // A genuinely valid, correctly-checksummed QORT address (version 58)
+      // published under the BTC slot of a contact card - never a valid
+      // BTC address (versions 0/5).
+      address: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
+      coin: 'BTC',
+      name: 'Wrongchain',
+    });
+
+    renderDetail();
+    await openSendDialog(user);
+    await user.click(screen.getByRole('button', { name: /^name$/i }));
+    await user.type(
+      screen.getByLabelText(/recipient's qortium name/i),
+      'Wrongchain'
+    );
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1.25');
+
+    expect(
+      await screen.findByText(/the contact's BTC address is not valid/i)
+    ).toBeInTheDocument();
+    // The green "resolved to" line must not also show for an invalid
+    // resolved address.
+    expect(
+      screen.queryByText(/sending to Wrongchain's BTC address/i)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /confirm send/i })
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
+    expect(sendCalls(qdnRequestMock)).toHaveLength(0);
   });
 
   it('shows the coin-not-published message and disables Confirm Send', async () => {
@@ -759,13 +983,13 @@ describe('CoinDetail recipient-by-name flow', () => {
     vi.mocked(resolveContactModule.resolveContact)
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-old-address',
+        address: '1BcktgV7EjHmxEwQDFFhhztzNqZkd5gdm',
         coin: 'BTC',
         name: 'Alice',
       })
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-new-address',
+        address: '1GvdqXEAMbSARrubpNP44Vqz4kr6TDPgC',
         coin: 'BTC',
         name: 'Alice',
       });
@@ -777,13 +1001,15 @@ describe('CoinDetail recipient-by-name flow', () => {
       screen.getByLabelText(/recipient's qortium name/i),
       'Alice'
     );
-    await screen.findByText(/btc-old-address/i);
+    await screen.findByText(/1BcktgV7EjHmxEwQDFFhhztzNqZkd5gdm/i);
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1.25');
 
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/btc-new-address/i)).toBeInTheDocument()
+      expect(
+        screen.getByText(/1GvdqXEAMbSARrubpNP44Vqz4kr6TDPgC/i)
+      ).toBeInTheDocument()
     );
     expect(sendCalls(qdnRequestMock)).toHaveLength(0);
     expect(
@@ -872,13 +1098,13 @@ describe('CoinDetail recipient-by-name flow', () => {
     vi.mocked(resolveContactModule.resolveContact)
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-alice-address',
+        address: '1NEWnMyDUTaYuUsoRVWQQznykg8Yc2Ynn',
         coin: 'BTC',
         name: 'Alice',
       })
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-bob-address',
+        address: '1TYPjCiGbKiwP6r12cdkmVjySbQryonEV',
         coin: 'BTC',
         name: 'Bob',
       });
@@ -979,7 +1205,7 @@ describe('CoinDetail structured send errors (W1)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -1003,7 +1229,7 @@ describe('CoinDetail structured send errors (W1)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -1098,7 +1324,7 @@ describe('CoinDetail redundant-unlock avoidance (W2)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -1118,7 +1344,7 @@ describe('CoinDetail redundant-unlock avoidance (W2)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -1174,7 +1400,7 @@ describe('CoinDetail pending native send confirmation (round 2, item A)', () => 
             return [
               {
                 signature: 'sig-abc',
-                recipient: 'qort-recipient-address',
+                recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
                 amount: '1.25',
                 fee: '0.001',
                 timestamp: Date.now(),
@@ -1190,7 +1416,7 @@ describe('CoinDetail pending native send confirmation (round 2, item A)', () => 
             action: 'PAYMENT',
             accepted: true,
             amount: '1.25',
-            recipient: 'qort-recipient-address',
+            recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
             transactionSignature: 'sig-abc',
           };
         default:
@@ -1209,7 +1435,7 @@ describe('CoinDetail pending native send confirmation (round 2, item A)', () => 
       target: { value: '1.25' },
     });
     fireEvent.change(screen.getByLabelText(/recipient address/i), {
-      target: { value: 'qort-recipient-address' },
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
     });
     fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
     await flushMicrotasks();
@@ -1269,7 +1495,7 @@ describe('CoinDetail pending native send confirmation (round 2, item A)', () => 
       target: { value: '1.25' },
     });
     fireEvent.change(screen.getByLabelText(/recipient address/i), {
-      target: { value: 'qort-recipient-address' },
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
     });
     fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
     await flushMicrotasks();
@@ -1315,7 +1541,7 @@ describe('CoinDetail pending native send confirmation (round 2, item A)', () => 
       target: { value: '1.25' },
     });
     fireEvent.change(screen.getByLabelText(/recipient address/i), {
-      target: { value: 'qort-recipient-address' },
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
     });
     fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
     await flushMicrotasks();
@@ -1357,7 +1583,7 @@ describe('CoinDetail pending native send confirmation (round 2, item A)', () => 
       target: { value: '1.25' },
     });
     fireEvent.change(screen.getByLabelText(/recipient address/i), {
-      target: { value: 'qort-recipient-address' },
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
     });
     fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
     await flushMicrotasks();
@@ -1415,12 +1641,14 @@ describe('CoinDetail deep-linked send dialog loads a suggested fee (round 2, ite
     // This is exactly what the grid's quick-send button navigates to
     // (CoinBlock/CoinListRow's handleSend) - the bug was that arriving
     // this way never called openSend(), so no fee was ever loaded.
-    renderDetail(btcChain, ['/bitcoin?send=true&to=btc-recipient-address']);
+    renderDetail(btcChain, [
+      '/bitcoin?send=true&to=16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu',
+    ]);
 
     // The URL-prefilled recipient must survive - openSend()'s full form
     // reset must not run for this path.
     expect(await screen.findByLabelText(/recipient address/i)).toHaveValue(
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(
       'loading fee…'
@@ -1521,7 +1749,7 @@ describe('CoinDetail Core spend-context bug hint (round 2, item E)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -1546,7 +1774,7 @@ describe('CoinDetail Core spend-context bug hint (round 2, item E)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -1569,7 +1797,7 @@ describe('CoinDetail Core spend-context bug hint (round 2, item E)', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 

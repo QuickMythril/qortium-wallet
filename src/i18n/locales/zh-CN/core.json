@@ -68,8 +68,13 @@
     "send_pending_hint": "我们无法确认这笔交易是否成功。请勿重试 - 请先在 Home 中查看待处理交易。",
     "core_spend_context_bug_hint": "您的 Qortium Core 需要更新(spend-context 序列化错误);这不是钱包或余额的问题。",
     "amount_invalid": "请输入最多 {{ decimals }} 位小数的正数金额。",
+    "amount_below_minimum": "最低金额为 {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "金额加上预估手续费可能超过您的余额",
     "recipient_invalid": "收款地址为必填项，且不得超过256个字符。",
-    "fee_per_byte_invalid": "请输入最多8位小数的正数每字节手续费。"
+    "recipient_invalid_coin": "不是有效的 {{ ticker }} 地址",
+    "doge_dgb_look_alike": "DOGE 和 DGB 的传统地址格式相似 - 请再次确认所选币种。",
+    "fee_per_byte_invalid": "请输入最多8位小数的正数每字节手续费。",
+    "resolution_invalid_coin_address": "该联系人的 {{ ticker }} 地址无效"
   },
   "prepared_transaction": {
     "title": "已准备的交易",

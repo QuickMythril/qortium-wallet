@@ -52,10 +52,14 @@ import {
   type PreparedTransaction,
 } from './PreparedTransactionPreview';
 import {
+  decimalToAtomic,
+  formatAtomicAmount,
   isOptionalPositiveDecimal,
   isPositiveDecimal,
   isValidRecipient,
 } from '../../utils/walletSend';
+import { validateAddress } from '../../utils/addressValidation';
+import { minNonDustOutput } from '../../config/minimums';
 import {
   resolveContact,
   type ContactResolution,
@@ -1071,7 +1075,48 @@ export function CoinDetail({ chain }: Props) {
     canUseForeignSendMax && sendMax
       ? true
       : isPositiveDecimal(amount, chain.decimalPlaces);
-  const recipientIsValid = isValidRecipient(recipient);
+
+  // Item C (round 4): Core's own declared minimum non-dust output per
+  // chain (see src/config/minimums.ts) - warn and block before Core
+  // rejects it at broadcast time. Never applies to send-max (no fixed
+  // amount to compare) or to QORT/ARRR (no declared minimum).
+  const minDust = minNonDustOutput(chain.coinEnum);
+  const belowMinimum =
+    minDust != null &&
+    amount !== '' &&
+    isPositiveDecimal(amount, chain.decimalPlaces) &&
+    decimalToAtomic(amount, chain.decimalPlaces) < BigInt(minDust);
+
+  // Item B (round 4): per-coin address format validation - checksum +
+  // version byte, not just "non-empty and short enough". This applies in
+  // BOTH modes: in 'address' mode it's the raw typed text; in 'name' mode
+  // `recipient` holds the resolved address (set by the resolution effect
+  // below), and that address is exactly as untrusted as a typed one - a
+  // Qortal name's crosschain address or a contact card's published
+  // address (resolveContact.ts) is supplied verbatim by whoever
+  // owns/wrote it, never validated at the source. A malformed or
+  // wrong-chain resolved address must block Send exactly like a
+  // malformed typed one (round 4 review item 2).
+  const genericRecipientOk = isValidRecipient(recipient);
+  const recipientFormatOk = validateAddress(chain.coinEnum, recipient);
+  const recipientIsValid = genericRecipientOk && recipientFormatOk;
+  // Name mode only: the name/contact resolved successfully, but what it
+  // resolved to isn't a valid address for this coin - distinct from
+  // "resolution failed" (no card, name not found, etc.) and shown instead
+  // of the green "resolved to" line.
+  const resolvedAddressInvalid =
+    recipientMode === 'name' &&
+    resolution?.status === 'resolved' &&
+    !recipientFormatOk;
+  // Round 4 review item 3: DOGE and DGB share Core's P2PKH version byte
+  // (30), so a valid address for one coin is indistinguishable from a
+  // valid address for the other by format alone (see the NOTE on
+  // validateDogeAddress() in addressValidation.ts) - a soft reminder,
+  // never blocking, since there is no way to actually tell them apart.
+  const showDogeDgbLookAlikeNote =
+    recipientMode === 'address' &&
+    (chain.coinEnum === 'DOGE' || chain.coinEnum === 'DGB');
+
   const foreignFeeIsValid =
     chain.isNative ||
     chain.coinEnum === 'ARRR' ||
@@ -1081,17 +1126,36 @@ export function CoinDetail({ chain }: Props) {
     !sending &&
     !suggestedFee.loading &&
     amountIsValid &&
+    !belowMinimum &&
     recipientIsValid &&
     foreignFeeIsValid &&
     (recipientMode !== 'name' ||
       (!resolvingRecipient && resolution?.status === 'resolved'));
-  const showAmountError = amount !== '' && !amountIsValid;
+  const showAmountError = amount !== '' && (!amountIsValid || belowMinimum);
   const showRecipientError = recipient !== '' && !recipientIsValid;
+  const recipientErrorIsCoinFormat =
+    showRecipientError && genericRecipientOk && !recipientFormatOk;
   const showFeeError =
     !chain.isNative &&
     chain.coinEnum !== 'ARRR' &&
     suggestedFee.fee !== '' &&
     !foreignFeeIsValid;
+
+  // Item C (round 4): non-blocking balance-vs-(amount+fee) warning, shown
+  // once the balance is known. Never shown for send-max - by definition
+  // that already spends everything sendable, so there's nothing useful to
+  // warn about.
+  const feeEstimate = suggestedFee.fee
+    ? chain.isNative
+      ? parseFloat(suggestedFee.fee) || 0
+      : (parseFloat(suggestedFee.fee) || 0) * 250
+    : 0;
+  const balanceExceeded =
+    balance != null &&
+    !(canUseForeignSendMax && sendMax) &&
+    amount !== '' &&
+    isPositiveDecimal(amount, chain.decimalPlaces) &&
+    parseFloat(amount) + feeEstimate > parseFloat(balance);
 
   const handleCopyHash = (i: number, hash: string) => {
     const finish = () => {
@@ -1820,11 +1884,22 @@ export function CoinDetail({ chain }: Props) {
                     disabled={sending || (canUseForeignSendMax && sendMax)}
                     error={showAmountError}
                     helperText={
-                      showAmountError
-                        ? t('send_dialog.amount_invalid', {
-                            decimals: chain.decimalPlaces,
+                      belowMinimum
+                        ? t('send_dialog.amount_below_minimum', {
+                            min:
+                              minDust != null
+                                ? formatAtomicAmount(
+                                    minDust,
+                                    chain.decimalPlaces
+                                  )
+                                : '',
+                            coin: chain.ticker,
                           })
-                        : undefined
+                        : showAmountError
+                          ? t('send_dialog.amount_invalid', {
+                              decimals: chain.decimalPlaces,
+                            })
+                          : undefined
                     }
                   />
                   {chain.isNative && (
@@ -1865,6 +1940,12 @@ export function CoinDetail({ chain }: Props) {
                     </Button>
                   )}
                 </Box>
+
+                {balanceExceeded && (
+                  <Typography variant="caption" sx={{ color: c.warning }}>
+                    {t('send_dialog.amount_exceeds_balance_with_fee')}
+                  </Typography>
+                )}
 
                 {canUseForeignSendMax && (
                   <FormControlLabel
@@ -1934,19 +2015,33 @@ export function CoinDetail({ chain }: Props) {
                 </Box>
 
                 {recipientMode === 'address' ? (
-                  <TextField
-                    label={t('send_dialog.recipient_address')}
-                    value={recipient}
-                    onChange={(e) => setRecipient(e.target.value.trim())}
-                    fullWidth
-                    disabled={sending}
-                    error={showRecipientError}
-                    helperText={
-                      showRecipientError
-                        ? t('send_dialog.recipient_invalid')
-                        : undefined
-                    }
-                  />
+                  <>
+                    <TextField
+                      label={t('send_dialog.recipient_address')}
+                      value={recipient}
+                      onChange={(e) => setRecipient(e.target.value.trim())}
+                      fullWidth
+                      disabled={sending}
+                      error={showRecipientError}
+                      helperText={
+                        recipientErrorIsCoinFormat
+                          ? t('send_dialog.recipient_invalid_coin', {
+                              ticker: chain.ticker,
+                            })
+                          : showRecipientError
+                            ? t('send_dialog.recipient_invalid')
+                            : undefined
+                      }
+                    />
+                    {showDogeDgbLookAlikeNote && (
+                      <Typography
+                        variant="caption"
+                        sx={{ color: c.textSecondary }}
+                      >
+                        {t('send_dialog.doge_dgb_look_alike')}
+                      </Typography>
+                    )}
+                  </>
                 ) : (
                   <>
                     <TextField
@@ -1969,7 +2064,8 @@ export function CoinDetail({ chain }: Props) {
                       </Typography>
                     )}
                     {!resolvingRecipient &&
-                      resolution?.status === 'resolved' && (
+                      resolution?.status === 'resolved' &&
+                      !resolvedAddressInvalid && (
                         <Typography variant="caption" sx={{ color: c.success }}>
                           {t('send_dialog.resolved_to', {
                             name: resolution.name,
@@ -1978,6 +2074,13 @@ export function CoinDetail({ chain }: Props) {
                           })}
                         </Typography>
                       )}
+                    {!resolvingRecipient && resolvedAddressInvalid && (
+                      <Typography variant="caption" sx={{ color: c.error }}>
+                        {t('send_dialog.resolution_invalid_coin_address', {
+                          ticker: chain.ticker,
+                        })}
+                      </Typography>
+                    )}
                     {!resolvingRecipient &&
                       resolution &&
                       resolution.status !== 'resolved' && (

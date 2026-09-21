@@ -68,8 +68,13 @@
     "send_pending_hint": "emme voineet vahvistaa, että tämä meni läpi. älä yritä uudelleen - tarkista odottavat tapahtumat Homessa ensin.",
     "core_spend_context_bug_hint": "Qortium Core -sovelluksesi täytyy päivittää (spend-context-sarjallistus); tämä ei ole lompakko- tai saldo-ongelma.",
     "amount_invalid": "syötä positiivinen määrä enintään {{ decimals }} desimaalilla.",
+    "amount_below_minimum": "vähimmäismäärä on {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "summa ja arvioitu maksu saattavat ylittää saldosi",
     "recipient_invalid": "vastaanottajan osoite on pakollinen ja saa olla enintään 256 merkkiä.",
-    "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla."
+    "recipient_invalid_coin": "ei kelvollinen {{ ticker }}-osoite",
+    "doge_dgb_look_alike": "DOGE- ja DGB-legacy-osoitteet näyttävät samalta - tarkista kolikko.",
+    "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla.",
+    "resolution_invalid_coin_address": "yhteystiedon {{ ticker }}-osoite ei ole kelvollinen"
   },
   "prepared_transaction": {
     "title": "valmisteltu tapahtuma",

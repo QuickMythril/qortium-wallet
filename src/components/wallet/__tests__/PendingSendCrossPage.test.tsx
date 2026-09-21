@@ -150,7 +150,7 @@ describe('pending QORT send survives navigating from the coin page to the grid',
             return [
               {
                 signature: 'sig-abc',
-                recipient: 'qort-recipient-address',
+                recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
                 amount: '1.25',
                 fee: '0.001',
                 timestamp: Date.now(),
@@ -163,7 +163,7 @@ describe('pending QORT send survives navigating from the coin page to the grid',
           return {
             accepted: true,
             amount: '1.25',
-            recipient: 'qort-recipient-address',
+            recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
             transactionSignature: 'sig-abc',
           };
         default:
@@ -193,7 +193,7 @@ describe('pending QORT send survives navigating from the coin page to the grid',
       target: { value: '1.25' },
     });
     fireEvent.change(screen.getByLabelText(/recipient address/i), {
-      target: { value: 'qort-recipient-address' },
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
     });
     fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
     await flushMicrotasks();
