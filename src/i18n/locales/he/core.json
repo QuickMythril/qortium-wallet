@@ -21,6 +21,12 @@
   "balance_unavailable": "היתרה אינה זמינה",
   "transactions_unavailable": "העסקאות אינן זמינות",
   "amount": "סכום",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "נכס מס' {{id}} · הונפק על ידי {{issuer}}",
+    "issuer_line_unknown": "נכס מס' {{id}} · מנפיק לא ידוע"
+  },
   "balance": "יתרה:",
   "balance_available": "יתרה זמינה:",
   "coins": {

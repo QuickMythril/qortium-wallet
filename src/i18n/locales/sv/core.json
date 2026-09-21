@@ -21,6 +21,12 @@
   "balance_unavailable": "saldot är inte tillgängligt",
   "transactions_unavailable": "transaktioner är inte tillgängliga",
   "amount": "belopp",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "tillgång nr {{id}} · utgiven av {{issuer}}",
+    "issuer_line_unknown": "tillgång nr {{id}} · okänd utgivare"
+  },
   "balance": "saldo:",
   "balance_available": "tillgängligt saldo:",
   "coins": {

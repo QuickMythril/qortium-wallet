@@ -21,6 +21,12 @@
   "balance_unavailable": "soldul nu este disponibil",
   "transactions_unavailable": "tranzacțiile nu sunt disponibile",
   "amount": "sumă",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "activ nr. {{id}} · emis de {{issuer}}",
+    "issuer_line_unknown": "activ nr. {{id}} · emitent necunoscut"
+  },
   "balance": "sold:",
   "balance_available": "sold disponibil:",
   "coins": {

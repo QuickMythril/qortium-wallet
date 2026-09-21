@@ -9,6 +9,9 @@ import { useColors } from '../../theme/ColorTokensContext';
 import { formatAssetBalance } from '../../utils/assetAmount';
 import type { AssetHolding } from '../../utils/Types';
 import { requestAssetWallet } from '../../common/assetBridge';
+import { useAssetImageUrl } from '../../hooks/useAssetImageUrl';
+import { useRetryingImageSrc } from '../../hooks/useRetryingImageSrc';
+import { ChainBadge } from './ChainBadge';
 
 interface AssetBlockProps {
   asset: AssetHolding;
@@ -34,6 +37,13 @@ export function AssetBlock({
 
   const balance = formatAssetBalance(asset.balance, asset.isDivisible);
   const label = asset.name || `Asset #${asset.assetId}`;
+  const { url: assetImageUrl, issuerName } = useAssetImageUrl(asset.network, {
+    assetId: asset.assetId,
+    name: asset.name,
+    owner: asset.owner,
+  });
+  const { src: assetImageSrc, onError: onAssetImageError } =
+    useRetryingImageSrc(assetImageUrl, label);
 
   const handleMouseEnter = () => {
     setHovered(true);
@@ -100,6 +110,17 @@ export function AssetBlock({
         opacity: isDragging ? 0.85 : 1,
       }}
     >
+      {/* Chain-of-origin badge - always rendered, independent of hover/image
+          state, so Qortium and Qortal tiles stay distinguishable even with
+          the letter-circle placeholder alone. */}
+      <Box sx={{ position: 'absolute', top: 6, right: 6, zIndex: 1 }}>
+        <ChainBadge
+          network={asset.network}
+          assetId={asset.assetId}
+          issuerName={issuerName}
+        />
+      </Box>
+
       <Box
         sx={{
           position: 'relative',
@@ -110,21 +131,44 @@ export function AssetBlock({
           justifyContent: 'center',
         }}
       >
+        {assetImageSrc && (
+          <Box
+            component="img"
+            src={assetImageSrc}
+            alt=""
+            onError={onAssetImageError}
+            sx={{
+              position: 'absolute',
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              objectFit: 'cover',
+              opacity: hovered ? 0 : 1,
+              transition: 'opacity 0.15s ease',
+            }}
+          />
+        )}
         <Box
           sx={{
             position: 'absolute',
             width: '100%',
             height: '100%',
             borderRadius: '50%',
-            bgcolor: hovered ? 'rgba(255,255,255,0.15)' : c.accentSoft,
-            boxShadow: `0 0 0 2px ${hovered ? 'rgba(255,255,255,0.5)' : c.accent}`,
+            bgcolor: hovered
+              ? 'rgba(255,255,255,0.15)'
+              : assetImageSrc
+                ? 'transparent'
+                : c.accentSoft,
+            boxShadow: assetImageSrc
+              ? 'none'
+              : `0 0 0 2px ${hovered ? 'rgba(255,255,255,0.5)' : c.accent}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '0.75rem',
             fontWeight: tokens.typography.weightBold,
             color: hovered ? c.accentText : c.accent,
-            opacity: hovered ? 0 : 1,
+            opacity: hovered ? 0 : assetImageSrc ? 0 : 1,
             transition: 'opacity 0.15s ease',
           }}
         >

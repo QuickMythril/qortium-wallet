@@ -21,6 +21,12 @@
   "balance_unavailable": "saldo niet beschikbaar",
   "transactions_unavailable": "transacties niet beschikbaar",
   "amount": "bedrag",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "asset #{{id}} · uitgegeven door {{issuer}}",
+    "issuer_line_unknown": "asset #{{id}} · onbekende uitgever"
+  },
   "balance": "saldo:",
   "balance_available": "beschikbaar saldo:",
   "coins": {

@@ -21,6 +21,12 @@
   "balance_unavailable": "saldo ei ole käytettävissä",
   "transactions_unavailable": "tapahtumat eivät ole käytettävissä",
   "amount": "määrä",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "omaisuuserä nro {{id}} · liikkeeseenlaskija {{issuer}}",
+    "issuer_line_unknown": "omaisuuserä nro {{id}} · tuntematon liikkeeseenlaskija"
+  },
   "balance": "saldo:",
   "balance_available": "käytettävissä oleva saldo:",
   "coins": {

@@ -5,7 +5,13 @@ import { getDefaultStore } from 'jotai';
 import ThemeProviderWrapper from '../../../styles/theme/theme-provider';
 import { CoinGrid } from '../CoinGrid';
 import type { ChainConfig } from '../../../config/chains';
-import { walletReadyAtom } from '../../../state/global/system';
+import type { AssetHolding } from '../../../utils/Types';
+import {
+  walletReadyAtom,
+  viewModeAtom,
+  sortModeAtom,
+  customOrderAtom,
+} from '../../../state/global/system';
 import {
   __resetBalanceCacheForTests,
   clearBalanceCache,
@@ -20,7 +26,7 @@ import { __resetPendingSendsForTests } from '../../../common/pendingSends';
 // drag/sort/asset rendering (unit-tested well enough by inspection and by
 // CoinBlock/CoinListRow's own tests).
 
-const { chainsFixture, accountState } = vi.hoisted(() => {
+const { chainsFixture, accountState, assetsFixture } = vi.hoisted(() => {
   const qortChain: ChainConfig = {
     key: 'QORT',
     name: 'Qortal',
@@ -68,7 +74,12 @@ const { chainsFixture, accountState } = vi.hoisted(() => {
   // Mutable holder so a test can simulate an account switch (change this,
   // then rerender) without needing a real qapp-core auth flow.
   const accountState = { current: 'acct-a' as string | null };
-  return { chainsFixture, accountState };
+  // A single stable array reference (mutated in place via push/length=0,
+  // never reassigned) - round 3's useAssetHoldings mock gotcha: a fresh
+  // array literal returned per call makes every effect depending on
+  // `assets` think the list changed on every render and loop forever.
+  const assetsFixture: AssetHolding[] = [];
+  return { chainsFixture, accountState, assetsFixture };
 });
 
 vi.mock('../../../hooks/useSupportedChains', () => ({
@@ -103,7 +114,7 @@ vi.mock('../../../hooks/useMarketPrices', () => ({
 
 vi.mock('../../../hooks/useAssetHoldings', () => ({
   useAssetHoldings: () => ({
-    assets: [],
+    assets: assetsFixture,
     loading: false,
     networks: [],
     refresh: () => {},
@@ -114,6 +125,10 @@ vi.mock('../../../hooks/useAssetHoldings', () => ({
 
 vi.mock('../../../hooks/useCoinImageUrl', () => ({
   useCoinImageUrl: () => null,
+}));
+
+vi.mock('../../../hooks/useAssetImageUrl', () => ({
+  useAssetImageUrl: () => ({ url: null, issuerName: null }),
 }));
 
 function renderGrid() {
@@ -457,5 +472,189 @@ describe('CoinGrid QORT fast balance poll (round 2, item C)', () => {
       configurable: true,
       get: () => false,
     });
+  });
+});
+
+describe('CoinGrid asset network grouping (round 3)', () => {
+  function makeAsset(
+    network: AssetHolding['network'],
+    assetId: number,
+    name: string
+  ): AssetHolding {
+    return {
+      network,
+      assetId,
+      name,
+      owner: `${network}-owner-${assetId}`,
+      quantity: '1000000000',
+      isDivisible: true,
+      isOwnerForSale: false,
+      balance: '100000000',
+      pinned: false,
+    };
+  }
+
+  // Every row (chain or asset) carries a `<kind>-list-row-<key>` testid in
+  // list view - read them back in document order to assert the full render
+  // order, chains included, not just the asset-vs-asset grouping.
+  function allRowTestIds(): (string | null)[] {
+    return Array.from(
+      document.querySelectorAll(
+        '[data-testid^="coin-list-row-"], [data-testid^="asset-list-row-"]'
+      )
+    ).map((el) => el.getAttribute('data-testid'));
+  }
+
+  beforeEach(() => {
+    __resetBalanceCacheForTests();
+    __resetPendingSendsForTests();
+    accountState.current = 'acct-a';
+    getDefaultStore().set(walletReadyAtom, true);
+    // AssetListRow (not AssetBlock's tile grid) carries the stable
+    // `asset-list-row-<network>-<assetId>` testid this reads document order
+    // from.
+    getDefaultStore().set(viewModeAtom, 'list');
+    getDefaultStore().set(sortModeAtom, 'custom');
+    getDefaultStore().set(customOrderAtom, []);
+    assetsFixture.length = 0;
+
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+    (globalThis as any).qortalRequest = vi.fn(async () => null);
+  });
+
+  afterEach(() => {
+    cleanup();
+    getDefaultStore().set(walletReadyAtom, false);
+    getDefaultStore().set(viewModeAtom, 'grid');
+    getDefaultStore().set(sortModeAtom, 'custom');
+    getDefaultStore().set(customOrderAtom, []);
+    delete (globalThis as any).qdnRequest;
+    delete (globalThis as any).qortalRequest;
+    assetsFixture.length = 0;
+    __resetBalanceCacheForTests();
+    __resetPendingSendsForTests();
+  });
+
+  it('renders every Qortium asset before every Qortal asset, regardless of the order useAssetHoldings returned them in', async () => {
+    // Deliberately reversed from the required display order, and
+    // interleaved, so a pass here can't be an accident of input order.
+    assetsFixture.push(
+      makeAsset('qortal', 20, 'QORTAL-SILVER'),
+      makeAsset('qortium', 2, 'CHIP'),
+      makeAsset('qortal', 21, 'QORTAL-GOLD'),
+      makeAsset('qortium', 1, 'TIUM')
+    );
+
+    renderGrid();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('asset-list-row-qortium-1')).toBeInTheDocument()
+    );
+
+    const rows = Array.from(
+      document.querySelectorAll('[data-testid^="asset-list-row-"]')
+    ).map((el) => el.getAttribute('data-testid'));
+
+    expect(rows).toEqual([
+      'asset-list-row-qortium-2',
+      'asset-list-row-qortium-1',
+      'asset-list-row-qortal-20',
+      'asset-list-row-qortal-21',
+    ]);
+  });
+
+  // Round 3 review finding 1: the grouping rule used to be defined only for
+  // asset-vs-asset pairs, so a chain that sorted (by name/balance/custom
+  // order) between a Qortal and a Qortium asset produced a non-transitive
+  // comparator - Array.prototype.sort has no defined result for that. These
+  // three tests each engineer exactly that "chain in between" input under a
+  // different active sort mode and assert the fully resolved render order:
+  // chains first (their own tier), then every Qortium asset, then every
+  // Qortal asset.
+  //
+  // `useMarketPrices` is mocked to `{}` for this whole file, so every
+  // chain's fiat value is 0 under balance sort - both chains tie and fall
+  // back to their stable original order (QORT, then BTC, matching
+  // `chainsFixture`), making that case deterministic without extra
+  // balance-fetch mocking.
+  it('name sort: chains first, then Qortium assets, then Qortal assets, all still name-ordered within their group', async () => {
+    getDefaultStore().set(sortModeAtom, 'name-asc');
+    // Chain names 'Bitcoin' and 'Qortal' sort strictly between these two
+    // asset names - the exact "chain row between a Qortal and a Qortium
+    // asset" scenario.
+    assetsFixture.push(
+      makeAsset('qortal', 30, 'AAA_QORTAL'),
+      makeAsset('qortium', 5, 'ZZZ_QORTIUM')
+    );
+
+    renderGrid();
+    await waitFor(() =>
+      expect(screen.getByTestId('asset-list-row-qortium-5')).toBeInTheDocument()
+    );
+
+    expect(allRowTestIds()).toEqual([
+      'coin-list-row-BTC', // 'Bitcoin'
+      'coin-list-row-QORT', // 'Qortal' (the chain's display name)
+      'asset-list-row-qortium-5', // 'ZZZ_QORTIUM'
+      'asset-list-row-qortal-30', // 'AAA_QORTAL'
+    ]);
+  });
+
+  it('balance sort: chains first, then Qortium assets, then Qortal assets', async () => {
+    getDefaultStore().set(sortModeAtom, 'balance-asc');
+    assetsFixture.push(
+      makeAsset('qortal', 31, 'QORTAL-ASSET'),
+      makeAsset('qortium', 6, 'QORTIUM-ASSET')
+    );
+
+    renderGrid();
+    await waitFor(() =>
+      expect(screen.getByTestId('asset-list-row-qortium-6')).toBeInTheDocument()
+    );
+
+    expect(allRowTestIds()).toEqual([
+      'coin-list-row-QORT',
+      'coin-list-row-BTC',
+      'asset-list-row-qortium-6',
+      'asset-list-row-qortal-31',
+    ]);
+  });
+
+  it('custom/pinned order: the group rank still wins across tiers, but each tier keeps its own pinned/dragged order', async () => {
+    getDefaultStore().set(sortModeAtom, 'custom');
+    const qortiumA = makeAsset('qortium', 7, 'QORTIUM-A');
+    const qortiumB = makeAsset('qortium', 8, 'QORTIUM-B');
+    const qortalA = makeAsset('qortal', 32, 'QORTAL-A');
+    const qortalB = makeAsset('qortal', 33, 'QORTAL-B');
+    assetsFixture.push(qortiumA, qortiumB, qortalA, qortalB);
+
+    // Deliberately scrambled across tiers (a Qortal asset listed first,
+    // ahead of every chain and Qortium asset) - group rank must still put
+    // every chain ahead of every asset and every Qortium asset ahead of
+    // every Qortal asset, while the relative order *within* each tier
+    // (BTC before QORT; qortiumA before qortiumB; qortalB before qortalA)
+    // follows this custom order exactly.
+    getDefaultStore().set(customOrderAtom, [
+      'asset:qortal:33', // qortalB
+      'BTC',
+      'asset:qortium:7', // qortiumA
+      'QORT',
+      'asset:qortal:32', // qortalA
+      'asset:qortium:8', // qortiumB
+    ]);
+
+    renderGrid();
+    await waitFor(() =>
+      expect(screen.getByTestId('asset-list-row-qortium-7')).toBeInTheDocument()
+    );
+
+    expect(allRowTestIds()).toEqual([
+      'coin-list-row-BTC',
+      'coin-list-row-QORT',
+      'asset-list-row-qortium-7', // qortiumA
+      'asset-list-row-qortium-8', // qortiumB
+      'asset-list-row-qortal-33', // qortalB
+      'asset-list-row-qortal-32', // qortalA
+    ]);
   });
 });

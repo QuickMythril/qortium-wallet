@@ -2,6 +2,19 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.12] - 2026-09-20 (QuickMythril fork test build)
+
+### Added
+
+- A chain-of-origin badge ("Qortium" / "Qortal", i18n'd across all 20 locales) now appears on every asset row, tile, and detail-page header, using the app's existing accent color for Qortium and the separate `info` token for Qortal so the two are never the same hue in any theme variant. The badge is always rendered independently of whether an image loaded, so the two chains stay distinguishable with letter-circle placeholders alone, and its tooltip shows the asset ID and the resolved issuer name (or "unknown issuer").
+- A new `useAssetImageUrl` hook resolves an issuer-published asset avatar following the Q-Assets convention (`crowetic/Q-Assets`): the issuer's QDN name is resolved once per (network, owner) from the asset's owner address via `GET_PRIMARY_NAME` (falling back to `GET_ACCOUNT_NAMES`), then the image is fetched as `service: 'IMAGE'`, `identifier: asset<id>_<name>_aavatar` under that name. A Qortal asset with no issuer-published image falls back to the shared `Q-Assets` app's default avatar (`assetAvatar_default`); Qortium has no equivalent shared name yet, so a Qortium miss falls straight through to the placeholder. Resolved URLs are cached per (network, assetId) in module memory and rendered through the existing `CoinImage`/`useRetryingImageSrc` retry-with-backoff component (Core can answer 503 while it builds a freshly-requested image, same as coin icons); only a resolved URL is cached - a miss is retried on the next mount or Home bridge-state change, never cached as a permanent failure. Issuer metadata is treated as untrusted throughout: it is only ever passed through as a resource coordinate (an address, or a `name`/`identifier` pair) to the bridge, never rendered as HTML or trusted text.
+- The asset detail page now shows the resolved issuer name (or "unknown issuer") and the asset ID under the title, and clamps a published `description` (if `GET_ASSET_INFO` returns one) to 3 lines of plain, auto-escaped text - never HTML.
+- When the unified asset list mixes networks, Qortium assets now group before Qortal assets under every sort mode (name, balance, and custom/pinned order), while each network's own relative order - including any pin ordering - is preserved within its group.
+
+### Follow-up (not in this round)
+
+- Q-Assets' `BLOG_POST` publication metadata (genesis post, group metadata, structured JSON, dividends, custom fields) is not parsed or displayed yet - only the `IMAGE` avatar convention and the plain `description` field from `GET_ASSET_INFO`.
+
 ## [1.7.11] - 2026-09-20 (QuickMythril fork test build)
 
 ### Added

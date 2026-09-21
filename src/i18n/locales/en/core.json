@@ -40,6 +40,12 @@
   "contact_card_status_published": "published to QDN",
   "contact_card_status_error": "publish failed - will retry on next change",
   "amount": "amount",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "asset #{{id}} · issued by {{issuer}}",
+    "issuer_line_unknown": "asset #{{id}} · unknown issuer"
+  },
   "balance": "balance:",
   "balance_available": "available balance:",
   "coins": {

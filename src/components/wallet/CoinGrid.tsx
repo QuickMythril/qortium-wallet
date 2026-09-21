@@ -89,6 +89,37 @@ function itemName(item: WalletItem): string {
     : item.asset.name || `Asset #${item.asset.assetId}`;
 }
 
+// Round 3: when the unified list mixes asset networks, Qortium assets group
+// before Qortal ones regardless of the active sort mode (name/balance/
+// custom), and each network's existing relative order - including any pin
+// ordering - is preserved within its group.
+//
+// This has to be a genuine total order, not a pairwise "assets on different
+// networks win, otherwise fall through" rule: a pairwise-only rule is only
+// defined for asset-vs-asset pairs, so a chain sorting (by name/balance)
+// between a Qortal asset and a Qortium asset produces a comparator that says
+// qortal < chain < qortium by one rule and qortium < qortal by the other - a
+// cycle Array.prototype.sort has no defined behavior for (round 3 review
+// finding 1). Fixing that means giving every item, chains included, a fixed
+// primary rank (chains, then Qortium assets, then Qortal assets) and only
+// using the active sort mode as the *secondary* key within a rank tier. A
+// lexicographic (rank, then a valid comparator) order is always transitive,
+// so this holds for every sort mode without a special case per mode.
+function itemGroupRank(item: WalletItem): number {
+  if (item.kind === 'chain') return 0;
+  return item.asset.network === 'qortium' ? 1 : 2;
+}
+
+function compareWithAssetGrouping(
+  a: WalletItem,
+  b: WalletItem,
+  compare: (a: WalletItem, b: WalletItem) => number
+): number {
+  const rankDiff = itemGroupRank(a) - itemGroupRank(b);
+  if (rankDiff !== 0) return rankDiff;
+  return compare(a, b);
+}
+
 // Min tile width in px per zoom level — CSS auto-fill guarantees each level is visually distinct
 const TILE_MIN_PX: Record<number, number> = {
   1: 320,
@@ -748,39 +779,53 @@ export function CoinGrid() {
   const sortedItems = useMemo(() => {
     const arr = [...items];
     if (sortMode === 'name-asc')
-      return arr.sort((a, b) => itemName(a).localeCompare(itemName(b)));
+      return arr.sort((a, b) =>
+        compareWithAssetGrouping(a, b, (x, y) =>
+          itemName(x).localeCompare(itemName(y))
+        )
+      );
     if (sortMode === 'name-desc')
-      return arr.sort((a, b) => itemName(b).localeCompare(itemName(a)));
+      return arr.sort((a, b) =>
+        compareWithAssetGrouping(a, b, (x, y) =>
+          itemName(y).localeCompare(itemName(x))
+        )
+      );
     if (sortMode === 'balance-asc' || sortMode === 'balance-desc') {
       const dir = sortMode === 'balance-asc' ? 1 : -1;
-      return arr.sort((a, b) => {
-        const aLoading = itemIsLoading(a);
-        const bLoading = itemIsLoading(b);
-        if (aLoading && bLoading) return 0;
-        if (aLoading) return 1;
-        if (bLoading) return -1;
-        const ba = itemBalanceStr(a);
-        const bb = itemBalanceStr(b);
-        if (ba === null && bb === null) return 0;
-        if (ba === null) return 1;
-        if (bb === null) return -1;
-        // Assets have no market price feed, so they sort as 0 fiat value here.
-        const priceA = a.kind === 'chain' ? (prices[a.chain.coinEnum] ?? 0) : 0;
-        const priceB = b.kind === 'chain' ? (prices[b.chain.coinEnum] ?? 0) : 0;
-        const fiatA = parseFloat(ba) * priceA;
-        const fiatB = parseFloat(bb) * priceB;
-        return dir * (fiatA - fiatB);
-      });
+      return arr.sort((a, b) =>
+        compareWithAssetGrouping(a, b, (x, y) => {
+          const aLoading = itemIsLoading(x);
+          const bLoading = itemIsLoading(y);
+          if (aLoading && bLoading) return 0;
+          if (aLoading) return 1;
+          if (bLoading) return -1;
+          const ba = itemBalanceStr(x);
+          const bb = itemBalanceStr(y);
+          if (ba === null && bb === null) return 0;
+          if (ba === null) return 1;
+          if (bb === null) return -1;
+          // Assets have no market price feed, so they sort as 0 fiat value here.
+          const priceA =
+            x.kind === 'chain' ? (prices[x.chain.coinEnum] ?? 0) : 0;
+          const priceB =
+            y.kind === 'chain' ? (prices[y.chain.coinEnum] ?? 0) : 0;
+          const fiatA = parseFloat(ba) * priceA;
+          const fiatB = parseFloat(bb) * priceB;
+          return dir * (fiatA - fiatB);
+        })
+      );
     }
     // custom: respect persisted order
-    return arr.sort((a, b) => {
-      const ai = customOrder.indexOf(a.key);
-      const bi = customOrder.indexOf(b.key);
-      if (ai === -1 && bi === -1) return 0;
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    });
+    return arr.sort((a, b) =>
+      compareWithAssetGrouping(a, b, (x, y) => {
+        const ai = customOrder.indexOf(x.key);
+        const bi = customOrder.indexOf(y.key);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      })
+    );
   }, [sortMode, customOrder, items, balances, loading, prices, assetsLoading]);
 
   const visibleItems = useMemo(() => {

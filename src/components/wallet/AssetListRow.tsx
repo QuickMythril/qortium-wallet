@@ -13,6 +13,9 @@ import { tokens } from '../../theme/tokens';
 import { formatAssetBalance } from '../../utils/assetAmount';
 import type { AssetHolding } from '../../utils/Types';
 import { requestAssetWallet } from '../../common/assetBridge';
+import { useAssetImageUrl } from '../../hooks/useAssetImageUrl';
+import { CoinImage } from './CoinImage';
+import { ChainBadge } from './ChainBadge';
 
 interface AssetListRowProps {
   asset: AssetHolding;
@@ -37,6 +40,11 @@ export function AssetListRow({
 
   const balance = formatAssetBalance(asset.balance, asset.isDivisible);
   const label = asset.name || `Asset #${asset.assetId}`;
+  const { url: imageUrl, issuerName } = useAssetImageUrl(asset.network, {
+    assetId: asset.assetId,
+    name: asset.name,
+    owner: asset.owner,
+  });
 
   const openAsset = () => {
     if (!isDragging) navigate(`/asset/${asset.network}/${asset.assetId}`);
@@ -124,24 +132,17 @@ export function AssetListRow({
         <Box sx={{ width: 36, flexShrink: 0 }} />
       )}
 
-      <Box
-        aria-hidden="true"
-        sx={{
-          width: 36,
-          height: 36,
-          borderRadius: '50%',
+      <CoinImage
+        url={imageUrl}
+        ticker={label}
+        size={36}
+        alt=""
+        placeholderSx={{
           bgcolor: c.accentSoft,
           boxShadow: `0 0 0 2px ${c.accent}`,
           color: c.accent,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: tokens.typography.weightBold,
-          flexShrink: 0,
         }}
-      >
-        {label[0]?.toUpperCase() ?? '#'}
-      </Box>
+      />
 
       <Box sx={{ minWidth: 0, flex: '1 1 180px' }}>
         <Box
@@ -158,14 +159,27 @@ export function AssetListRow({
         </Box>
         <Box
           sx={{
-            color: c.textSecondary,
-            fontSize: '0.65rem',
-            fontWeight: tokens.typography.weightBold,
-            letterSpacing: '0.12em',
-            mt: 0.25,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.75,
+            mt: 0.4,
           }}
         >
-          {asset.network.toUpperCase()} ASSET #{asset.assetId}
+          <ChainBadge
+            network={asset.network}
+            assetId={asset.assetId}
+            issuerName={issuerName}
+          />
+          <Box
+            sx={{
+              color: c.textSecondary,
+              fontSize: '0.65rem',
+              fontWeight: tokens.typography.weightBold,
+              letterSpacing: '0.12em',
+            }}
+          >
+            ASSET #{asset.assetId}
+          </Box>
         </Box>
       </Box>
 

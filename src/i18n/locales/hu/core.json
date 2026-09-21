@@ -21,6 +21,12 @@
   "balance_unavailable": "az egyenleg nem érhető el",
   "transactions_unavailable": "a tranzakciók nem érhetők el",
   "amount": "összeg",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "eszköz #{{id}} · kibocsátó: {{issuer}}",
+    "issuer_line_unknown": "eszköz #{{id}} · ismeretlen kibocsátó"
+  },
   "balance": "egyenleg:",
   "balance_available": "elérhető egyenleg:",
   "coins": {

@@ -21,6 +21,12 @@
   "balance_unavailable": "saldo niedostępne",
   "transactions_unavailable": "transakcje niedostępne",
   "amount": "kwota",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "aktywo nr {{id}} · wyemitowane przez {{issuer}}",
+    "issuer_line_unknown": "aktywo nr {{id}} · nieznany emitent"
+  },
   "balance": "saldo:",
   "balance_available": "dostępne saldo:",
   "coins": {

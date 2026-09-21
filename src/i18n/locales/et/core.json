@@ -21,6 +21,12 @@
   "balance_unavailable": "saldo pole saadaval",
   "transactions_unavailable": "tehingud pole saadaval",
   "amount": "summa",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "vara nr {{id}} · emiteerija {{issuer}}",
+    "issuer_line_unknown": "vara nr {{id}} · tundmatu emiteerija"
+  },
   "balance": "jääk:",
   "balance_available": "saadaval olev jääk:",
   "coins": {

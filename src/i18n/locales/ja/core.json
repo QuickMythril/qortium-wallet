@@ -21,6 +21,12 @@
   "balance_unavailable": "残高を取得できません",
   "transactions_unavailable": "取引履歴を取得できません",
   "amount": "金額",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "アセット #{{id}} · 発行者: {{issuer}}",
+    "issuer_line_unknown": "アセット #{{id}} · 発行者不明"
+  },
   "balance": "残高:",
   "balance_available": "利用可能残高:",
   "coins": {

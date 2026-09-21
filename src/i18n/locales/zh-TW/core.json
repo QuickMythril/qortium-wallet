@@ -21,6 +21,12 @@
   "balance_unavailable": "餘額無法取得",
   "transactions_unavailable": "交易記錄無法取得",
   "amount": "金額",
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "資產 #{{id}} · 發行方:{{issuer}}",
+    "issuer_line_unknown": "資產 #{{id}} · 發行方未知"
+  },
   "balance": "餘額：",
   "balance_available": "可用餘額：",
   "coins": {
