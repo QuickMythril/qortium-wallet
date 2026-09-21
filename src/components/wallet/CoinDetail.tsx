@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react';
 import {
   Box,
   Button,
@@ -33,7 +40,11 @@ import { useAtomValue } from 'jotai';
 import { useAuth } from 'qapp-core';
 import { NumericFormat as _NumericFormat } from 'react-number-format';
 import { useMarketPrices } from '../../hooks/useMarketPrices';
-import { copyToClipboard, formatFiat } from '../../common/functions';
+import {
+  copyToClipboard,
+  epochToAgo,
+  formatFiat,
+} from '../../common/functions';
 const NumericFormat = _NumericFormat as React.FC<
   React.ComponentProps<typeof _NumericFormat> & Record<string, unknown>
 >;
@@ -76,7 +87,21 @@ import {
   invalidateCachedAccountUnlocked,
   setCachedAccountUnlocked,
 } from '../../common/accountUnlockState';
-import { invalidateCachedBalance } from '../../common/balanceCache';
+import {
+  invalidateCachedBalance,
+  setCachedBalance,
+} from '../../common/balanceCache';
+import { useArrrSyncStatus } from '../../hooks/useArrrSyncStatus';
+import {
+  formatArrrAmount,
+  requestWithArrrBusyRetry,
+} from '../../common/arrrSync';
+import {
+  ARRR_READ_CANCELLED_CODE,
+  isArrrSyncContractUnsupportedError,
+  isArrrVerifiedBalanceUnavailableError,
+  isArrrWalletBusyError,
+} from '../../common/bridgeErrors';
 import {
   accountKey as pendingSendsAccountKey,
   addPendingSend,
@@ -121,10 +146,6 @@ interface SendCoinResult {
   recipient?: string;
 }
 
-// ARRR sync loop limits: 36 × 5 s = 3 min for "not initialized", 60 × 5 s = 5 min for "initializing"
-const ARRR_OUTER_MAX = 36;
-const ARRR_INNER_MAX = 60;
-const ARRR_POLL_MS = 5000;
 const RECIPIENT_NAME_LOOKUP_DEBOUNCE_MS = 800;
 
 // While the QORT coin page is open, its balance is polled every 60 s (a
@@ -209,8 +230,14 @@ export function CoinDetail({ chain }: Props) {
   const [copied, setCopied] = useState(false);
   const [copiedHash, setCopiedHash] = useState<number | null>(null);
 
+  // ARRR send is structurally impossible, not only capability-gated
+  // (Codex round 5 review finding 5) - a `?send=true` deep link (grid
+  // quick-send, list-row send icon, asset send, or a contact card's
+  // `?send=true&to=` link - see FindPersonPage.tsx) must never auto-open
+  // the dialog for ARRR, even if some future capability regression made
+  // `canSend` true.
   const [sendOpen, setSendOpen] = useState(
-    () => searchParams.get('send') === 'true'
+    () => !isARRR && searchParams.get('send') === 'true'
   );
   const [amount, setAmount] = useState<string>('');
   const [sendMax, setSendMax] = useState(false);
@@ -266,10 +293,13 @@ export function CoinDetail({ chain }: Props) {
     typeof setTimeout
   > | null>(null);
 
-  // ARRR initialization state
-  const cancelSyncRef = useRef(false);
   const isMountedRef = useRef(true);
-  const [arrrSynced, setArrrSynced] = useState(!isARRR);
+  // Always the latest selected-account value, read (not just captured at
+  // effect-setup time) by ARRR busy-retry abort checks below so an account
+  // switch mid-retry is detected even though the retry loop's own closure
+  // still has the old account (Codex round 5 review finding 4).
+  const currentAccountRef = useRef(homeAccount);
+  currentAccountRef.current = homeAccount;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -297,123 +327,154 @@ export function CoinDetail({ chain }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [arrrSyncing, setArrrSyncing] = useState(isARRR);
-  const [arrrSyncStatus, setArrrSyncStatus] = useState(
-    'Connecting to Pirate Chain…'
-  );
-  const [arrrSyncFailed, setArrrSyncFailed] = useState(false);
-  const [arrrServers, setArrrServers] = useState<any[]>([]);
-  const [arrrServerOpen, setArrrServerOpen] = useState(false);
-
   // ElectrumX server management for non-ARRR foreign coins
   const [foreignServers, setForeignServers] = useState<any[]>([]);
   const [foreignServerOpen, setForeignServerOpen] = useState(false);
   const [foreignServerLoading, setForeignServerLoading] = useState(false);
 
-  const syncArrr = useCallback(async () => {
-    cancelSyncRef.current = false;
-    setArrrSyncing(true);
-    setArrrSyncFailed(false);
-    setArrrSynced(false);
-    setArrrSyncStatus('Connecting to Pirate Chain…');
+  // ── ARRR structured custody state (round 5) ──
+  // The sync-status poll is gated on the coin-aware capability gate having
+  // actually granted a read/receive/tx path - not merely "this is the ARRR
+  // page" - so an old Home / locked account / Android never polls at all
+  // (host contract item 6).
+  const arrrCapabilityGranted =
+    isARRR && (canReceive || canReadBalance || canReadTransactions);
+  const {
+    snapshot: arrrSnapshot,
+    loading: arrrStatusLoading,
+    error: arrrStatusError,
+    consentDenied: arrrConsentDenied,
+    refresh: refreshArrrStatus,
+  } = useArrrSyncStatus(arrrCapabilityGranted, homeAccount);
+  const arrrReady = arrrSnapshot?.ready === true;
 
-    let outerCount = 0;
-    let innerCount = 0;
-    let lastSyncError: unknown = null;
-
-    try {
-      while (!cancelSyncRef.current) {
-        let status: string;
-        try {
-          status = await qdnRequest({
-            action: 'GET_ARRR_SYNC_STATUS',
-          } as any);
-        } catch (err) {
-          lastSyncError = err;
-          break;
-        }
-        if (cancelSyncRef.current) return;
-
-        if (status === 'Synchronized') {
-          setArrrSynced(true);
-          setArrrSyncing(false);
-          return;
-        }
-
-        // Server returned an XML/HTML error string
-        if (typeof status === 'string' && status.includes('<')) break;
-
-        if (status === 'Not initialized yet') {
-          outerCount++;
-          setArrrSyncStatus('Initializing Pirate Chain wallet…');
-          if (outerCount >= ARRR_OUTER_MAX) break;
-        } else if (status === 'Initializing wallet...') {
-          innerCount++;
-          const pct = Math.round((innerCount / ARRR_INNER_MAX) * 100);
-          setArrrSyncStatus(`Syncing shielded blockchain… ${pct}%`);
-          if (innerCount >= ARRR_INNER_MAX) break;
-        } else {
-          setArrrSyncStatus(typeof status === 'string' ? status : 'Syncing…');
-        }
-
-        await new Promise<void>((r) => setTimeout(r, ARRR_POLL_MS));
-      }
-    } catch (err) {
-      lastSyncError = err;
-    }
-
-    if (cancelSyncRef.current) return;
-    setArrrSyncFailed(true);
-    setArrrSyncing(false);
-    if (lastSyncError != null) {
-      const decoded = describeBridgeError(lastSyncError);
-      console.warn('[wallet] arrr sync', decoded.message);
-      setArrrSyncStatus(
-        `Sync failed: ${decoded.message} — try a different server.`
-      );
-    } else {
-      setArrrSyncStatus('Sync failed — try a different server.');
-    }
-    try {
-      const servers = await qdnRequest({
-        action: 'GET_CROSSCHAIN_SERVER_INFO',
-        coin: 'ARRR',
-      } as any);
-      if (Array.isArray(servers)) setArrrServers(servers);
-    } catch (err) {
-      console.warn(
-        '[wallet] arrr server list',
-        describeBridgeError(err).message
-      );
-    }
-  }, []);
-
-  const handleServerChange = useCallback(
-    async (server: any) => {
-      setArrrServerOpen(false);
-      try {
-        await qdnRequest({
-          action: 'SET_CURRENT_FOREIGN_SERVER',
-          coin: 'ARRR',
-          server,
-        } as any);
-      } catch {
-        /* */
-      }
-      syncArrr();
-    },
-    [syncArrr]
+  const [arrrVerifiedBalance, setArrrVerifiedBalance] = useState<string | null>(
+    null
   );
+  const [arrrTotalBalance, setArrrTotalBalance] = useState<string | null>(null);
+  // True once the verified read specifically rejected with
+  // ARRR_VERIFIED_BALANCE_UNAVAILABLE and total is shown provisionally
+  // instead (host contract item 4).
+  const [arrrBalanceVerifying, setArrrBalanceVerifying] = useState(false);
+  const [arrrBalanceLoading, setArrrBalanceLoading] = useState(false);
+  const [arrrBalanceError, setArrrBalanceError] = useState<ReturnType<
+    typeof describeBridgeError
+  > | null>(null);
+  const arrrBalanceRevision = useRef(0);
 
-  // Kick off ARRR sync once on mount; cancel on unmount
-  useEffect(() => {
-    if (!isARRR) return;
-    syncArrr();
-    return () => {
-      cancelSyncRef.current = true;
+  const fetchArrrBalances = useCallback(async () => {
+    const revision = ++arrrBalanceRevision.current;
+    const startAccount = homeAccount;
+    setArrrBalanceLoading(true);
+    setArrrBalanceError(null);
+
+    // Checked before the first attempt of each busy-retry loop and again
+    // after every retry delay, so an in-flight busy loop can't fire
+    // another bridge call once nobody cares anymore: unmount, an account
+    // switch (revision alone doesn't catch this - see currentAccountRef),
+    // or the tab going hidden (Codex round 5 review finding 4).
+    const shouldAbort = () =>
+      revision !== arrrBalanceRevision.current ||
+      !isMountedRef.current ||
+      currentAccountRef.current !== startAccount ||
+      (typeof document !== 'undefined' && document.hidden);
+
+    // Atomic decimal-integer strings straight off the bridge, formatted to
+    // an exact 8-decimal display string via string-only decimal shifting
+    // (formatArrrAmount -> formatAtomicAmount) - never through Number(),
+    // which silently loses precision above 2^53 atomic units (Codex round
+    // 5 review finding 2).
+    const fetchTotalDisplay = async (): Promise<string | null> => {
+      const totalRaw = await qdnRequest({
+        action: 'GET_WALLET_BALANCE',
+        coin: 'ARRR',
+        verified: false,
+      });
+      return formatArrrAmount(totalRaw != null ? String(totalRaw) : null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    try {
+      const verifiedRaw = await requestWithArrrBusyRetry(
+        () => qdnRequest({ action: 'GET_WALLET_BALANCE', coin: 'ARRR' }),
+        { shouldAbort }
+      );
+      if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
+        return;
+      const verified = formatArrrAmount(
+        verifiedRaw != null ? String(verifiedRaw) : null
+      );
+      setArrrVerifiedBalance(verified);
+      setArrrBalanceVerifying(false);
+
+      let total = verified;
+      try {
+        total = await fetchTotalDisplay();
+        if (revision === arrrBalanceRevision.current && isMountedRef.current)
+          setArrrTotalBalance(total);
+      } catch {
+        /* best-effort second read - the verified balance above still shows */
+      }
+
+      if (revision === arrrBalanceRevision.current && isMountedRef.current) {
+        setCachedBalance(homeAccount, chain.key, {
+          balance: verified,
+          verifiedBalance: verified,
+          totalBalance: total,
+          // Clears any stale provisional-total flag left over from an
+          // earlier ARRR_VERIFIED_BALANCE_UNAVAILABLE fallback (finding 1)
+          // now that the verified balance is known again.
+          provisionalTotal: null,
+          arrrState: arrrSnapshot?.state,
+          arrrReady: true,
+          arrrStale: arrrSnapshot?.stale,
+        });
+      }
+    } catch (err) {
+      if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
+        return;
+      const decoded = describeBridgeError(err);
+      if (decoded.code === ARRR_READ_CANCELLED_CODE) return;
+      if (isArrrVerifiedBalanceUnavailableError(decoded)) {
+        try {
+          const total = await fetchTotalDisplay();
+          if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
+            return;
+          setArrrVerifiedBalance(null);
+          setArrrTotalBalance(total);
+          setArrrBalanceVerifying(true);
+          setArrrBalanceError(null);
+          // Finding 1: the verified (spendable) balance is NOT known here -
+          // `balance`/`verifiedBalance` stay null so the grid/list can
+          // never render the total as if it were spendable. `total` is
+          // exposed only through the distinct `provisionalTotal` field,
+          // which the grid/list render with an explicit "verifying"
+          // qualifier instead of treating it as the coin's balance.
+          setCachedBalance(homeAccount, chain.key, {
+            balance: null,
+            verifiedBalance: null,
+            totalBalance: total,
+            provisionalTotal: total,
+            arrrState: arrrSnapshot?.state,
+            arrrReady: true,
+            arrrStale: arrrSnapshot?.stale,
+          });
+        } catch (err2) {
+          if (
+            revision === arrrBalanceRevision.current &&
+            isMountedRef.current
+          ) {
+            setArrrBalanceError(describeBridgeError(err2));
+          }
+        }
+      } else {
+        console.warn('[wallet] arrr balance', decoded.message);
+        setArrrBalanceError(decoded);
+      }
+    } finally {
+      if (revision === arrrBalanceRevision.current && isMountedRef.current)
+        setArrrBalanceLoading(false);
+    }
+  }, [chain, homeAccount, arrrSnapshot?.state, arrrSnapshot?.stale]);
 
   const fetchAddress = useCallback(async () => {
     if (!chain.isNative && !canReceive) {
@@ -667,10 +728,24 @@ export function CoinDetail({ chain }: Props) {
         )
           setTransactions(rows);
       } else {
-        const res = await requestWithTimeout(
-          { action: 'GET_USER_WALLET_TRANSACTIONS', coin: chain.coinEnum },
-          TIME_MINUTES_5
-        );
+        const readTransactions = () =>
+          requestWithTimeout(
+            { action: 'GET_USER_WALLET_TRANSACTIONS', coin: chain.coinEnum },
+            TIME_MINUTES_5
+          );
+        const startAccount = homeAccount;
+        const res =
+          chain.coinEnum === 'ARRR'
+            ? await requestWithArrrBusyRetry(readTransactions, {
+                // Same cancellation guard as fetchArrrBalances above -
+                // Codex round 5 review finding 4.
+                shouldAbort: () =>
+                  revision !== transactionReadRevision.current ||
+                  !isMountedRef.current ||
+                  currentAccountRef.current !== startAccount ||
+                  (typeof document !== 'undefined' && document.hidden),
+              })
+            : await readTransactions();
         const txs = Array.isArray(res) ? res : [];
         if (
           isMountedRef.current &&
@@ -684,6 +759,11 @@ export function CoinDetail({ chain }: Props) {
         revision === transactionReadRevision.current
       ) {
         const decoded = describeBridgeError(err);
+        if (decoded.code === ARRR_READ_CANCELLED_CODE) {
+          // Aborted mid busy-retry-delay (hidden tab or account switch) -
+          // not a real error; leave whatever was already shown alone.
+          return;
+        }
         console.warn('[wallet] transactions', chain.ticker, decoded.message);
         setTransactions([]);
         setTxError(decoded.message);
@@ -692,15 +772,36 @@ export function CoinDetail({ chain }: Props) {
       if (isMountedRef.current && revision === transactionReadRevision.current)
         setLoadingTx(false);
     }
-  }, [canReadTransactions, chain]);
+  }, [canReadTransactions, chain, homeAccount]);
 
   useEffect(() => {
     fetchAddress();
   }, [fetchAddress]);
 
-  // Fetch balance + tx only after lock check resolves and ARRR has synced (for other chains arrrSynced starts true)
+  // Fetch/refresh ARRR balances and history whenever the sync status becomes
+  // ready, and again on every subsequent READY re-poll (useArrrSyncStatus's
+  // own 3-minute cadence drives this refresh, rather than a second timer -
+  // design doc: "the grid row consumes cached progress/balance without a
+  // background ARRR timer", and the page itself has exactly one clock).
+  // ARRR is deliberately excluded from the generic lock-gated effect below -
+  // it has its own gating (the sync snapshot's `ready`, not `walletReady`
+  // alone) and its own cadence.
   useEffect(() => {
-    if (!walletReady || !arrrSynced) return;
+    if (!isARRR || !walletReady) return;
+    if (!arrrSnapshot?.ready) {
+      setTransactions([]);
+      setLoadingTx(false);
+      return;
+    }
+    fetchArrrBalances();
+    fetchTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isARRR, walletReady, arrrSnapshot?.observedAt, arrrSnapshot?.ready]);
+
+  // Fetch balance + tx once the lock check resolves, for every chain except
+  // ARRR (handled by the effect above).
+  useEffect(() => {
+    if (!walletReady || isARRR) return;
     fetchBalance();
     fetchTransactions();
 
@@ -739,9 +840,13 @@ export function CoinDetail({ chain }: Props) {
       fetchTransactions();
     }, TIME_MINUTES_3);
     return () => clearInterval(id);
-  }, [fetchBalance, fetchTransactions, arrrSynced, walletReady, chain]);
+  }, [fetchBalance, fetchTransactions, isARRR, walletReady, chain]);
 
   const openSend = useCallback(async () => {
+    // Structural guard (Codex round 5 review finding 5) - the Send button
+    // is already disabled for ARRR, but this makes the dialog itself
+    // unreachable regardless of how openSend() is invoked.
+    if (isARRR) return;
     setAmount('');
     setSendMax(false);
     setRecipient(EMPTY_STRING);
@@ -757,7 +862,7 @@ export function CoinDetail({ chain }: Props) {
     suggestedFee.reset();
     setSendOpen(true);
     await suggestedFee.load();
-  }, [suggestedFee]);
+  }, [suggestedFee, isARRR]);
 
   // Register as a pendingSends subscriber for as long as this page is
   // mounted, so the shared poller (module-level; see pendingSends.ts) keeps
@@ -861,6 +966,10 @@ export function CoinDetail({ chain }: Props) {
   };
 
   const handleSend = async () => {
+    // Structural guard (Codex round 5 review finding 5) - Send is disabled
+    // and the dialog is unreachable for ARRR (openSend()/sendOpen above),
+    // but this makes handleSend() itself a no-op too.
+    if (isARRR) return;
     if (!canSendRef.current || !canConfirmSend) return;
 
     setSending(true);
@@ -942,6 +1051,13 @@ export function CoinDetail({ chain }: Props) {
               ? res.signature
               : undefined;
       } else {
+        // Structural guard (Codex round 5 review finding 5) - the last
+        // possible checkpoint before any foreign SEND_COIN payload is
+        // built or dispatched. ARRR must never reach qdnRequest here, no
+        // matter how this function was entered.
+        if (chain.coinEnum === 'ARRR') {
+          throw new Error('ARRR sending is not supported.');
+        }
         const payload: Record<string, unknown> = {
           action: 'SEND_COIN',
           recipient: effectiveRecipient,
@@ -1186,6 +1302,363 @@ export function CoinDetail({ chain }: Props) {
     setExpandedTx((prev) => (prev === i ? null : i));
   }, []);
 
+  // ── ARRR structured state/balance panel (round 5) ──
+  // Replaces the old string-matching sync loop with rendering driven purely
+  // by the typed snapshot from useArrrSyncStatus - never a percentage
+  // derived from a retry count.
+  const arrrProgressLabel = (() => {
+    if (!arrrSnapshot) return null;
+    const { scannedHeight, tipHeight, syncedBlocks, totalBlocks } =
+      arrrSnapshot;
+    if (scannedHeight != null && tipHeight != null) {
+      return t('arrr.progress_heights', {
+        scanned: scannedHeight,
+        tip: tipHeight,
+      });
+    }
+    if (syncedBlocks != null && totalBlocks != null) {
+      return t('arrr.progress_blocks', {
+        synced: syncedBlocks,
+        total: totalBlocks,
+      });
+    }
+    return t('arrr.progress_indeterminate');
+  })();
+
+  // arrrVerifiedBalance/arrrTotalBalance are already the fully-formatted
+  // 8-decimal display strings (fetchArrrBalances computes them once, via
+  // formatArrrAmount on the raw ATOMIC string) - do not re-run
+  // formatArrrAmount here, which expects atomic input and would reject an
+  // already-formatted decimal string like "1.40000000" (no decimal point
+  // allowed) back to null.
+  const arrrVerifiedDisplay = arrrVerifiedBalance;
+  const arrrTotalDisplay = arrrTotalBalance;
+  const arrrStatusIsBusy =
+    arrrStatusError != null && isArrrWalletBusyError(arrrStatusError);
+  const arrrStatusIsUnsupported =
+    arrrStatusError != null &&
+    isArrrSyncContractUnsupportedError(arrrStatusError);
+  const arrrBalanceIsBusy =
+    arrrBalanceError != null && isArrrWalletBusyError(arrrBalanceError);
+
+  const arrrRetryButtonSx = {
+    bgcolor: c.accent,
+    color: c.accentText,
+    '&:hover': { bgcolor: c.accentHover },
+    borderRadius: isClassic ? `${tokens.shape.radiusMd}px` : '50px',
+    px: 3,
+    mt: 1.5,
+  };
+
+  let arrrPanel: ReactNode = null;
+  if (isARRR) {
+    if (arrrConsentDenied) {
+      arrrPanel = (
+        <Box data-testid="arrr-consent-denied" sx={{ textAlign: 'center' }}>
+          <Box
+            sx={{
+              fontWeight: tokens.typography.weightBold,
+              color: c.error,
+            }}
+          >
+            {t('arrr.custody_consent_denied')}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (arrrStatusIsBusy) {
+      arrrPanel = (
+        <Box data-testid="arrr-busy" sx={{ textAlign: 'center' }}>
+          <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+            {t('arrr.wallet_busy')}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (arrrStatusIsUnsupported) {
+      arrrPanel = (
+        <Box data-testid="arrr-sync-unsupported" sx={{ textAlign: 'center' }}>
+          <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+            {t('arrr.sync_contract_unsupported')}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (arrrStatusError && !arrrSnapshot) {
+      arrrPanel = (
+        <Box data-testid="arrr-status-error" sx={{ textAlign: 'center' }}>
+          <Box
+            sx={{ fontWeight: tokens.typography.weightBold, color: c.error }}
+          >
+            {arrrStatusError.message}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (!arrrSnapshot && arrrStatusLoading) {
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-loading"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+            {t('arrr.state_loading')}
+          </Box>
+        </Box>
+      );
+    } else if (!arrrSnapshot) {
+      // Not loading, no error, no snapshot yet - shouldn't normally happen
+      // once arrrCapabilityGranted is true, but render the same loading
+      // affordance rather than nothing while the first poll settles.
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-loading"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+            {t('arrr.state_loading')}
+          </Box>
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'DISABLED') {
+      arrrPanel = (
+        <Box data-testid="arrr-state-disabled" sx={{ textAlign: 'center' }}>
+          <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+            {t('arrr.state_disabled')}
+          </Box>
+          <Box sx={{ mt: 0.75, fontSize: '0.78rem', color: c.textSecondary }}>
+            {arrrSnapshot.message ?? t('arrr.state_disabled_detail_fallback')}
+          </Box>
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'LOADING') {
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-loading"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+            {arrrSnapshot.message ?? t('arrr.state_loading')}
+          </Box>
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'SYNCHRONIZING') {
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-synchronizing"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box
+            sx={{
+              mt: 1.5,
+              fontWeight: tokens.typography.weightBold,
+              textAlign: 'center',
+            }}
+          >
+            {arrrSnapshot.message ?? t('arrr.state_synchronizing')}
+          </Box>
+          {arrrProgressLabel && (
+            <Box sx={{ mt: 0.5, fontSize: '0.78rem', color: c.textSecondary }}>
+              {arrrProgressLabel}
+            </Box>
+          )}
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'DEGRADED') {
+      arrrPanel = (
+        <Box data-testid="arrr-state-degraded" sx={{ textAlign: 'center' }}>
+          <WarningAmberIcon sx={{ fontSize: 32, color: c.error, mb: 0.5 }} />
+          <Box
+            sx={{ fontWeight: tokens.typography.weightBold, color: c.error }}
+          >
+            {arrrSnapshot.lastError?.message ??
+              arrrSnapshot.message ??
+              t('arrr.state_degraded')}
+          </Box>
+          {arrrSnapshot.restartRequired && (
+            <Box sx={{ mt: 0.5, fontSize: '0.78rem', color: c.textSecondary }}>
+              {t('arrr.restart_required')}
+            </Box>
+          )}
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else {
+      // READY
+      const showVerifying = arrrBalanceVerifying;
+      const mainDisplay = showVerifying
+        ? arrrTotalDisplay
+        : arrrVerifiedDisplay;
+      arrrPanel = (
+        <Box data-testid="arrr-state-ready">
+          {arrrBalanceLoading &&
+          arrrVerifiedDisplay == null &&
+          arrrTotalDisplay == null ? (
+            <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
+          ) : arrrBalanceIsBusy ? (
+            <Box data-testid="arrr-busy" sx={{ textAlign: 'center' }}>
+              <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+                {t('arrr.wallet_busy')}
+              </Box>
+              <Button
+                variant="contained"
+                disableElevation
+                onClick={fetchArrrBalances}
+                sx={arrrRetryButtonSx}
+              >
+                {t('action.retry')}
+              </Button>
+            </Box>
+          ) : arrrBalanceError &&
+            arrrVerifiedDisplay == null &&
+            arrrTotalDisplay == null ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Tooltip title={arrrBalanceError.message} placement="top">
+                <Box sx={{ fontSize: '0.85rem', color: c.error }}>
+                  {t('balance_unavailable')}
+                </Box>
+              </Tooltip>
+              <IconButton
+                size="small"
+                onClick={fetchArrrBalances}
+                aria-label="retry balance"
+                sx={{ color: c.error }}
+              >
+                <RefreshIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Box>
+          ) : (
+            <>
+              <Typography
+                sx={{
+                  fontSize: { xs: '2rem', md: '3rem' },
+                  fontWeight: tokens.typography.weightBlack,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
+                  color: c.textPrimary,
+                  wordBreak: 'break-all',
+                }}
+              >
+                {mainDisplay ?? '—'}
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '1.1rem',
+                    fontWeight: tokens.typography.weightBold,
+                    ml: 1.5,
+                    color: c.textSecondary,
+                  }}
+                >
+                  {chain.ticker}
+                </Box>
+              </Typography>
+              <Box
+                sx={{
+                  mt: 1.5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 0.5,
+                }}
+              >
+                {showVerifying && (
+                  <Box sx={{ fontSize: '0.72rem', color: c.warning }}>
+                    {t('arrr.verifying_balance')}
+                  </Box>
+                )}
+                {!showVerifying &&
+                  arrrTotalDisplay != null &&
+                  arrrTotalDisplay !== arrrVerifiedDisplay && (
+                    <Box sx={{ fontSize: '0.78rem', color: c.textSecondary }}>
+                      {t('arrr.total_balance')}: {arrrTotalDisplay}{' '}
+                      {chain.ticker}
+                    </Box>
+                  )}
+                {mainDisplay != null && pricePerUnit != null && (
+                  <Box
+                    sx={{
+                      fontSize: '1.1rem',
+                      fontWeight: tokens.typography.weightBold,
+                      color: c.textPrimary,
+                    }}
+                  >
+                    {formatFiat(
+                      parseFloat(mainDisplay) * pricePerUnit,
+                      currency
+                    )}
+                  </Box>
+                )}
+                {arrrSnapshot.stale && (
+                  <Box sx={{ fontSize: '0.7rem', color: c.textSecondary }}>
+                    {t('arrr.stale_label', {
+                      time: epochToAgo(arrrSnapshot.observedAt),
+                    })}{' '}
+                    · {t('arrr.provisional_label')}
+                  </Box>
+                )}
+              </Box>
+            </>
+          )}
+        </Box>
+      );
+    }
+  }
+
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: isClassic ? c.frameBg : c.bg }}>
       {/* ── sticky sub-header ── */}
@@ -1264,8 +1737,14 @@ export function CoinDetail({ chain }: Props) {
           </Tooltip>
         )}
         <Tooltip
-          title={!canSend ? 'Sending requires a local node' : ''}
-          disableHoverListener={canSend}
+          title={
+            isARRR
+              ? t('arrr.send_unavailable')
+              : !canSend
+                ? 'Sending requires a local node'
+                : ''
+          }
+          disableHoverListener={!isARRR && canSend}
         >
           <span>
             <Button
@@ -1274,7 +1753,7 @@ export function CoinDetail({ chain }: Props) {
               endIcon={<SendIcon sx={{ fontSize: '1rem !important' }} />}
               onClick={openSend}
               disableElevation
-              disabled={(isARRR && !arrrSynced) || !canSend}
+              disabled={isARRR || !canSend}
               sx={{
                 bgcolor: c.accent,
                 color: c.accentText,
@@ -1316,116 +1795,16 @@ export function CoinDetail({ chain }: Props) {
               lineHeight: 1.6,
             }}
           >
-            Wallet features are not available on a public node.
-            <br />
-            Connect to a local Qortium node to view balances and transactions.
-          </Box>
-        ) : isARRR && !arrrSynced ? (
-          /* ── ARRR initialization overlay ── */
-          <Box
-            sx={{
-              border: `${
-                isClassic
-                  ? tokens.shape.classicBorderWidth
-                  : tokens.shape.borderWidth
-              } solid ${isClassic ? c.border : c.borderLight}`,
-              borderRadius: `${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px`,
-              bgcolor: c.surface,
-              boxShadow: c.shadowCard,
-              p: { xs: 4, md: 6 },
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              gap: 3,
-            }}
-          >
-            <CoinImage
-              url={coinImageUrl}
-              ticker="ARRR"
-              size={56}
-              imgSx={{ opacity: arrrSyncFailed ? 0.35 : 0.75 }}
-              placeholderSx={{
-                bgcolor: 'rgba(128,128,128,0.15)',
-                fontSize: '1.2rem',
-                color: 'rgba(128,128,128,0.5)',
-                opacity: arrrSyncFailed ? 0.35 : 0.75,
-              }}
-            />
-            {arrrSyncing && (
-              <CircularProgress size={36} sx={{ color: c.accent }} />
-            )}
-            <Box>
-              <Box
-                sx={{
-                  fontSize: '0.95rem',
-                  fontWeight: tokens.typography.weightBold,
-                  color: arrrSyncFailed ? c.error : c.textPrimary,
-                  mb: 0.75,
-                }}
-              >
-                {arrrSyncStatus}
-              </Box>
-              {!arrrSyncFailed && (
-                <Box
-                  sx={{
-                    fontSize: '0.78rem',
-                    color: c.textSecondary,
-                    maxWidth: 380,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Pirate Chain uses a shielded blockchain that must sync before
-                  balances or transactions are available.
-                </Box>
-              )}
-            </Box>
-            {arrrSyncFailed && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  gap: 2,
-                  flexWrap: 'wrap',
-                  justifyContent: 'center',
-                }}
-              >
-                <Button
-                  variant="contained"
-                  onClick={syncArrr}
-                  disableElevation
-                  sx={{
-                    bgcolor: c.accent,
-                    color: c.accentText,
-                    '&:hover': { bgcolor: c.accentHover },
-                    borderRadius: isClassic
-                      ? `${tokens.shape.radiusMd}px`
-                      : '50px',
-                    px: 3,
-                  }}
-                >
-                  Retry
-                </Button>
-                {arrrServers.length > 0 && (
-                  <Button
-                    variant="outlined"
-                    onClick={() => setArrrServerOpen(true)}
-                    sx={{
-                      borderColor: c.accent,
-                      color: c.accent,
-                      '&:hover': {
-                        borderColor: c.accentHover,
-                        color: c.accentHover,
-                      },
-                      borderRadius: isClassic
-                        ? `${tokens.shape.radiusMd}px`
-                        : '50px',
-                      px: 3,
-                    }}
-                  >
-                    Change Server
-                  </Button>
-                )}
-              </Box>
+            {isARRR ? (
+              (chain.homeWallet?.unavailableReason ??
+              t('arrr.unavailable_fallback'))
+            ) : (
+              <>
+                Wallet features are not available on a public node.
+                <br />
+                Connect to a local Qortium node to view balances and
+                transactions.
+              </>
             )}
           </Box>
         ) : (
@@ -1470,7 +1849,9 @@ export function CoinDetail({ chain }: Props) {
                     color: 'rgba(128,128,128,0.5)',
                   }}
                 />
-                {loadingBalance ? (
+                {isARRR ? (
+                  arrrPanel
+                ) : loadingBalance ? (
                   <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
                 ) : (
                   <>
@@ -1710,7 +2091,9 @@ export function CoinDetail({ chain }: Props) {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  No transactions yet
+                  {isARRR && !arrrReady
+                    ? t('arrr.transactions_pending')
+                    : 'No transactions yet'}
                 </Box>
               ) : (
                 displayedTransactions.map((row, i) => (
@@ -2155,109 +2538,6 @@ export function CoinDetail({ chain }: Props) {
           </Box>
         </DialogContent>
       </Dialog>
-
-      {/* ── ARRR server selection dialog ── */}
-      {isARRR && arrrServers.length > 0 && (
-        <Dialog
-          open={arrrServerOpen}
-          onClose={() => setArrrServerOpen(false)}
-          maxWidth="sm"
-          fullWidth
-          PaperProps={{
-            sx: {
-              maxWidth: isClassic ? c.layoutMaxWidth : undefined,
-              border: `${
-                isClassic
-                  ? tokens.shape.classicBorderWidth
-                  : tokens.shape.borderWidth
-              } solid ${isClassic ? c.border : c.borderLight}`,
-              borderRadius: isClassic ? `${tokens.shape.radiusMd}px` : 0,
-              bgcolor: c.surface,
-              boxShadow: isClassic ? c.shadowModal : undefined,
-            },
-          }}
-        >
-          <DialogContent sx={{ p: 0 }}>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                px: 3,
-                py: 2,
-                borderBottom: `${
-                  isClassic
-                    ? tokens.shape.classicBorderWidth
-                    : tokens.shape.borderWidth
-                } solid ${isClassic ? c.border : c.borderLight}`,
-              }}
-            >
-              <Box
-                sx={{
-                  fontWeight: tokens.typography.weightBold,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  fontSize: '0.85rem',
-                  flexGrow: 1,
-                }}
-              >
-                Select Lightwallet Server
-              </Box>
-              <IconButton
-                size="small"
-                onClick={() => setArrrServerOpen(false)}
-                sx={{ borderRadius: 0 }}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-            {arrrServers.map((server, i) => (
-              <Box
-                key={i}
-                onClick={() => handleServerChange(server)}
-                sx={{
-                  px: 3,
-                  py: 1.75,
-                  borderBottom:
-                    i < arrrServers.length - 1
-                      ? `1px solid ${isClassic ? c.border : c.borderLight}`
-                      : 'none',
-                  cursor: 'pointer',
-                  '&:hover': {
-                    bgcolor: isClassic ? c.controlHover : c.borderLight,
-                  },
-                  transition: 'background-color 0.12s ease',
-                }}
-              >
-                <Box
-                  sx={{
-                    fontFamily: c.monoFontFamily,
-                    fontSize: '0.8rem',
-                    color: c.textPrimary,
-                  }}
-                >
-                  {server.hostName ??
-                    server.hostname ??
-                    server.host ??
-                    JSON.stringify(server)}
-                  {server.port ? `:${server.port}` : ''}
-                </Box>
-                {server.connectionType && (
-                  <Box
-                    sx={{
-                      fontSize: '0.65rem',
-                      color: c.textSecondary,
-                      mt: 0.25,
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    {String(server.connectionType)}
-                  </Box>
-                )}
-              </Box>
-            ))}
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* ── ElectrumX server selection dialog (non-ARRR foreign coins) ── */}
       {!chain.isNative && !isARRR && (

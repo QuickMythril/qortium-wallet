@@ -137,6 +137,11 @@ interface BlockProps {
   chain: ChainConfig;
   balance: string | null;
   balanceError?: string;
+  // ARRR-only (round 5 review finding 1): a provisional TOTAL balance,
+  // present only while `balance` (the verified/spendable figure) is null
+  // because Core rejected the verified read as not-yet-known. Rendered
+  // with an explicit "total · verifying" qualifier, never as `balance`.
+  provisionalTotal?: string | null;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
@@ -153,6 +158,7 @@ export function CoinBlock({
   chain,
   balance,
   balanceError,
+  provisionalTotal,
   onRetryBalance,
   canReceive,
   canSend,
@@ -377,7 +383,13 @@ export function CoinBlock({
             </IconButton>
           </Tooltip>
           <Tooltip
-            title={canSend ? 'Send' : 'Requires a local node'}
+            title={
+              chain.coinEnum === 'ARRR'
+                ? 'Sending ARRR is not available yet'
+                : canSend
+                  ? 'Send'
+                  : 'Requires a local node'
+            }
             placement="top"
           >
             <span>
@@ -434,6 +446,36 @@ export function CoinBlock({
             />
           ) : balance !== null ? (
             balance
+          ) : provisionalTotal != null ? (
+            <Tooltip
+              title="Total incl. unconfirmed/unverified - not yet spendable"
+              placement="top"
+            >
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  lineHeight: 1.1,
+                }}
+              >
+                <Box component="span">{provisionalTotal}</Box>
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '0.55rem',
+                    fontWeight: tokens.typography.weightBold,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    color: hovered ? c.accentText : c.textSecondary,
+                    opacity: 0.85,
+                  }}
+                >
+                  total · verifying
+                </Box>
+              </Box>
+            </Tooltip>
           ) : balanceError ? (
             <Tooltip title={balanceError} placement="top">
               <Box
@@ -502,6 +544,7 @@ function SortableCoinItem({
   chain,
   balance,
   balanceError,
+  provisionalTotal,
   onRetryBalance,
   canReceive,
   canSend,
@@ -514,6 +557,7 @@ function SortableCoinItem({
   chain: ChainConfig;
   balance: string | null;
   balanceError?: string;
+  provisionalTotal?: string | null;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
@@ -548,6 +592,7 @@ function SortableCoinItem({
           chain={chain}
           balance={balance}
           balanceError={balanceError}
+          provisionalTotal={provisionalTotal}
           onRetryBalance={onRetryBalance}
           canReceive={canReceive}
           canSend={canSend}
@@ -565,6 +610,7 @@ function SortableCoinItem({
           chain={chain}
           balance={balance}
           balanceError={balanceError}
+          provisionalTotal={provisionalTotal}
           onRetryBalance={onRetryBalance}
           canReceive={canReceive}
           canSend={canSend}
@@ -656,6 +702,14 @@ export function CoinGrid() {
   const [balanceErrors, setBalanceErrors] = useState<Record<string, string>>(
     {}
   );
+  // ARRR-only (round 5 review finding 1): a provisional TOTAL balance shown
+  // only while the verified (spendable) figure is unknown - kept in its own
+  // map, never merged into `balances`, so it can only ever render with the
+  // "total · verifying" qualifier below and never be mistaken for a
+  // confirmed spendable amount.
+  const [provisionalTotals, setProvisionalTotals] = useState<
+    Record<string, string | null>
+  >({});
   const [canSendNative, setCanSendNative] = useState(false);
   // null = "not fetched yet this session" (distinct from a fetched-but-empty
   // array) - the balance pass below must not treat the pre-first-fetch gap
@@ -910,8 +964,23 @@ export function CoinGrid() {
             delete next[chain.key];
             return next;
           });
+          setProvisionalTotals((prev) => ({ ...prev, [chain.key]: null }));
           setLoading((prev) => ({ ...prev, [chain.key]: false }));
           setCachedBalance(account, chain.key, { balance: null });
+        }
+        return;
+      }
+
+      // Round 5: once custody is available, the grid tile never
+      // independently polls ARRR - it only reflects whatever the ARRR
+      // page's own sync-status-driven balance fetch last wrote to the
+      // shared cache (design doc: "the grid row consumes cached
+      // progress/balance without a background ARRR timer"). runBalancePass
+      // has already seeded `balances`/`balanceErrors` from that cache
+      // above; there's nothing further to fetch here.
+      if (chain.coinEnum === 'ARRR') {
+        if (!isCancelled()) {
+          setLoading((prev) => ({ ...prev, [chain.key]: false }));
         }
         return;
       }
@@ -1021,6 +1090,14 @@ export function CoinGrid() {
         const cached = getCachedBalance(account, chain.key);
         if (cached?.error) next[chain.key] = cached.error;
         else if (cached) delete next[chain.key];
+      });
+      return next;
+    });
+    setProvisionalTotals((prev) => {
+      const next = accountChanged ? {} : { ...prev };
+      chains.forEach((chain) => {
+        const cached = getCachedBalance(account, chain.key);
+        if (cached) next[chain.key] = cached.provisionalTotal ?? null;
       });
       return next;
     });
@@ -1170,6 +1247,19 @@ export function CoinGrid() {
         });
         return changed ? next : prev;
       });
+      setProvisionalTotals((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        chains.forEach((chain) => {
+          const cached = getCachedBalance(account, chain.key);
+          const provisional = cached?.provisionalTotal ?? null;
+          if (cached && next[chain.key] !== provisional) {
+            next[chain.key] = provisional;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
     });
   }, [chains, account]);
 
@@ -1227,6 +1317,7 @@ export function CoinGrid() {
                       chain={item.chain}
                       balance={balances[item.key] ?? null}
                       balanceError={balanceErrors[item.key]}
+                      provisionalTotal={provisionalTotals[item.key] ?? null}
                       onRetryBalance={retryBalance}
                       canReceive={item.chain.isNative || foreign.canReceive}
                       canSend={

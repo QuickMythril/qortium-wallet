@@ -3,6 +3,12 @@ export type HomeWalletMode =
   | 'PUBLIC_NODE'
   | 'HOME_SIGNED_PUBLIC_NODE'
   | 'TRUSTED_CORE'
+  // ARRR-only (round 5): a desktop, admin-trusted Core holds the wallet's
+  // spending key and keeps a synced copy on the user's behalf. Distinct
+  // from TRUSTED_CORE (which still signs from Home) - never valid for any
+  // other coin, and never valid with send:true. See
+  // homeWalletCapabilities.ts's coin-aware gate.
+  | 'TRUSTED_CORE_CUSTODY'
   | 'NONE';
 
 export interface HomeWalletCapability {
@@ -18,6 +24,14 @@ export interface HomeWalletCapability {
   receiveMode: HomeWalletMode;
   sendMode: HomeWalletMode;
   serverManagementMode: HomeWalletMode;
+  // ARRR custody extension (round 5) - see the ARRR row of
+  // HOME_V2_BRIDGE_COMPATIBILITY.md. `custodyContract` names the exact
+  // custody wire contract; `syncStatus` advertises GET_ARRR_SYNC_STATUS
+  // support; `unavailableReason` explains a false read/receive for ARRR
+  // (locked account, Android, non-trusted route, old Home).
+  custodyContract?: string;
+  syncStatus?: boolean;
+  unavailableReason?: string;
 }
 
 export interface ChainConfig {

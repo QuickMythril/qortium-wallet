@@ -66,6 +66,7 @@ interface QdnRequestOptions {
   txGroupId?: number;
   txType?: TransactionType | TransactionType[];
   type?: string;
+  verified?: boolean;
 }
 
 declare function qdnRequest(options: QdnRequestOptions): Promise<any>;

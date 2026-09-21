@@ -2,6 +2,20 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.15] - 2026-09-21 (QuickMythril fork test build)
+
+### Added
+
+- ARRR balances and receive now work through Home 2's new trusted-Core custody read adapter (`TRUSTED_CORE_CUSTODY` / `qortium-home-arrr-custody-v1`) instead of the old free-text sync-status polling loop. `homeWalletCapabilities.ts` gained a coin-aware ARRR-only branch (`src/common/homeWalletCapabilities.ts`) that only ever grants `TRUSTED_CORE_CUSTODY` for `coinEnum === 'ARRR'` when the exact custody contract, `syncStatus: true`, `send: false`/`sendMode: 'NONE'`, and `GET_ARRR_SYNC_STATUS` are all present - any other coin advertising that mode, or ARRR advertising it with `send: true`, is rejected exactly like a missing capability. The eight bitcoiny coins' existing gate is unchanged.
+- The ARRR coin page now renders the five structured sync states (`DISABLED`, `LOADING`, `SYNCHRONIZING`, `DEGRADED`, `READY`) from Core's typed `GET_ARRR_SYNC_STATUS` snapshot (`src/common/arrrSync.ts`, `src/hooks/useArrrSyncStatus.ts`) instead of matching against Core's old free-text status strings and estimating a percentage from a retry counter. Progress shows the real `scannedHeight`/`tipHeight` (falling back to `syncedBlocks`/`totalBlocks`, then an indeterminate spinner) while `SYNCHRONIZING`; `DEGRADED` shows Core's `lastError.message` and a restart hint when `restartRequired`; a `stale` `READY` snapshot is labeled "last updated ... · provisional" rather than shown as current. Balances are gated on Core's own `ready` verdict, never on `state` alone. Polling starts immediately on page entry, runs every 15s while `LOADING`/`SYNCHRONIZING`/`DEGRADED`, every 3 minutes once `READY`/`DISABLED`, pauses entirely while the tab is hidden (resuming with an immediate poll on becoming visible again), and is cancelled on unmount or account switch. The receive address (`GET_USER_WALLET`) now shows as soon as it resolves, independent of sync state - it no longer waits behind the old sync gate.
+- ARRR balances now show the verified (spendable) amount as the primary figure and the total (including unconfirmed/unverified) as a secondary line, each formatted to exactly 8 decimals and never rendered as `0` when the read hasn't resolved. If the verified read specifically rejects with `ARRR_VERIFIED_BALANCE_UNAVAILABLE`, the total is shown instead with a "verifying…" label rather than being presented as spendable. Both values, plus the sync state, are stored in the existing per-account balance cache (`src/common/balanceCache.ts`) under `(account, 'ARRR')`, so the grid tile can render Wallet's last-known ARRR balance without polling `GET_WALLET_BALANCE` itself - the grid tile now skips ARRR entirely in its own balance-fetch pass, deferring to whatever the coin page last wrote.
+- `ARRR_WALLET_BUSY` (another account's ARRR wallet active on the trusted Core) now auto-retries every 10s for up to 6 attempts before falling back to a manual retry button, on both the sync-status poll and the balance/transaction reads (`requestWithArrrBusyRetry` in `src/common/arrrSync.ts`). `ARRR_SYNC_CONTRACT_UNSUPPORTED` shows "Update Qortium Core to see ARRR balances"; denying the distinct ARRR custody consent prompt shows "custody not approved" with a retry; an old Home without the custody capability leaves the ARRR row unavailable (showing Home's own `unavailableReason`) without polling or offering to send.
+- New strings across all 20 locales (`src/i18n/locales/*/core.json`, `arrr.*`) for every new ARRR state/error/label.
+
+### Removed
+
+- Every ARRR send entry point - the coin page's Send button, the grid tile's quick-send icon, and the ElectrumX-style ARRR lightwallet-server picker dialog (server selection is no longer part of the custody contract) - is gone. The Send affordances are disabled with a "Sending ARRR is not available yet" note instead of hidden outright, matching how the other foreign coins already explain a disabled Send button.
+
 ## [1.7.14] - 2026-09-21 (QuickMythril fork test build)
 
 ### Added

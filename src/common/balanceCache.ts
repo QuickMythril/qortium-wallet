@@ -28,6 +28,26 @@ export interface CachedBalance {
   balance: string | null;
   error?: string;
   fetchedAt: number;
+  // ARRR-only structured extension (round 5). `balance` above still holds
+  // the coin's canonical display amount (the verified/spendable balance
+  // once known, matching every other chain's single-figure cache entry);
+  // these carry the split the ARRR page needs and the sync snapshot state
+  // so the grid tile and the page can agree on what "ready"/"stale" mean
+  // without either re-fetching. All optional and unused by every other
+  // chain.
+  verifiedBalance?: string | null;
+  totalBalance?: string | null;
+  // Set ONLY while the verified (spendable) balance is unknown and `total`
+  // is shown as a provisional stand-in instead (Core rejected the verified
+  // read with ARRR_VERIFIED_BALANCE_UNAVAILABLE) - `balance` stays null in
+  // that case so a generic renderer (the grid tile, the list row) can
+  // never mistake this figure for a confirmed spendable amount (Codex
+  // round 5 review finding 1). Cleared back to null the moment a real
+  // verified balance is known again.
+  provisionalTotal?: string | null;
+  arrrState?: 'DISABLED' | 'LOADING' | 'SYNCHRONIZING' | 'DEGRADED' | 'READY';
+  arrrReady?: boolean;
+  arrrStale?: boolean;
 }
 
 export const BALANCE_CACHE_TTL_MS = TIME_MINUTES_2;
@@ -62,7 +82,7 @@ export function getCachedBalance(
 export function setCachedBalance(
   account: string | null | undefined,
   chainKey: string,
-  entry: { balance: string | null; error?: string }
+  entry: Omit<CachedBalance, 'fetchedAt'>
 ): void {
   store.set(makeKey(account, chainKey), { ...entry, fetchedAt: Date.now() });
   notify();

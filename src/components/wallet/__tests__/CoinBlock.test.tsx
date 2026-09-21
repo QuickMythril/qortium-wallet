@@ -82,3 +82,22 @@ describe('CoinBlock (CoinGrid tile view) coin image retry', () => {
     expect(screen.queryByText('B')).not.toBeInTheDocument();
   });
 });
+
+// Codex round 5 review finding 1: a provisional ARRR total (verified
+// balance unknown) must render with an explicit "verifying" qualifier on
+// the grid tile too, and must never be confused for the null spendable
+// `balance`.
+describe('CoinBlock provisionalTotal (round 5 review finding 1)', () => {
+  it('renders a provisional total with a "verifying" qualifier when balance is null', () => {
+    renderBlock({ balance: null, provisionalTotal: '1.50000000' });
+    expect(screen.getByText('1.50000000')).toBeInTheDocument();
+    expect(screen.getByText(/verifying/i)).toBeInTheDocument();
+    expect(screen.queryByText('unavailable')).not.toBeInTheDocument();
+  });
+
+  it('prefers the real spendable balance over a leftover provisionalTotal once it is known', () => {
+    renderBlock({ balance: '1.40000000', provisionalTotal: '1.50000000' });
+    expect(screen.getByText('1.40000000')).toBeInTheDocument();
+    expect(screen.queryByText(/verifying/i)).not.toBeInTheDocument();
+  });
+});

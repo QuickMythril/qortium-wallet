@@ -26,6 +26,11 @@ interface CoinListRowProps {
   chain: ChainConfig;
   balance: string | null;
   balanceError?: string;
+  // ARRR-only (round 5 review finding 1): a provisional TOTAL balance,
+  // present only while `balance` (the verified/spendable figure) is null
+  // because Core rejected the verified read as not-yet-known. Rendered
+  // with an explicit "total · verifying" qualifier, never as `balance`.
+  provisionalTotal?: string | null;
   onRetryBalance?: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
@@ -58,6 +63,7 @@ export function CoinListRow({
   chain,
   balance,
   balanceError,
+  provisionalTotal,
   onRetryBalance,
   canReceive,
   canSend,
@@ -261,6 +267,35 @@ export function CoinListRow({
             <Skeleton width={72} sx={{ ml: 'auto' }} />
           ) : balance !== null ? (
             balance
+          ) : provisionalTotal != null ? (
+            <Tooltip
+              title="Total incl. unconfirmed/unverified - not yet spendable"
+              placement="top"
+            >
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  lineHeight: 1.1,
+                }}
+              >
+                <Box component="span">{provisionalTotal}</Box>
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '0.6rem',
+                    fontWeight: tokens.typography.weightBold,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    color: c.textSecondary,
+                  }}
+                >
+                  total · verifying
+                </Box>
+              </Box>
+            </Tooltip>
           ) : balanceError ? (
             <Tooltip title={balanceError} placement="top">
               <Box
@@ -326,7 +361,15 @@ export function CoinListRow({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={canSend ? 'Send' : 'Requires a local node'}>
+        <Tooltip
+          title={
+            chain.coinEnum === 'ARRR'
+              ? 'Sending ARRR is not available yet'
+              : canSend
+                ? 'Send'
+                : 'Requires a local node'
+          }
+        >
           <span>
             <IconButton
               size="small"

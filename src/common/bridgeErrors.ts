@@ -85,3 +85,58 @@ export function isCoreSpendContextBugError(
     .toLowerCase()
     .includes(CORE_SPEND_CONTEXT_BUG_SUBSTRING);
 }
+
+// ARRR custody read error codes (round 5 host contract - see the ARRR rows
+// of qortium-home's HOME_V2_BRIDGE_COMPATIBILITY.md). Every ARRR custody
+// rejection carries one of these as `code`, plus a human `message`.
+export const ARRR_WALLET_BUSY_CODE = 'ARRR_WALLET_BUSY';
+export const ARRR_SYNC_CONTRACT_UNSUPPORTED_CODE =
+  'ARRR_SYNC_CONTRACT_UNSUPPORTED';
+export const ARRR_VERIFIED_BALANCE_UNAVAILABLE_CODE =
+  'ARRR_VERIFIED_BALANCE_UNAVAILABLE';
+export const ARRR_READ_BACKLOG_CODE = 'ARRR_READ_BACKLOG';
+export const ARRR_READ_CANCELLED_CODE = 'ARRR_READ_CANCELLED';
+export const ARRR_READ_SUPERSEDED_CODE = 'ARRR_READ_SUPERSEDED';
+
+/** True when another account's ARRR wallet is currently active on the trusted Core (retryable). */
+export function isArrrWalletBusyError(decoded: DecodedBridgeError): boolean {
+  return decoded.code === ARRR_WALLET_BUSY_CODE;
+}
+
+/** True when the trusted Core is too old to speak the structured ARRR sync-status contract. */
+export function isArrrSyncContractUnsupportedError(
+  decoded: DecodedBridgeError
+): boolean {
+  return decoded.code === ARRR_SYNC_CONTRACT_UNSUPPORTED_CODE;
+}
+
+/** True when the verified (spendable) ARRR balance isn't known yet, but the total may still be readable. */
+export function isArrrVerifiedBalanceUnavailableError(
+  decoded: DecodedBridgeError
+): boolean {
+  return decoded.code === ARRR_VERIFIED_BALANCE_UNAVAILABLE_CODE;
+}
+
+// The distinct `account.arrr-custody.read` consent prompt (separate from
+// the eight-coin foreign-wallet disclosure) is rejected by Home with its
+// generic account-access-denial wording, NOT anything mentioning "custody"
+// or "ARRR" - Home's home-v2-app-bridge.ts throws the exact string
+// "Account access was denied." for every denied prompt, this one included
+// (Codex round 5 review finding 3: the earlier "custody"+"denied" keyword
+// combo could never match that real string, so a genuine denial fell
+// through to the generic retry path instead of surfacing "custody not
+// approved"). Matched by exact string (trimmed) plus the documented
+// PERMISSION_DENIED code, and nothing broader - a loose substring match
+// here risks treating an unrelated transient error as a permanent denial
+// and wrongly freezing the ARRR-only retry loop that calls this. This
+// predicate is called ONLY from the ARRR custody read path
+// (useArrrSyncStatus.ts), never shared with unrelated bridge errors.
+const ARRR_CUSTODY_CONSENT_DENIED_MESSAGE = 'Account access was denied.';
+const PERMISSION_DENIED_CODE = 'PERMISSION_DENIED';
+
+export function isArrrCustodyConsentDeniedError(
+  decoded: DecodedBridgeError
+): boolean {
+  if (decoded.code === PERMISSION_DENIED_CODE) return true;
+  return decoded.message.trim() === ARRR_CUSTODY_CONSENT_DENIED_MESSAGE;
+}

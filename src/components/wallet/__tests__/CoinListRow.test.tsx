@@ -24,6 +24,20 @@ const btcChain: ChainConfig = {
   supportsLocalChainTrades: true,
 };
 
+const arrrChain: ChainConfig = {
+  key: 'ARRR',
+  name: 'Pirate Chain',
+  ticker: 'ARRR',
+  coinEnum: 'ARRR',
+  route: 'pirate-chain',
+  defaultFee: 0.0001,
+  isNative: false,
+  decimalPlaces: 8,
+  activeNetwork: 'MAIN',
+  supportsHtlc: false,
+  supportsLocalChainTrades: false,
+};
+
 const qortChain: ChainConfig = {
   key: 'QORT',
   name: 'Qortal',
@@ -170,5 +184,33 @@ describe('CoinListRow', () => {
     expect(
       screen.queryByRole('button', { name: 'reorder BTC' })
     ).not.toBeInTheDocument();
+  });
+
+  // Codex round 5 review finding 1: a provisional ARRR total (verified
+  // balance unknown) must render with an explicit "verifying" qualifier,
+  // and must never be confused for the null spendable `balance`.
+  it('renders a provisional total with a "verifying" qualifier, never as the spendable balance, when balance is null', () => {
+    renderRow({
+      chain: arrrChain,
+      balance: null,
+      provisionalTotal: '1.50000000',
+      fiatDisplay: undefined,
+    });
+    expect(screen.getByText('1.50000000')).toBeInTheDocument();
+    expect(screen.getByText(/verifying/i)).toBeInTheDocument();
+    // The generic "unavailable" retry affordance (for a real balance
+    // error) must not appear alongside a provisional total.
+    expect(screen.queryByText('unavailable')).not.toBeInTheDocument();
+  });
+
+  it('prefers the real spendable balance over a leftover provisionalTotal once it is known', () => {
+    renderRow({
+      chain: arrrChain,
+      balance: '1.40000000',
+      provisionalTotal: '1.50000000',
+      fiatDisplay: undefined,
+    });
+    expect(screen.getByText('1.40000000')).toBeInTheDocument();
+    expect(screen.queryByText(/verifying/i)).not.toBeInTheDocument();
   });
 });
