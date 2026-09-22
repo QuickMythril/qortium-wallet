@@ -1,7 +1,7 @@
 {
   "name": "qortium-wallet",
   "private": true,
-  "version": "1.7.19",
+  "version": "1.7.20",
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build && node -e \"require('fs').copyFileSync('CHANGELOG.md','dist/CHANGELOG.md')\"",

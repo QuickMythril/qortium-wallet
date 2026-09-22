@@ -2,7 +2,7 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.20] - 2026-09-22 (QuickMythril fork test build)
 
 ### Keep ARRR accounts observable without switching them
 
