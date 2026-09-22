@@ -2,6 +2,12 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.22] - 2026-09-22 (QuickMythril fork test build)
+
+### Release Wallet 1.7.22
+
+- Refresh the Wallet test publication for acceptance with the merged Core and Home ARRR controls and partial-history adapters. Wallet behavior is unchanged from 1.7.21.
+
 ## [1.7.21] - 2026-09-22 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.21
