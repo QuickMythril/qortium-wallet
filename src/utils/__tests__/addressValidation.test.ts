@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  classifyRecipient,
   validateAddress,
   validateArrrAddress,
   validateBtcAddress,
@@ -250,6 +251,18 @@ describe('addressValidation', () => {
         false
       );
     });
+    it('accepts a valid bech32 v0 (nc1q..., 20-byte program) address - round 6 fix: Core (BitcoinyChainSpecs.namecoinParams() .segwitAddressHrp("nc")) and Home both accept this; the validator only accepted base58 before.', () => {
+      expect(
+        validateNmcAddress('nc1qqurswpc8qurswpc8qurswpc8qurswpc8z9xky0')
+      ).toBe(true);
+    });
+    it('accepts a valid bech32 v0 (nc1q..., 32-byte P2WSH program) address', () => {
+      expect(
+        validateNmcAddress(
+          'nc1qqurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurskqqz38'
+        )
+      ).toBe(true);
+    });
   });
 
   describe('validateFiroAddress', () => {
@@ -341,6 +354,259 @@ describe('addressValidation', () => {
     });
     it('returns false and warns for an unknown coin type', () => {
       expect(validateAddress('NOT_A_COIN', 'whatever')).toBe(false);
+    });
+  });
+
+  // Round 6, item B (owner decision 2026-09-22): classifyRecipient() gives
+  // the send form a specific reason instead of a generic "not a valid
+  // <TICKER> address", so it can name the unsupported format the user
+  // pasted. Every bech32m fixture below (taproot/MWEB/Spark, plus their
+  // "wrong variant"/corrupted-checksum counterparts) was generated with a
+  // small Node reference script implementing BIP350 bech32/bech32m byte
+  // for byte (same polymod generator + hrp-expand this file already uses
+  // for BIP173 bech32, which the pre-existing 54 tests above already
+  // prove correct against real mainnet addresses, plus the official
+  // BIP350 bech32m constant 0x2bc830a3) - not hand-typed strings. The BTC
+  // taproot fixture is additionally a real, well-known mainnet Taproot
+  // address (independently checksum-verified by that same reference
+  // script), so this cross-checks against a genuine BIP350 vector, not
+  // just an internally-consistent synthetic one. The CashAddr fixture is
+  // the canonical example address from the CashAddr specification itself.
+  describe('classifyRecipient', () => {
+    describe('TAPROOT_UNSUPPORTED', () => {
+      it('BTC: a real, well-known mainnet Taproot (bech32m, witness v1, 32-byte program) address', () => {
+        expect(
+          classifyRecipient(
+            'BTC',
+            'bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297'
+          )
+        ).toEqual({ valid: false, reason: 'TAPROOT_UNSUPPORTED' });
+      });
+      it('LTC: a Taproot-shaped (ltc1p..., bech32m, witness v1) address', () => {
+        expect(
+          classifyRecipient(
+            'LTC',
+            'ltc1pqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpq2qs525'
+          )
+        ).toEqual({ valid: false, reason: 'TAPROOT_UNSUPPORTED' });
+      });
+      it('DGB: a Taproot-shaped (dgb1p..., bech32m, witness v1) address', () => {
+        expect(
+          classifyRecipient(
+            'DGB',
+            'dgb1pqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvps3uruev'
+          )
+        ).toEqual({ valid: false, reason: 'TAPROOT_UNSUPPORTED' });
+      });
+      it('recognises a valid bech32m string as Taproot rather than treating it as a bad checksum', () => {
+        const result = classifyRecipient(
+          'BTC',
+          'bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297'
+        );
+        expect(result.reason).not.toBe('BAD_CHECKSUM');
+        expect(result.reason).toBe('TAPROOT_UNSUPPORTED');
+      });
+    });
+
+    describe('BAD_CHECKSUM for witness v1 encoded with the wrong bech32 variant', () => {
+      it('BTC: witness v1 (Taproot-shaped) encoded with plain bech32 instead of the BIP350-required bech32m', () => {
+        expect(
+          classifyRecipient(
+            'BTC',
+            'bc1pqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs3wf0qm'
+          )
+        ).toEqual({ valid: false, reason: 'BAD_CHECKSUM' });
+      });
+      it('BTC: a Taproot address with a corrupted checksum (fails both bech32 and bech32m)', () => {
+        expect(
+          classifyRecipient(
+            'BTC',
+            'bc1pqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsyjer96'
+          )
+        ).toEqual({ valid: false, reason: 'BAD_CHECKSUM' });
+      });
+    });
+
+    describe('MWEB_UNSUPPORTED', () => {
+      it('LTC: an ltcmweb1... (bech32m) MWEB address', () => {
+        expect(
+          classifyRecipient(
+            'LTC',
+            'ltcmweb1qszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsctzsld'
+          )
+        ).toEqual({ valid: false, reason: 'MWEB_UNSUPPORTED' });
+      });
+      it('a corrupted MWEB address falls back to BAD_CHECKSUM (right HRP, checksum fails both variants)', () => {
+        expect(
+          classifyRecipient(
+            'LTC',
+            'ltcmweb1qszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsctzslw'
+          )
+        ).toEqual({ valid: false, reason: 'BAD_CHECKSUM' });
+      });
+    });
+
+    describe('SPARK_UNSUPPORTED (FIRO)', () => {
+      it('a valid sm1... (bech32m) Spark address', () => {
+        expect(
+          classifyRecipient(
+            'FIRO',
+            'sm1q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs7x65tn'
+          )
+        ).toEqual({ valid: false, reason: 'SPARK_UNSUPPORTED' });
+      });
+      it('a corrupted Spark address falls back to BAD_CHECKSUM (right HRP, checksum fails both variants)', () => {
+        expect(
+          classifyRecipient(
+            'FIRO',
+            'sm1q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs7x65t5'
+          )
+        ).toEqual({ valid: false, reason: 'BAD_CHECKSUM' });
+      });
+      // LELANTUS_UNSUPPORTED (in RecipientInvalidReason) is deliberately
+      // untested: Firo's older Lelantus/Sigma privacy mints have no
+      // equivalent user-facing "address" format to paste into a send
+      // form - a mint is a script the sender's own wallet builds
+      // internally, never a string published for someone else to send
+      // to (see the NOTE on isSparkAddress() in addressValidation.ts).
+      // No input reaches that branch, so there is nothing to fixture.
+    });
+
+    describe('CASHADDR_WRONG_COIN', () => {
+      it('BTC: the canonical CashAddr specification example address, with its bitcoincash: prefix', () => {
+        expect(
+          classifyRecipient(
+            'BTC',
+            'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a'
+          )
+        ).toEqual({ valid: false, reason: 'CASHADDR_WRONG_COIN' });
+      });
+      it('BTC: the same CashAddr address without its prefix (defaults to bitcoincash)', () => {
+        expect(
+          classifyRecipient('BTC', 'qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a')
+        ).toEqual({ valid: false, reason: 'CASHADDR_WRONG_COIN' });
+      });
+      it('is coin-independent: also recognised when the target coin is QORT', () => {
+        expect(
+          classifyRecipient(
+            'QORT',
+            'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a'
+          )
+        ).toEqual({ valid: false, reason: 'CASHADDR_WRONG_COIN' });
+      });
+    });
+
+    describe('WRONG_COIN', () => {
+      it('BTC target, a valid LTC P2PKH address', () => {
+        expect(
+          classifyRecipient('BTC', 'LKKHMBjCU89fyFNgSRprDoD8Jb25N8uWvd')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'LTC' });
+      });
+      it('RVN target, a valid DOGE/DGB-colliding P2PKH address (reported as DOGE)', () => {
+        expect(
+          classifyRecipient('RVN', 'D5ERdEN1gsouFSs7zsq7VYJxyWP6dP28H1')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'DOGE' });
+      });
+      it('DASH target, a valid NMC P2PKH address', () => {
+        expect(
+          classifyRecipient('DASH', 'MvfhHcvMJr1BEyw2Y7A8AJJGpc3rCHJoi8')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'NMC' });
+      });
+      it('QORT target, a valid BTC P2PKH address', () => {
+        expect(
+          classifyRecipient('QORT', '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'BTC' });
+      });
+      it('FIRO target, a valid DGB-only P2SH address', () => {
+        expect(
+          classifyRecipient('FIRO', 'SMPL7pCX7q6pEkTyoipdVgHvk9tE5D6XNW')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'DGB' });
+      });
+      it('NMC target, a valid DASH P2PKH address', () => {
+        expect(
+          classifyRecipient('NMC', 'XanAvE5GMB8CsPH78B9moJq9viEVKvCS4f')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'DASH' });
+      });
+      it('ARRR target, a valid BTC P2PKH address', () => {
+        expect(
+          classifyRecipient('ARRR', '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu')
+        ).toEqual({ valid: false, reason: 'WRONG_COIN', otherCoin: 'BTC' });
+      });
+      it('the DOGE/DGB base58 collision stays mutually valid, not WRONG_COIN, for either coin (unchanged round 4 behaviour)', () => {
+        expect(
+          classifyRecipient('DOGE', 'DLhVrzoqSXssQxcKkXt7Cr1ny8uG9gSCHR')
+        ).toEqual({ valid: true });
+        expect(
+          classifyRecipient('DGB', 'D5ERdEN1gsouFSs7zsq7VYJxyWP6dP28H1')
+        ).toEqual({ valid: true });
+      });
+    });
+
+    describe('BAD_CHECKSUM (base58, right shape, checksum fails)', () => {
+      it.each([
+        ['BTC', '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAv'],
+        ['LTC', 'LKKHMBjCU89fyFNgSRprDoD8Jb25N8uWve'],
+        ['DOGE', 'D5ERdEN1gsouFSs7zsq7VYJxyWP6dP28H2'],
+        ['RVN', 'R9NXAVJezHiBnT3ijTpg3JUZre7PxhJWtj'],
+        ['DGB', 'SMPL7pCX7q6pEkTyoipdVgHvk9tE5D6XNX'],
+        ['DASH', 'XanAvE5GMB8CsPH78B9moJq9viEVKvCS4g'],
+        ['NMC', 'MvfhHcvMJr1BEyw2Y7A8AJJGpc3rCHJoi9'],
+        ['FIRO', 'ZzonpsrzcFuTmz7dGh9gi4Tshjn9ZK3z92'],
+        ['QORT', 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD9'],
+      ])('%s: %s', (coin, address) => {
+        expect(classifyRecipient(coin, address)).toEqual({
+          valid: false,
+          reason: 'BAD_CHECKSUM',
+        });
+      });
+      it('BTC: a bech32 address with a corrupted checksum', () => {
+        expect(
+          classifyRecipient('BTC', 'bc1qqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5fcj4z4')
+        ).toEqual({ valid: false, reason: 'BAD_CHECKSUM' });
+      });
+    });
+
+    describe('UNKNOWN_FORMAT', () => {
+      it.each(['BTC', 'FIRO', 'ARRR', 'QORT'])(
+        '%s: a string with invalid base58 characters (0/O/I/l) that is also not bech32-shaped',
+        (coin) => {
+          expect(
+            classifyRecipient(coin, '0OIlxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+          ).toEqual({ valid: false, reason: 'UNKNOWN_FORMAT' });
+        }
+      );
+    });
+
+    describe('NMC nc1... bech32 v0 (round 6 fix)', () => {
+      it('accepts a valid 20-byte nc1q... address', () => {
+        expect(
+          classifyRecipient('NMC', 'nc1qqurswpc8qurswpc8qurswpc8qurswpc8z9xky0')
+        ).toEqual({ valid: true });
+      });
+      it('accepts a valid 32-byte (P2WSH) nc1q... address', () => {
+        expect(
+          classifyRecipient(
+            'NMC',
+            'nc1qqurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurskqqz38'
+          )
+        ).toEqual({ valid: true });
+      });
+    });
+
+    it('empty input returns invalid with no specific reason', () => {
+      expect(classifyRecipient('BTC', '')).toEqual({ valid: false });
+      expect(classifyRecipient('BTC', '   ')).toEqual({ valid: false });
+    });
+
+    it('validateAddress stays a thin boolean wrapper over classifyRecipient', () => {
+      const address =
+        'bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297';
+      expect(validateAddress('BTC', address)).toBe(
+        classifyRecipient('BTC', address).valid
+      );
+      expect(validateAddress('BTC', '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu')).toBe(
+        classifyRecipient('BTC', '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu').valid
+      );
     });
   });
 });

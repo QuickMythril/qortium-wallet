@@ -2,6 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.16] - 2026-09-22 (QuickMythril fork test build)
+
+### Added
+
+- The send form now tells you WHICH unsupported address format you pasted instead of a generic "not a valid `<TICKER>` address" (owner decision 2026-09-22, round 6 item B). `src/utils/addressValidation.ts` gained `classifyRecipient(coin, address)`, returning a structured `{ valid, reason?, otherCoin? }` instead of just a boolean - `validateAddress()` is now a thin wrapper over it, so every existing caller/test keeps working unchanged. Recognised reasons: `TAPROOT_UNSUPPORTED` (a real bech32m witness-v1 address for BTC/LTC/DGB - "Taproot (bc1p…) addresses aren't supported yet - use a legacy or bc1q address."), `MWEB_UNSUPPORTED` (Litecoin `ltcmweb1…`), `SPARK_UNSUPPORTED`/`LELANTUS_UNSUPPORTED` (Firo `sm1…` Spark addresses, source-verified against firoorg/firo's `src/libspark/util.h`/`keys.cpp` - HRP `sm` + bech32m; `LELANTUS_UNSUPPORTED` is kept in the reason union for forward-compatibility, but Firo's older Lelantus/Sigma mints have no equivalent user-facing address format to recognise, so nothing currently classifies as it), `CASHADDR_WRONG_COIN` (a real, checksum-verified Bitcoin Cash CashAddr address, with or without its `bitcoincash:` prefix), `WRONG_COIN` (a genuinely valid address for a different supported coin, naming which one), and `BAD_CHECKSUM` vs `UNKNOWN_FORMAT` (right shape/wrong checksum - likely a typo - versus a format this wallet doesn't recognise at all). The bech32 decoder gained real bech32m (BIP350) support alongside its existing BIP173 bech32 decode, so a valid bech32m string is recognised as such rather than being treated as a bad-checksum bech32 string. `CoinDetail.tsx`'s send form shows the specific message via six new i18n keys (`send_dialog.recipient_invalid_{taproot,mweb,spark,cashaddr,wrong_coin,bad_checksum}`) added to all 20 locales.
+- Fixed a namecoin (NMC) validation gap: `validateNmcAddress()` only accepted base58 addresses, while Core (`BitcoinyChainSpecs.namecoinParams()` - `.segwitAddressHrp("nc")`) and Home both accept segwit v0 `nc1q…` addresses too - a real, sendable NMC address this form was wrongly rejecting.
+
 ## [1.7.15] - 2026-09-21 (QuickMythril fork test build)
 
 ### Added

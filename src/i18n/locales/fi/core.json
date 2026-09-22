@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "summa ja arvioitu maksu saattavat ylittää saldosi",
     "recipient_invalid": "vastaanottajan osoite on pakollinen ja saa olla enintään 256 merkkiä.",
     "recipient_invalid_coin": "ei kelvollinen {{ ticker }}-osoite",
+    "recipient_invalid_taproot": "Taproot-osoitteita ({{ example }}) ei vielä tueta - käytä legacy- tai {{ legacy }}-osoitetta.",
+    "recipient_invalid_mweb": "Litecoinin MWEB-osoitteita ei tueta - käytä ltc1q- tai legacy-osoitetta.",
+    "recipient_invalid_spark": "Firon Spark/Lelantus-osoitteita ei tueta - käytä läpinäkyvää (a…) osoitetta.",
+    "recipient_invalid_cashaddr": "Tämä on Bitcoin Cash -osoite; BCH:ta ei tueta täällä.",
+    "recipient_invalid_wrong_coin": "Tämä näyttää {{ otherCoin }}-osoitteelta, ei {{ ticker }}-osoitteelta.",
+    "recipient_invalid_bad_checksum": "Tämä näyttää {{ ticker }}-osoitteelta, mutta tarkistussumma ei täsmää - tarkista mahdolliset kirjoitusvirheet.",
     "doge_dgb_look_alike": "DOGE- ja DGB-legacy-osoitteet näyttävät samalta - tarkista kolikko.",
     "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla.",
     "resolution_invalid_coin_address": "yhteystiedon {{ ticker }}-osoite ei ole kelvollinen"

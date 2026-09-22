@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "suma plus taxa estimată poate depăși soldul tău",
     "recipient_invalid": "adresa destinatarului este obligatorie și poate avea cel mult 256 de caractere.",
     "recipient_invalid_coin": "adresă {{ ticker }} invalidă",
+    "recipient_invalid_taproot": "Adresele Taproot ({{ example }}) nu sunt încă acceptate - folosește o adresă veche sau {{ legacy }}.",
+    "recipient_invalid_mweb": "Adresele Litecoin MWEB nu sunt acceptate - folosește o adresă ltc1q sau una veche.",
+    "recipient_invalid_spark": "Adresele Firo Spark/Lelantus nu sunt acceptate - folosește o adresă transparentă (a…).",
+    "recipient_invalid_cashaddr": "Aceasta este o adresă Bitcoin Cash; BCH nu este acceptat aici.",
+    "recipient_invalid_wrong_coin": "Aceasta pare o adresă {{ otherCoin }}, nu {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Aceasta pare o adresă {{ ticker }}, dar suma de control nu se potrivește - verifică eventualele greșeli de tastare.",
     "doge_dgb_look_alike": "adresele vechi DOGE și DGB seamănă - verifică din nou moneda.",
     "fee_per_byte_invalid": "introdu o taxă pozitivă pe byte cu cel mult 8 zecimale.",
     "resolution_invalid_coin_address": "adresa {{ ticker }} a contactului nu este validă"

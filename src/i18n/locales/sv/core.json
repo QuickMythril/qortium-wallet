@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "belopp plus uppskattad avgift kan överstiga ditt saldo",
     "recipient_invalid": "mottagarens adress är obligatorisk och får vara högst 256 tecken.",
     "recipient_invalid_coin": "inte en giltig {{ ticker }}-adress",
+    "recipient_invalid_taproot": "Taproot-adresser ({{ example }}) stöds inte än - använd en legacy- eller {{ legacy }}-adress.",
+    "recipient_invalid_mweb": "Litecoin MWEB-adresser stöds inte - använd en ltc1q- eller legacy-adress.",
+    "recipient_invalid_spark": "Firo Spark/Lelantus-adresser stöds inte - använd en transparent (a…)-adress.",
+    "recipient_invalid_cashaddr": "Det här är en Bitcoin Cash-adress; BCH stöds inte här.",
+    "recipient_invalid_wrong_coin": "Det här ser ut som en {{ otherCoin }}-adress, inte {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Det här ser ut som en {{ ticker }}-adress, men kontrollsumman stämmer inte - kolla om det är ett skrivfel.",
     "doge_dgb_look_alike": "DOGE- och DGB-legacyadresser liknar varandra - dubbelkolla myntet.",
     "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler.",
     "resolution_invalid_coin_address": "kontaktens {{ ticker }}-adress är inte giltig"

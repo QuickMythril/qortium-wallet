@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "az összeg és a becsült díj együtt meghaladhatja az egyenleged",
     "recipient_invalid": "a címzett címe kötelező és legfeljebb 256 karakter lehet.",
     "recipient_invalid_coin": "nem érvényes {{ ticker }} cím",
+    "recipient_invalid_taproot": "A Taproot ({{ example }}) címek még nem támogatottak - használj régi típusú vagy {{ legacy }} címet.",
+    "recipient_invalid_mweb": "A Litecoin MWEB címek nem támogatottak - használj ltc1q vagy régi típusú címet.",
+    "recipient_invalid_spark": "A Firo Spark/Lelantus címek nem támogatottak - használj átlátszó (a…) címet.",
+    "recipient_invalid_cashaddr": "Ez egy Bitcoin Cash cím; a BCH itt nem támogatott.",
+    "recipient_invalid_wrong_coin": "Ez egy {{ otherCoin }} címnek tűnik, nem {{ ticker }} címnek.",
+    "recipient_invalid_bad_checksum": "Ez egy {{ ticker }} címnek tűnik, de az ellenőrző összeg nem egyezik - nézd meg, nincs-e elgépelés.",
     "doge_dgb_look_alike": "A DOGE és a DGB régi típusú címei hasonlóak - ellenőrizd újra az érmét.",
     "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel.",
     "resolution_invalid_coin_address": "a kapcsolat {{ ticker }} címe nem érvényes"

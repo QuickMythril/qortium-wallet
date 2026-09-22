@@ -69,7 +69,10 @@ import {
   isPositiveDecimal,
   isValidRecipient,
 } from '../../utils/walletSend';
-import { validateAddress } from '../../utils/addressValidation';
+import {
+  classifyRecipient,
+  type RecipientInvalidReason,
+} from '../../utils/addressValidation';
 import { minNonDustOutput } from '../../config/minimums';
 import {
   resolveContact,
@@ -198,6 +201,63 @@ async function ensureAccountUnlocked(
   const unlocked = isUnlockedResult(result);
   if (usesQdnRequestForUnlock) setCachedAccountUnlocked(unlocked);
   return unlocked;
+}
+
+// Round 6, item B: bech32 HRP examples for the Taproot message - only the
+// three segwit-bech32 coins this wallet supports can even show a Taproot
+// address (bc1p.../ltc1p.../dgb1p...); see the matching TAPROOT_UNSUPPORTED
+// spec in addressValidation.ts's classifyBitcoinyCoin().
+const TAPROOT_SEGWIT_HRP: Record<string, string> = {
+  BTC: 'bc',
+  LTC: 'ltc',
+  DGB: 'dgb',
+};
+
+/**
+ * Maps a `classifyRecipient()` result to the i18n key + params for the
+ * send form's recipient helper text (round 6, item B / owner decision
+ * 2026-09-22: name WHICH unsupported format was pasted, not just "not a
+ * valid <TICKER> address"). Returns the pre-existing generic
+ * `recipient_invalid_coin` key for `UNKNOWN_FORMAT` and any reason this
+ * function doesn't otherwise recognise (defensive default).
+ */
+function recipientInvalidMessage(
+  reason: RecipientInvalidReason | undefined,
+  ticker: string,
+  otherCoin: string | undefined
+): { key: string; params?: Record<string, string> } {
+  switch (reason) {
+    case 'TAPROOT_UNSUPPORTED': {
+      const hrp = TAPROOT_SEGWIT_HRP[ticker] ?? 'bc';
+      return {
+        key: 'send_dialog.recipient_invalid_taproot',
+        params: { example: `${hrp}1p…`, legacy: `${hrp}1q…` },
+      };
+    }
+    case 'MWEB_UNSUPPORTED':
+      return { key: 'send_dialog.recipient_invalid_mweb' };
+    case 'SPARK_UNSUPPORTED':
+    case 'LELANTUS_UNSUPPORTED':
+      return { key: 'send_dialog.recipient_invalid_spark' };
+    case 'CASHADDR_WRONG_COIN':
+      return { key: 'send_dialog.recipient_invalid_cashaddr' };
+    case 'WRONG_COIN':
+      return {
+        key: 'send_dialog.recipient_invalid_wrong_coin',
+        params: { otherCoin: otherCoin ?? '?', ticker },
+      };
+    case 'BAD_CHECKSUM':
+      return {
+        key: 'send_dialog.recipient_invalid_bad_checksum',
+        params: { ticker },
+      };
+    case 'UNKNOWN_FORMAT':
+    default:
+      return {
+        key: 'send_dialog.recipient_invalid_coin',
+        params: { ticker },
+      };
+  }
 }
 
 export function CoinDetail({ chain }: Props) {
@@ -1213,8 +1273,17 @@ export function CoinDetail({ chain }: Props) {
   // owns/wrote it, never validated at the source. A malformed or
   // wrong-chain resolved address must block Send exactly like a
   // malformed typed one (round 4 review item 2).
+  //
+  // Round 6, item B (owner decision 2026-09-22): classifyRecipient()
+  // (addressValidation.ts) reports WHICH unsupported format was pasted
+  // (Taproot/MWEB/Spark/CashAddr/wrong-coin/bad-checksum) instead of just
+  // true/false, so the helper text below can name it instead of showing
+  // a generic "not a valid <TICKER> address".
   const genericRecipientOk = isValidRecipient(recipient);
-  const recipientFormatOk = validateAddress(chain.coinEnum, recipient);
+  const recipientClassification = classifyRecipient(chain.coinEnum, recipient);
+  const recipientFormatOk = recipientClassification.valid;
+  const recipientInvalidReason = recipientClassification.reason;
+  const recipientOtherCoin = recipientClassification.otherCoin;
   const recipientIsValid = genericRecipientOk && recipientFormatOk;
   // Name mode only: the name/contact resolved successfully, but what it
   // resolved to isn't a valid address for this coin - distinct from
@@ -1251,6 +1320,13 @@ export function CoinDetail({ chain }: Props) {
   const showRecipientError = recipient !== '' && !recipientIsValid;
   const recipientErrorIsCoinFormat =
     showRecipientError && genericRecipientOk && !recipientFormatOk;
+  const recipientErrorMessage = recipientErrorIsCoinFormat
+    ? recipientInvalidMessage(
+        recipientInvalidReason,
+        chain.ticker,
+        recipientOtherCoin
+      )
+    : undefined;
   const showFeeError =
     !chain.isNative &&
     chain.coinEnum !== 'ARRR' &&
@@ -2407,10 +2483,11 @@ export function CoinDetail({ chain }: Props) {
                       disabled={sending}
                       error={showRecipientError}
                       helperText={
-                        recipientErrorIsCoinFormat
-                          ? t('send_dialog.recipient_invalid_coin', {
-                              ticker: chain.ticker,
-                            })
+                        recipientErrorMessage
+                          ? t(
+                              recipientErrorMessage.key,
+                              recipientErrorMessage.params
+                            )
                           : showRecipientError
                             ? t('send_dialog.recipient_invalid')
                             : undefined

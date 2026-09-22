@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "金额加上预估手续费可能超过您的余额",
     "recipient_invalid": "收款地址为必填项，且不得超过256个字符。",
     "recipient_invalid_coin": "不是有效的 {{ ticker }} 地址",
+    "recipient_invalid_taproot": "暂不支持 Taproot（{{ example }}）地址 - 请使用传统地址或 {{ legacy }} 地址。",
+    "recipient_invalid_mweb": "不支持 Litecoin 的 MWEB 地址 - 请使用 ltc1q 地址或传统地址。",
+    "recipient_invalid_spark": "不支持 Firo 的 Spark/Lelantus 地址 - 请使用透明（a…）地址。",
+    "recipient_invalid_cashaddr": "这是一个 Bitcoin Cash 地址；此处不支持 BCH。",
+    "recipient_invalid_wrong_coin": "这看起来像是 {{ otherCoin }} 地址，而不是 {{ ticker }} 地址。",
+    "recipient_invalid_bad_checksum": "这看起来像是 {{ ticker }} 地址，但校验和不匹配 - 请检查是否有拼写错误。",
     "doge_dgb_look_alike": "DOGE 和 DGB 的传统地址格式相似 - 请再次确认所选币种。",
     "fee_per_byte_invalid": "请输入最多8位小数的正数每字节手续费。",
     "resolution_invalid_coin_address": "该联系人的 {{ ticker }} 地址无效"

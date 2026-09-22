@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "Taproot ({{ example }}) aadresse veel ei toetata - kasuta legacy- või {{ legacy }} aadressi.",
+    "recipient_invalid_mweb": "Litecoini MWEB-aadresse ei toetata - kasuta ltc1q- või legacy-aadressi.",
+    "recipient_invalid_spark": "Firo Spark/Lelantus aadresse ei toetata - kasuta läbipaistvat (a…) aadressi.",
+    "recipient_invalid_cashaddr": "See on Bitcoin Cashi aadress; BCH-d siin ei toetata.",
+    "recipient_invalid_wrong_coin": "See näeb välja nagu {{ otherCoin }} aadress, mitte {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "See näeb välja nagu {{ ticker }} aadress, aga kontrollsumma ei klapi - kontrolli kirjavigu.",
     "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
     "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"

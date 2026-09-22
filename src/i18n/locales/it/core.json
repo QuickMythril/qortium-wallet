@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "Gli indirizzi Taproot ({{ example }}) non sono ancora supportati - usa un indirizzo legacy o {{ legacy }}.",
+    "recipient_invalid_mweb": "Gli indirizzi MWEB di Litecoin non sono supportati - usa un indirizzo ltc1q o legacy.",
+    "recipient_invalid_spark": "Gli indirizzi Firo Spark/Lelantus non sono supportati - usa un indirizzo trasparente (a…).",
+    "recipient_invalid_cashaddr": "Questo è un indirizzo Bitcoin Cash; BCH non è supportato qui.",
+    "recipient_invalid_wrong_coin": "Sembra un indirizzo {{ otherCoin }}, non {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Sembra un indirizzo {{ ticker }}, ma il checksum non corrisponde - controlla eventuali errori di battitura.",
     "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
     "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"

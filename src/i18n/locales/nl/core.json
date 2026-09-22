@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "bedrag plus de geschatte vergoeding kan uw saldo overschrijden",
     "recipient_invalid": "adres van ontvanger is verplicht en mag maximaal 256 tekens bevatten.",
     "recipient_invalid_coin": "geen geldig {{ ticker }}-adres",
+    "recipient_invalid_taproot": "Taproot-adressen ({{ example }}) worden nog niet ondersteund - gebruik een legacy- of {{ legacy }}-adres.",
+    "recipient_invalid_mweb": "Litecoin MWEB-adressen worden niet ondersteund - gebruik een ltc1q- of legacyadres.",
+    "recipient_invalid_spark": "Firo Spark/Lelantus-adressen worden niet ondersteund - gebruik een transparant (a…)-adres.",
+    "recipient_invalid_cashaddr": "Dit is een Bitcoin Cash-adres; BCH wordt hier niet ondersteund.",
+    "recipient_invalid_wrong_coin": "dit lijkt op een {{ otherCoin }}-adres, niet {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "dit lijkt op een {{ ticker }}-adres, maar de checksum klopt niet - controleer op typefouten.",
     "doge_dgb_look_alike": "DOGE- en DGB-legacyadressen lijken op elkaar - controleer de munt nog eens.",
     "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen.",
     "resolution_invalid_coin_address": "het {{ ticker }}-adres van het contact is niet geldig"

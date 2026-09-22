@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
     "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "Taproot（{{ example }}）アドレスはまだサポートされていません - レガシーまたは {{ legacy }} アドレスを使用してください。",
+    "recipient_invalid_mweb": "Litecoin の MWEB アドレスはサポートされていません - ltc1q またはレガシーアドレスを使用してください。",
+    "recipient_invalid_spark": "Firo の Spark/Lelantus アドレスはサポートされていません - 透過型（a…）アドレスを使用してください。",
+    "recipient_invalid_cashaddr": "これは Bitcoin Cash のアドレスです。BCH はここではサポートされていません。",
+    "recipient_invalid_wrong_coin": "これは {{ ticker }} ではなく {{ otherCoin }} のアドレスのようです。",
+    "recipient_invalid_bad_checksum": "これは {{ ticker }} アドレスのようですが、チェックサムが一致しません - 入力ミスがないか確認してください。",
     "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
     "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
     "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"

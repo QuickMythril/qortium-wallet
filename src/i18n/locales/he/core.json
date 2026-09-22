@@ -93,6 +93,12 @@
     "amount_exceeds_balance_with_fee": "הסכום בתוספת העמלה המשוערת עשוי לחרוג מהיתרה שלך",
     "recipient_invalid": "כתובת המקבל נדרשת ועד 256 תווים.",
     "recipient_invalid_coin": "כתובת {{ ticker }} לא תקינה",
+    "recipient_invalid_taproot": "כתובות Taproot ({{ example }}) עדיין לא נתמכות - השתמש בכתובת ישנה (legacy) או ב-{{ legacy }}.",
+    "recipient_invalid_mweb": "כתובות MWEB של Litecoin אינן נתמכות - השתמש בכתובת ltc1q או בכתובת ישנה.",
+    "recipient_invalid_spark": "כתובות Firo Spark/Lelantus אינן נתמכות - השתמש בכתובת שקופה (a…).",
+    "recipient_invalid_cashaddr": "זו כתובת Bitcoin Cash; BCH אינו נתמך כאן.",
+    "recipient_invalid_wrong_coin": "זה נראה ככתובת {{ otherCoin }}, לא {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "זה נראה ככתובת {{ ticker }}, אבל סכום הביקורת אינו תואם - בדוק אם יש שגיאת הקלדה.",
     "doge_dgb_look_alike": "כתובות DOGE ו-DGB מדור קודם נראות דומות - בדוק שוב את המטבע.",
     "fee_per_byte_invalid": "הזן עמלה חיובית לבייט עם עד 8 ספרות עשרוניות.",
     "resolution_invalid_coin_address": "כתובת ה-{{ ticker }} של איש הקשר אינה תקינה"
