@@ -1,3 +1,4 @@
+import { ArrrSyncProgress } from './ArrrSyncProgress';
 import {
   useEffect,
   useRef,
@@ -399,13 +400,14 @@ export function CoinDetail({ chain }: Props) {
   // (host contract item 6).
   const arrrCapabilityGranted =
     isARRR && (canReceive || canReadBalance || canReadTransactions);
+  const arrrStatus = useArrrSyncStatus(arrrCapabilityGranted, homeAccount);
   const {
     snapshot: arrrSnapshot,
     loading: arrrStatusLoading,
     error: arrrStatusError,
     consentDenied: arrrConsentDenied,
     refresh: refreshArrrStatus,
-  } = useArrrSyncStatus(arrrCapabilityGranted, homeAccount);
+  } = arrrStatus;
   const arrrReady = arrrSnapshot?.ready === true;
 
   const [arrrVerifiedBalance, setArrrVerifiedBalance] = useState<string | null>(
@@ -1382,25 +1384,6 @@ export function CoinDetail({ chain }: Props) {
   // Replaces the old string-matching sync loop with rendering driven purely
   // by the typed snapshot from useArrrSyncStatus - never a percentage
   // derived from a retry count.
-  const arrrProgressLabel = (() => {
-    if (!arrrSnapshot) return null;
-    const { scannedHeight, tipHeight, syncedBlocks, totalBlocks } =
-      arrrSnapshot;
-    if (scannedHeight != null && tipHeight != null) {
-      return t('arrr.progress_heights', {
-        scanned: scannedHeight,
-        tip: tipHeight,
-      });
-    }
-    if (syncedBlocks != null && totalBlocks != null) {
-      return t('arrr.progress_blocks', {
-        synced: syncedBlocks,
-        total: totalBlocks,
-      });
-    }
-    return t('arrr.progress_indeterminate');
-  })();
-
   // arrrVerifiedBalance/arrrTotalBalance are already the fully-formatted
   // 8-decimal display strings (fetchArrrBalances computes them once, via
   // formatArrrAmount on the raw ATOMIC string) - do not re-run
@@ -1571,21 +1554,7 @@ export function CoinDetail({ chain }: Props) {
             alignItems: 'center',
           }}
         >
-          <CircularProgress size={36} sx={{ color: c.accent }} />
-          <Box
-            sx={{
-              mt: 1.5,
-              fontWeight: tokens.typography.weightBold,
-              textAlign: 'center',
-            }}
-          >
-            {arrrSnapshot.message ?? t('arrr.state_synchronizing')}
-          </Box>
-          {arrrProgressLabel && (
-            <Box sx={{ mt: 0.5, fontSize: '0.78rem', color: c.textSecondary }}>
-              {arrrProgressLabel}
-            </Box>
-          )}
+          <ArrrSyncProgress status={arrrStatus} />
         </Box>
       );
     } else if (arrrSnapshot.state === 'DEGRADED') {

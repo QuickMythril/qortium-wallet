@@ -1,3 +1,10 @@
+import i18n from '../../../i18n/i18n';
+import {
+  advanceArrrProgress,
+  clearArrrProgressHistory,
+  writeArrrProgressHistory,
+} from '../../../common/arrrProgress';
+import { parseArrrSyncSnapshot } from '../../../common/arrrSync';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, act, cleanup } from '@testing-library/react';
@@ -150,6 +157,9 @@ describe('CoinGrid shared balance cache (round 2, item B)', () => {
   let qortalRequestMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    clearArrrProgressHistory();
+    chainsFixture.length = 2;
+    await i18n.changeLanguage('en');
     __resetBalanceCacheForTests();
     __resetPendingSendsForTests();
     accountState.current = 'acct-a';
@@ -181,12 +191,99 @@ describe('CoinGrid shared balance cache (round 2, item B)', () => {
 
   afterEach(() => {
     cleanup();
+    chainsFixture.length = 2;
+    clearArrrProgressHistory();
     getDefaultStore().set(walletReadyAtom, false);
     delete (globalThis as any).qdnRequest;
     delete (globalThis as any).qortalRequest;
     __resetBalanceCacheForTests();
     __resetPendingSendsForTests();
   });
+
+  it.each(['grid', 'list'] as const)(
+    'shows live ARRR progress in %s after the wallet has been opened',
+    async (view) => {
+      getDefaultStore().set(viewModeAtom, view);
+      const chain: ChainConfig = {
+        ...chainsFixture[1],
+        key: 'ARRR',
+        ticker: 'ARRR',
+        coinEnum: 'ARRR',
+        name: 'Pirate Chain',
+        route: 'pirate-chain',
+        homeWallet: {
+          contract: 'qortium-home-wallet-v1',
+          implemented: true,
+          protocol: 'qdnRequest',
+          read: true,
+          readMode: 'TRUSTED_CORE_CUSTODY',
+          receive: true,
+          receiveMode: 'TRUSTED_CORE_CUSTODY',
+          requiresUnlockedAccount: true,
+          send: false,
+          sendMode: 'NONE',
+          serverManagement: false,
+          serverManagementMode: 'NONE',
+          custodyContract: 'qortium-home-arrr-custody-v1',
+          syncStatus: true,
+        },
+      };
+      chainsFixture.push(chain);
+      const snapshot = parseArrrSyncSnapshot({
+        state: 'SYNCHRONIZING',
+        ready: false,
+        stale: false,
+        restartRequired: false,
+        observedAt: Date.now(),
+        syncedBlocks: 200235,
+        totalBlocks: 2144393,
+      })!;
+      qdnRequestMock.mockImplementation(
+        async (opts: Record<string, unknown>) => {
+          if (opts.action === 'SHOW_ACTIONS')
+            return [
+              'GET_USER_WALLET',
+              'GET_WALLET_BALANCE',
+              'GET_USER_WALLET_TRANSACTIONS',
+              'GET_ARRR_SYNC_STATUS',
+            ];
+          if (opts.action === 'GET_ARRR_SYNC_STATUS') return snapshot;
+          if (opts.action === 'GET_WALLET_BALANCE') return 100000000;
+          return null;
+        }
+      );
+      // Listing alone must not start custody consent or a new scan.
+      const first = renderGrid();
+      await waitFor(() =>
+        expect(
+          screen.getByText('Open wallet to check sync')
+        ).toBeInTheDocument()
+      );
+      expect(balanceCalls(qdnRequestMock, 'GET_ARRR_SYNC_STATUS')).toHaveLength(
+        0
+      );
+      first.unmount();
+      // Simulate the successful status read made on the detail page.
+      writeArrrProgressHistory(
+        'acct-a',
+        advanceArrrProgress(null, snapshot, Date.now())
+      );
+      renderGrid();
+      await waitFor(() =>
+        expect(screen.getByText('Syncing · 9.3%')).toBeInTheDocument()
+      );
+      expect(screen.getByText('Estimating…')).toBeInTheDocument();
+      expect(balanceCalls(qdnRequestMock, 'GET_ARRR_SYNC_STATUS')).toHaveLength(
+        1
+      );
+      expect(
+        qdnRequestMock.mock.calls.filter(
+          ([opts]) =>
+            opts.action === 'GET_WALLET_BALANCE' && opts.coin === 'ARRR'
+        )
+      ).toHaveLength(0);
+    }
+  );
 
   it('fetches every coin once on first mount', async () => {
     renderGrid();

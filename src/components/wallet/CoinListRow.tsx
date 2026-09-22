@@ -1,3 +1,5 @@
+import type { UseArrrSyncStatusResult } from '../../hooks/useArrrSyncStatus';
+import { ArrrSyncProgress } from './ArrrSyncProgress';
 import { useEffect, useRef, useState } from 'react';
 import {
   Box,
@@ -31,6 +33,7 @@ interface CoinListRowProps {
   // because Core rejected the verified read as not-yet-known. Rendered
   // with an explicit "total · verifying" qualifier, never as `balance`.
   provisionalTotal?: string | null;
+  arrrStatus?: UseArrrSyncStatusResult;
   onRetryBalance?: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
@@ -64,6 +67,7 @@ export function CoinListRow({
   balance,
   balanceError,
   provisionalTotal,
+  arrrStatus,
   onRetryBalance,
   canReceive,
   canSend,
@@ -245,7 +249,7 @@ export function CoinListRow({
 
       <Box
         sx={{
-          width: { xs: 72, sm: 180 },
+          width: { xs: arrrStatus ? 110 : 72, sm: 180 },
           minWidth: 0,
           flexShrink: 1,
           textAlign: 'end',
@@ -263,7 +267,12 @@ export function CoinListRow({
             whiteSpace: 'nowrap',
           }}
         >
-          {loading ? (
+          {arrrStatus &&
+          (!arrrStatus.snapshot?.ready ||
+            arrrStatus.error ||
+            (balance == null && provisionalTotal == null && !balanceError)) ? (
+            <ArrrSyncProgress status={arrrStatus} compact />
+          ) : loading ? (
             <Skeleton width={72} sx={{ ml: 'auto' }} />
           ) : balance !== null ? (
             balance

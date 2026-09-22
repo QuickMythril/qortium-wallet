@@ -1,3 +1,4 @@
+import { clearArrrProgressHistory } from '../../common/arrrProgress';
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useArrrSyncStatus } from '../useArrrSyncStatus';
@@ -58,6 +59,7 @@ describe('useArrrSyncStatus', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    clearArrrProgressHistory();
     qdnRequestMock = vi.fn();
     (globalThis as any).qdnRequest = qdnRequestMock;
     setDocumentHidden(false);
@@ -66,6 +68,64 @@ describe('useArrrSyncStatus', () => {
   afterEach(() => {
     delete (globalThis as any).qdnRequest;
     vi.useRealTimers();
+  });
+
+  it('preserves the rate across detail/list remounts but not account changes', async () => {
+    let blocks = 100;
+    qdnRequestMock.mockImplementation(async () => ({
+      ...syncingSnapshot,
+      syncedBlocks: blocks,
+      totalBlocks: 1000,
+    }));
+    const first = renderHook(() => useArrrSyncStatus(true, 'acct-a'));
+    await flush();
+    blocks = 200;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    blocks = 300;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(first.result.current.progress.remainingSeconds).toBe(105);
+    first.unmount();
+    const second = renderHook(
+      ({ account }) => useArrrSyncStatus(true, account),
+      { initialProps: { account: 'acct-a' } }
+    );
+    await flush();
+    expect(second.result.current.progress.remainingSeconds).toBe(105);
+    second.rerender({ account: 'acct-b' });
+    await flush();
+    expect(second.result.current.progress.remainingSeconds).toBeNull();
+  });
+
+  it('clears rate samples on route/custody changes and suppresses estimates on request errors', async () => {
+    let blocks = 100;
+    qdnRequestMock.mockImplementation(async () => ({
+      ...syncingSnapshot,
+      syncedBlocks: blocks,
+      totalBlocks: 1000,
+    }));
+    const { result } = renderHook(() => useArrrSyncStatus(true, 'acct-a'));
+    await flush();
+    blocks = 200;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    blocks = 300;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(result.current.progress.remainingSeconds).not.toBeNull();
+    act(() => window.dispatchEvent(new Event('qortiumBridgeStateChanged')));
+    await flush();
+    expect(result.current.progress.remainingSeconds).toBeNull();
+    qdnRequestMock.mockRejectedValue(new Error('Offline'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(result.current.progress.percent).toBeNull();
   });
 
   it('does nothing while disabled', async () => {

@@ -1,3 +1,9 @@
+import { hasArrrProgressHistory } from '../../common/arrrProgress';
+import {
+  useArrrSyncStatus,
+  type UseArrrSyncStatusResult,
+} from '../../hooks/useArrrSyncStatus';
+import { ArrrSyncProgress } from './ArrrSyncProgress';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Box, IconButton, Skeleton, Tooltip } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -142,6 +148,7 @@ interface BlockProps {
   // because Core rejected the verified read as not-yet-known. Rendered
   // with an explicit "total · verifying" qualifier, never as `balance`.
   provisionalTotal?: string | null;
+  arrrStatus?: UseArrrSyncStatusResult;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
@@ -159,6 +166,7 @@ export function CoinBlock({
   balance,
   balanceError,
   provisionalTotal,
+  arrrStatus,
   onRetryBalance,
   canReceive,
   canSend,
@@ -436,7 +444,12 @@ export function CoinBlock({
             mt: 0.25,
           }}
         >
-          {loading ? (
+          {arrrStatus &&
+          (!arrrStatus.snapshot?.ready ||
+            arrrStatus.error ||
+            (balance == null && provisionalTotal == null && !balanceError)) ? (
+            <ArrrSyncProgress status={arrrStatus} compact />
+          ) : loading ? (
             <Skeleton
               width={60}
               sx={{
@@ -545,6 +558,7 @@ function SortableCoinItem({
   balance,
   balanceError,
   provisionalTotal,
+  arrrStatus,
   onRetryBalance,
   canReceive,
   canSend,
@@ -558,6 +572,7 @@ function SortableCoinItem({
   balance: string | null;
   balanceError?: string;
   provisionalTotal?: string | null;
+  arrrStatus?: UseArrrSyncStatusResult;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   canSend: boolean;
@@ -593,6 +608,7 @@ function SortableCoinItem({
           balance={balance}
           balanceError={balanceError}
           provisionalTotal={provisionalTotal}
+          arrrStatus={arrrStatus}
           onRetryBalance={onRetryBalance}
           canReceive={canReceive}
           canSend={canSend}
@@ -611,6 +627,7 @@ function SortableCoinItem({
           balance={balance}
           balanceError={balanceError}
           provisionalTotal={provisionalTotal}
+          arrrStatus={arrrStatus}
           onRetryBalance={onRetryBalance}
           canReceive={canReceive}
           canSend={canSend}
@@ -720,6 +737,15 @@ export function CoinGrid() {
     Record<AssetNetwork, boolean>
   >({ qortium: false, qortal: false });
   const walletReady = useAtomValue(walletReadyAtom);
+  const arrrChain = chains.find((chain) => chain.coinEnum === 'ARRR');
+  const arrrAvailable =
+    !!arrrChain &&
+    walletReady &&
+    foreignWalletAvailability(arrrChain, foreignActions ?? []).canReadBalance;
+  // Listing a wallet must not initiate custody consent or start its scan.
+  // Once the detail page has obtained status, continue observing on the list.
+  const arrrEnabled = arrrAvailable && hasArrrProgressHistory(account);
+  const arrrStatus = useArrrSyncStatus(arrrEnabled, account, true);
   const {
     assets,
     loading: assetsLoading,
@@ -971,13 +997,9 @@ export function CoinGrid() {
         return;
       }
 
-      // Round 5: once custody is available, the grid tile never
-      // independently polls ARRR - it only reflects whatever the ARRR
-      // page's own sync-status-driven balance fetch last wrote to the
-      // shared cache (design doc: "the grid row consumes cached
-      // progress/balance without a background ARRR timer"). runBalancePass
-      // has already seeded `balances`/`balanceErrors` from that cache
-      // above; there's nothing further to fetch here.
+      // Balances remain cache-only; the shared sync-status hook above owns
+      // status polling while the grid is visible. The grid never
+      // fetches ARRR balances independently of the detail page.
       if (chain.coinEnum === 'ARRR') {
         if (!isCancelled()) {
           setLoading((prev) => ({ ...prev, [chain.key]: false }));
@@ -1318,6 +1340,11 @@ export function CoinGrid() {
                       balance={balances[item.key] ?? null}
                       balanceError={balanceErrors[item.key]}
                       provisionalTotal={provisionalTotals[item.key] ?? null}
+                      arrrStatus={
+                        item.chain.coinEnum === 'ARRR' && arrrAvailable
+                          ? arrrStatus
+                          : undefined
+                      }
                       onRetryBalance={retryBalance}
                       canReceive={item.chain.isNative || foreign.canReceive}
                       canSend={

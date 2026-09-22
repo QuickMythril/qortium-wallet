@@ -59,7 +59,22 @@
     "total_balance": "total incl. unconfirmed/unverified",
     "stale_label": "last updated {{ time }}",
     "provisional_label": "provisional",
-    "transactions_pending": "Transactions available once synchronized"
+    "transactions_pending": "Transactions available once synchronized",
+    "progress_syncing": "Syncing",
+    "progress_percent": "Syncing · {{percent}}%",
+    "progress_ready": "Ready",
+    "progress_estimating": "Estimated time remaining: estimating…",
+    "progress_eta": "Estimated time remaining: about {{duration}}",
+    "progress_waiting": "Waiting for progress…",
+    "progress_outdated": "Sync status needs updating",
+    "progress_minutes_one": "{{count}} minute",
+    "progress_minutes_other": "{{count}} minutes",
+    "progress_hours_minutes": "{{hours}} h {{minutes}} min",
+    "progress_scanned": "Scanned {{scanned}} of {{total}} blocks",
+    "progress_chain_height": "Chain height: {{scanned}} of {{tip}}",
+    "progress_open_wallet": "Open wallet to check sync",
+    "progress_estimating_short": "Estimating…",
+    "progress_eta_short": "About {{duration}} left"
   },
   "asset": {
     "chain_qortium": "Qortium",

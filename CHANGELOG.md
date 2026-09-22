@@ -2,6 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [Unreleased]
+
+### Show ARRR sync progress and estimated time remaining
+
+- Show scan-range percentage, a progress bar, and a rolling estimate of remaining time on the ARRR page. Keep clearly labelled, formatted block counts; wait for sufficient observations and suppress unreliable estimates after stalled progress, stale/error responses, rescans, account changes, or route/custody changes. Only Core's readiness verdict marks completion.
+- Show ARRR status and estimated time in both wallet lists and tiles. After a successful detail-page status read, continue status polling while the listing is visible and retain recent rate samples across navigation. Listing an unopened wallet does not initiate custody consent or start a scan; it displays “Open wallet to check sync.” Hidden tabs pause network polling. No asset-image changes.
+
 ## [1.7.16] - 2026-09-22 (QuickMythril fork test build)
 
 ### Added

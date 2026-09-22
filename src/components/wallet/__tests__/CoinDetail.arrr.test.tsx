@@ -211,7 +211,7 @@ describe('CoinDetail ARRR structured state rendering', () => {
     await waitFor(() =>
       expect(screen.getByTestId('arrr-state-synchronizing')).toBeInTheDocument()
     );
-    expect(screen.getByText('block 500 of 1000')).toBeInTheDocument();
+    expect(screen.getByText('Chain height: 500 of 1,000')).toBeInTheDocument();
   });
 
   it('renders the DEGRADED state with the last error and restart guidance', async () => {

@@ -1,3 +1,12 @@
+import {
+  advanceArrrProgress,
+  calculateArrrProgress,
+  readArrrProgressHistory,
+  writeArrrProgressHistory,
+  clearArrrProgressHistory,
+  type ArrrProgressHistory,
+  type ArrrProgress,
+} from '../common/arrrProgress';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   arrrPollDelayMs,
@@ -14,6 +23,7 @@ import {
 
 export interface UseArrrSyncStatusResult {
   snapshot: ArrrSyncSnapshot | null;
+  progress: ArrrProgress;
   loading: boolean;
   error: DecodedBridgeError | null;
   /** True once a GET_ARRR_SYNC_STATUS read was rejected because the user denied the distinct `account.arrr-custody.read` consent prompt. */
@@ -33,13 +43,29 @@ export interface UseArrrSyncStatusResult {
  */
 export function useArrrSyncStatus(
   enabled: boolean,
-  resetKey: unknown
+  resetKey: unknown,
+  observeOnly = false
 ): UseArrrSyncStatusResult {
   const [snapshot, setSnapshot] = useState<ArrrSyncSnapshot | null>(null);
+  const [snapshotKey, setSnapshotKey] = useState<unknown>(resetKey);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<DecodedBridgeError | null>(null);
   const [consentDenied, setConsentDenied] = useState(false);
 
+  const historyRef = useRef<ArrrProgressHistory | null>(null);
+  const receivedAtRef = useRef(0);
+  const keyRef = useRef(resetKey);
+  keyRef.current = resetKey;
+  const observeOnlyRef = useRef(observeOnly);
+  observeOnlyRef.current = observeOnly;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!enabled || snapshot?.state !== 'SYNCHRONIZING') return;
+    const timer = setInterval(() => {
+      if (!document.hidden) setNow(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [enabled, snapshot?.state]);
   const revisionRef = useRef(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
@@ -71,6 +97,8 @@ export function useArrrSyncStatus(
   const poll = useCallback(
     async (revision: number) => {
       if (revision !== revisionRef.current || !isMountedRef.current) return;
+      const requestKey = keyRef.current;
+      if (!enabledRef.current) return;
       if (typeof document !== 'undefined' && document.hidden) {
         // Paused while hidden - the visibilitychange listener below resumes
         // this exact revision with an immediate poll once visible again.
@@ -82,6 +110,8 @@ export function useArrrSyncStatus(
       // the tab going hidden (Codex round 5 review finding 4).
       const shouldAbort = () =>
         revision !== revisionRef.current ||
+        requestKey !== keyRef.current ||
+        !enabledRef.current ||
         !isMountedRef.current ||
         (typeof document !== 'undefined' && document.hidden);
       try {
@@ -89,7 +119,7 @@ export function useArrrSyncStatus(
           () => qdnRequest({ action: 'GET_ARRR_SYNC_STATUS', coin: 'ARRR' }),
           { shouldAbort }
         );
-        if (revision !== revisionRef.current || !isMountedRef.current) return;
+        if (shouldAbort()) return;
         const parsed = parseArrrSyncSnapshot(raw);
         if (!parsed) {
           setError({ message: 'Malformed ARRR sync status response.' });
@@ -97,13 +127,23 @@ export function useArrrSyncStatus(
           scheduleNext(revision, arrrPollDelayMs('LOADING'));
           return;
         }
+        const receivedAt = Date.now();
+        historyRef.current = advanceArrrProgress(
+          historyRef.current,
+          parsed,
+          receivedAt
+        );
+        writeArrrProgressHistory(keyRef.current, historyRef.current);
+        receivedAtRef.current = receivedAt;
+        setNow(receivedAt);
+        setSnapshotKey(requestKey);
         setSnapshot(parsed);
         setError(null);
         setConsentDenied(false);
         setLoading(false);
         scheduleNext(revision, arrrPollDelayMs(parsed.state));
       } catch (err) {
-        if (revision !== revisionRef.current || !isMountedRef.current) return;
+        if (shouldAbort()) return;
         const decoded = describeBridgeError(err);
         if (decoded.code === ARRR_READ_CANCELLED_CODE) {
           // Aborted mid busy-retry-delay because the tab went hidden (the
@@ -126,7 +166,7 @@ export function useArrrSyncStatus(
   pollRef.current = poll;
 
   const refresh = useCallback(() => {
-    const revision = revisionRef.current;
+    const revision = ++revisionRef.current;
     clearTimer();
     setLoading(true);
     setError(null);
@@ -138,6 +178,9 @@ export function useArrrSyncStatus(
     isMountedRef.current = true;
     const revision = ++revisionRef.current;
     clearTimer();
+    historyRef.current = readArrrProgressHistory(resetKey);
+    receivedAtRef.current = 0;
+    setSnapshotKey(resetKey);
     setSnapshot(null);
     setError(null);
     setConsentDenied(false);
@@ -163,7 +206,7 @@ export function useArrrSyncStatus(
     if (typeof document === 'undefined') return;
     const handleVisibility = () => {
       if (document.hidden || !enabledRef.current) return;
-      const revision = revisionRef.current;
+      const revision = ++revisionRef.current;
       clearTimer();
       void pollRef.current(revision);
     };
@@ -172,5 +215,41 @@ export function useArrrSyncStatus(
       document.removeEventListener('visibilitychange', handleVisibility);
   }, [clearTimer]);
 
-  return { snapshot, loading, error, consentDenied, refresh };
+  useEffect(() => {
+    const handleBridgeChange = () => {
+      // A new node route or custody state invalidates samples and in-flight reads.
+      const revision = ++revisionRef.current;
+      clearTimer();
+      clearArrrProgressHistory();
+      historyRef.current = null;
+      setSnapshot(null);
+      setError(null);
+      setConsentDenied(false);
+      setLoading(enabledRef.current);
+      if (enabledRef.current && !observeOnlyRef.current)
+        void pollRef.current(revision);
+    };
+    window.addEventListener('qortiumBridgeStateChanged', handleBridgeChange);
+    return () =>
+      window.removeEventListener(
+        'qortiumBridgeStateChanged',
+        handleBridgeChange
+      );
+  }, [clearTimer]);
+
+  const currentSnapshot = enabled && snapshotKey === resetKey ? snapshot : null;
+  const progress = calculateArrrProgress(
+    !error ? currentSnapshot : null,
+    historyRef.current,
+    now,
+    receivedAtRef.current
+  );
+  return {
+    snapshot: currentSnapshot,
+    progress,
+    loading,
+    error: snapshotKey === resetKey ? error : null,
+    consentDenied: snapshotKey === resetKey && consentDenied,
+    refresh,
+  };
 }
