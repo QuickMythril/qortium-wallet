@@ -106,7 +106,15 @@ export function useSupportedChains(): {
         const merged: ChainConfig[] = data
           .filter(
             (info) =>
-              info.walletEnabled && info.currencyCode?.toUpperCase() !== 'QORT'
+              info.currencyCode?.toUpperCase() !== 'QORT' &&
+              (info.walletEnabled ||
+                // Stopping ARRR flips Core's runtime walletEnabled flag.
+                // Keep Home's restart-capable wallet discoverable so its
+                // listing and detail route still expose Start syncing.
+                (info.currencyCode?.toUpperCase() === 'ARRR' &&
+                  info.homeWallet?.contract === HOME_WALLET_CONTRACT &&
+                  info.homeWallet.syncControlContract ===
+                    'qortium-home-arrr-sync-control-v1'))
           )
           .map((info): ChainConfig | undefined => {
             const code = info.currencyCode?.toUpperCase();

@@ -4,6 +4,13 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.19] - 2026-09-22 (QuickMythril fork test build)
+
+### Keep stopped ARRR wallets accessible
+
+- Keep ARRR in chain discovery and preserve its detail route when Core reports walletEnabled=false and Home advertises the sync-control contract. Stopped wallets remain accessible after navigation or a fresh app load so Start syncing can be used. Other disabled coins remain hidden.
+- Regression coverage now includes enabled-to-stopped discovery and a cold load with ARRR already stopped.
+
 ## [1.7.18] - 2026-09-22 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.18

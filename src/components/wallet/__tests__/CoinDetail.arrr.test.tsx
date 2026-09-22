@@ -5,6 +5,7 @@ import { getDefaultStore } from 'jotai';
 import ThemeProviderWrapper from '../../../styles/theme/theme-provider';
 import i18n from '../../../i18n/i18n';
 import { CoinDetail } from '../CoinDetail';
+import { useSupportedChains } from '../../../hooks/useSupportedChains';
 import type { ChainConfig } from '../../../config/chains';
 import { walletReadyAtom } from '../../../state/global/system';
 import {
@@ -161,6 +162,46 @@ describe('CoinDetail ARRR structured state rendering', () => {
   afterEach(() => {
     getDefaultStore().set(walletReadyAtom, false);
     delete (globalThis as any).qdnRequest;
+  });
+
+  it('opens a stopped ARRR wallet from fresh discovery and offers Start syncing', async () => {
+    sessionStorage.clear();
+    syncStatusResponse = baseSnapshot({ state: 'DISABLED', ready: false });
+    const original = qdnRequestMock.getMockImplementation()!;
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      if (opts.action === 'GET_CROSSCHAIN_BLOCKCHAINS')
+        return [
+          {
+            currencyCode: 'ARRR',
+            walletEnabled: false,
+            decimalPlaces: 8,
+            homeWallet: {
+              ...arrrChain.homeWallet,
+              syncControlContract: 'qortium-home-arrr-sync-control-v1',
+            },
+          },
+        ];
+      if (opts.action === 'SHOW_ACTIONS')
+        return [...arrrActions, 'STOP_ARRR_SYNC', 'START_ARRR_SYNC'];
+      return original(opts);
+    });
+    function DiscoveredDetail() {
+      const { chains } = useSupportedChains();
+      const chain = chains.find((c) => c.route === 'pirate-chain');
+      return chain ? <CoinDetail chain={chain} /> : null;
+    }
+    render(
+      <MemoryRouter initialEntries={['/pirate-chain']}>
+        <ThemeProviderWrapper>
+          <DiscoveredDetail />
+        </ThemeProviderWrapper>
+      </MemoryRouter>
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Start syncing' })
+    ).toBeEnabled();
+    expect(screen.getByTestId('arrr-state-disabled')).toBeInTheDocument();
+    sessionStorage.clear();
   });
 
   it('offers controls only with the new contract and both Home actions', async () => {
