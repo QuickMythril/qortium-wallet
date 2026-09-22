@@ -125,7 +125,9 @@ function renderDetail(
 }
 
 describe('CoinDetail ARRR structured state rendering', () => {
-  let qdnRequestMock: ReturnType<typeof vi.fn>;
+  let qdnRequestMock: ReturnType<
+    typeof vi.fn<(opts: Record<string, unknown>) => Promise<unknown>>
+  >;
   let syncStatusResponse: unknown;
 
   beforeEach(async () => {
