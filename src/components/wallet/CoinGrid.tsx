@@ -1,10 +1,24 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
+import {
+  useArrrWalletSession,
+  hasArrrWalletSession,
+} from '../../hooks/useArrrWalletSession';
+import { hasArrrProgressHistory } from '../../common/arrrProgress';
+import {
+  useArrrSyncStatus,
+  type UseArrrSyncStatusResult,
+} from '../../hooks/useArrrSyncStatus';
+import { ArrrSyncProgress } from './ArrrSyncProgress';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Box, IconButton, Skeleton, Tooltip } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SendIcon from '@mui/icons-material/Send';
 import CheckIcon from '@mui/icons-material/Check';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate } from 'react-router-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { useAuth } from 'qapp-core';
 import {
   DndContext,
   PointerSensor,
@@ -26,6 +40,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useSupportedChains } from '../../hooks/useSupportedChains';
 import { useMarketPrices } from '../../hooks/useMarketPrices';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
+import { useRetryingImageSrc } from '../../hooks/useRetryingImageSrc';
 import { useAssetHoldings } from '../../hooks/useAssetHoldings';
 import { CoinListRow } from './CoinListRow';
 import { AssetBlock } from './AssetBlock';
@@ -58,6 +73,23 @@ import {
 } from '../../common/walletBridge';
 import { requestAssetActions } from '../../common/assetBridge';
 import { foreignWalletAvailability } from '../../common/homeWalletCapabilities';
+import { describeBridgeError } from '../../common/bridgeErrors';
+import {
+  BALANCE_CACHE_TTL_MS,
+  getCachedBalance,
+  isBalanceCacheFresh,
+  setCachedBalance,
+  subscribeBalanceCache,
+} from '../../common/balanceCache';
+import { registerPendingSendsSubscriber } from '../../common/pendingSends';
+import { useDocumentVisible } from '../../hooks/useDocumentVisible';
+
+// While the grid is mounted, QORT's balance is polled every 60 s (a single
+// cheap GET_BALANCE) so an incoming payment is noticed without opening the
+// coin page (round 2, item C). Foreign coins are not polled here - their
+// balance reads go through Electrum via Core and keep the existing
+// cache-freshness cadence below.
+const NATIVE_BALANCE_POLL_MS = 60000;
 
 type WalletItem =
   | { kind: 'chain'; key: string; chain: ChainConfig }
@@ -67,6 +99,37 @@ function itemName(item: WalletItem): string {
   return item.kind === 'chain'
     ? item.chain.name
     : item.asset.name || `Asset #${item.asset.assetId}`;
+}
+
+// Round 3: when the unified list mixes asset networks, Qortium assets group
+// before Qortal ones regardless of the active sort mode (name/balance/
+// custom), and each network's existing relative order - including any pin
+// ordering - is preserved within its group.
+//
+// This has to be a genuine total order, not a pairwise "assets on different
+// networks win, otherwise fall through" rule: a pairwise-only rule is only
+// defined for asset-vs-asset pairs, so a chain sorting (by name/balance)
+// between a Qortal asset and a Qortium asset produces a comparator that says
+// qortal < chain < qortium by one rule and qortium < qortal by the other - a
+// cycle Array.prototype.sort has no defined behavior for (round 3 review
+// finding 1). Fixing that means giving every item, chains included, a fixed
+// primary rank (chains, then Qortium assets, then Qortal assets) and only
+// using the active sort mode as the *secondary* key within a rank tier. A
+// lexicographic (rank, then a valid comparator) order is always transitive,
+// so this holds for every sort mode without a special case per mode.
+function itemGroupRank(item: WalletItem): number {
+  if (item.kind === 'chain') return 0;
+  return item.asset.network === 'qortium' ? 1 : 2;
+}
+
+function compareWithAssetGrouping(
+  a: WalletItem,
+  b: WalletItem,
+  compare: (a: WalletItem, b: WalletItem) => number
+): number {
+  const rankDiff = itemGroupRank(a) - itemGroupRank(b);
+  if (rankDiff !== 0) return rankDiff;
+  return compare(a, b);
 }
 
 // Min tile width in px per zoom level — CSS auto-fill guarantees each level is visually distinct
@@ -85,7 +148,16 @@ const TILE_MIN_PX: Record<number, number> = {
 interface BlockProps {
   chain: ChainConfig;
   balance: string | null;
+  balanceError?: string;
+  // ARRR-only (round 5 review finding 1): a provisional TOTAL balance,
+  // present only while `balance` (the verified/spendable figure) is null
+  // because Core rejected the verified read as not-yet-known. Rendered
+  // with an explicit "total · verifying" qualifier, never as `balance`.
+  provisionalTotal?: string | null;
+  arrrStatus?: UseArrrSyncStatusResult;
+  onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
+  cachedAddress?: string | null;
   canSend: boolean;
   loading: boolean;
   tileSize: number;
@@ -94,10 +166,17 @@ interface BlockProps {
   isDragging?: boolean;
 }
 
-function CoinBlock({
+// Exported (in addition to being used internally by CoinGrid) so it can be
+// tested in isolation, e.g. the image onError/retry behavior.
+export function CoinBlock({
   chain,
   balance,
+  balanceError,
+  provisionalTotal,
+  arrrStatus,
+  onRetryBalance,
   canReceive,
+  cachedAddress,
   canSend,
   loading,
   tileSize,
@@ -109,11 +188,16 @@ function CoinBlock({
   const uiStyle = useAtomValue(uiStyleAtom);
   const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
-  const [address, setAddress] = useState<string | null>(null);
+  const [fetchedAddress, setAddress] = useState<string | null>(null);
+  const address = cachedAddress !== undefined ? cachedAddress : fetchedAddress;
   const [copied, setCopied] = useState(false);
   const fetchedRef = useRef(false);
   const receiveRevision = useRef(0);
   const coinImageUrl = useCoinImageUrl(chain.ticker);
+  const { src: coinImageSrc, onError: onCoinImageError } = useRetryingImageSrc(
+    coinImageUrl,
+    chain.ticker
+  );
   const isClassic = uiStyle === 'classic';
 
   useEffect(() => {
@@ -126,7 +210,7 @@ function CoinBlock({
 
   const handleMouseEnter = () => {
     setHovered(true);
-    if (canReceive && !fetchedRef.current) {
+    if (cachedAddress === undefined && canReceive && !fetchedRef.current) {
       fetchedRef.current = true;
       const revision = receiveRevision.current;
       requestWalletForChain(chain)
@@ -237,11 +321,12 @@ function CoinBlock({
           justifyContent: 'center',
         }}
       >
-        {coinImageUrl ? (
+        {coinImageSrc ? (
           <Box
             component="img"
-            src={coinImageUrl}
+            src={coinImageSrc}
             alt={chain.ticker}
+            onError={onCoinImageError}
             sx={{
               position: 'absolute',
               width: '100%',
@@ -315,7 +400,13 @@ function CoinBlock({
             </IconButton>
           </Tooltip>
           <Tooltip
-            title={canSend ? 'Send' : 'Requires a local node'}
+            title={
+              chain.coinEnum === 'ARRR'
+                ? 'Sending ARRR is not available yet'
+                : canSend
+                  ? 'Send'
+                  : 'Requires a local node'
+            }
             placement="top"
           >
             <span>
@@ -362,7 +453,12 @@ function CoinBlock({
             mt: 0.25,
           }}
         >
-          {loading ? (
+          {arrrStatus &&
+          (!arrrStatus.snapshot?.ready ||
+            arrrStatus.error ||
+            (balance == null && provisionalTotal == null && !balanceError)) ? (
+            <ArrrSyncProgress status={arrrStatus} compact />
+          ) : loading ? (
             <Skeleton
               width={60}
               sx={{
@@ -372,6 +468,57 @@ function CoinBlock({
             />
           ) : balance !== null ? (
             balance
+          ) : provisionalTotal != null ? (
+            <Tooltip
+              title="Total incl. unconfirmed/unverified - not yet spendable"
+              placement="top"
+            >
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  lineHeight: 1.1,
+                }}
+              >
+                <Box component="span">{provisionalTotal}</Box>
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '0.55rem',
+                    fontWeight: tokens.typography.weightBold,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    color: hovered ? c.accentText : c.textSecondary,
+                    opacity: 0.85,
+                  }}
+                >
+                  total · verifying
+                </Box>
+              </Box>
+            </Tooltip>
+          ) : balanceError ? (
+            <Tooltip title={balanceError} placement="top">
+              <Box
+                component="span"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetryBalance(chain);
+                }}
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.25,
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                  color: hovered ? c.accentText : c.error,
+                }}
+              >
+                unavailable
+                <RefreshIcon sx={{ fontSize: 12 }} />
+              </Box>
+            </Tooltip>
           ) : (
             '—'
           )}
@@ -418,7 +565,12 @@ function CoinBlock({
 function SortableCoinItem({
   chain,
   balance,
+  balanceError,
+  provisionalTotal,
+  arrrStatus,
+  onRetryBalance,
   canReceive,
+  cachedAddress,
   canSend,
   loading,
   tileSize,
@@ -428,7 +580,12 @@ function SortableCoinItem({
 }: {
   chain: ChainConfig;
   balance: string | null;
+  balanceError?: string;
+  provisionalTotal?: string | null;
+  arrrStatus?: UseArrrSyncStatusResult;
+  onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
+  cachedAddress?: string | null;
   canSend: boolean;
   loading: boolean;
   tileSize: number;
@@ -460,6 +617,11 @@ function SortableCoinItem({
         <CoinListRow
           chain={chain}
           balance={balance}
+          balanceError={balanceError}
+          provisionalTotal={provisionalTotal}
+          arrrStatus={arrrStatus}
+          onRetryBalance={onRetryBalance}
+          cachedAddress={cachedAddress}
           canReceive={canReceive}
           canSend={canSend}
           loading={loading}
@@ -475,6 +637,11 @@ function SortableCoinItem({
         <CoinBlock
           chain={chain}
           balance={balance}
+          balanceError={balanceError}
+          provisionalTotal={provisionalTotal}
+          arrrStatus={arrrStatus}
+          onRetryBalance={onRetryBalance}
+          cachedAddress={cachedAddress}
           canReceive={canReceive}
           canSend={canSend}
           loading={loading}
@@ -550,7 +717,12 @@ function SortableAssetItem({
 }
 
 export function CoinGrid() {
+  const { t } = useTranslation();
   const { chains } = useSupportedChains();
+  // Home's selected-account identity - keys the shared balance cache so an
+  // account switch can never render a stale account's balances under the
+  // newly-selected one (round 2 review finding 1).
+  const { address: account } = useAuth();
   const c = useColors();
   const uiStyle = useAtomValue(uiStyleAtom);
   const currency = useAtomValue(currencyAtom);
@@ -558,13 +730,69 @@ export function CoinGrid() {
   const prices = useMarketPrices();
   const [balances, setBalances] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [balanceErrors, setBalanceErrors] = useState<Record<string, string>>(
+    {}
+  );
+  // ARRR-only (round 5 review finding 1): a provisional TOTAL balance shown
+  // only while the verified (spendable) figure is unknown - kept in its own
+  // map, never merged into `balances`, so it can only ever render with the
+  // "total · verifying" qualifier below and never be mistaken for a
+  // confirmed spendable amount.
+  const [provisionalTotals, setProvisionalTotals] = useState<
+    Record<string, string | null>
+  >({});
   const [canSendNative, setCanSendNative] = useState(false);
-  const [foreignActions, setForeignActions] = useState<string[]>([]);
+  // null = "not fetched yet this session" (distinct from a fetched-but-empty
+  // array) - the balance pass below must not treat the pre-first-fetch gap
+  // as a real capability change (round 2, item B).
+  const [foreignActions, setForeignActions] = useState<string[] | null>(null);
   const foreignActionRevision = useRef(0);
   const [canSendAssets, setCanSendAssets] = useState<
     Record<AssetNetwork, boolean>
   >({ qortium: false, qortal: false });
   const walletReady = useAtomValue(walletReadyAtom);
+  const arrrChain = chains.find((chain) => chain.coinEnum === 'ARRR');
+  const arrrAvailable =
+    !!arrrChain &&
+    walletReady &&
+    foreignWalletAvailability(arrrChain, foreignActions ?? []).canReadBalance;
+  // Listing a wallet must not initiate custody consent or start its scan.
+  // Once the detail page has obtained status, continue observing on the list.
+  const hasWalletSession =
+    arrrChain?.homeWallet?.walletSessionContract ===
+    ARRR_WALLET_SESSION_CONTRACT;
+  const session = useArrrWalletSession(
+    arrrAvailable && hasWalletSession && hasArrrWalletSession(account),
+    account
+  );
+  const arrrEnabled =
+    arrrAvailable &&
+    (hasWalletSession ? session.active : hasArrrProgressHistory(account));
+  const rawArrrStatus = useArrrSyncStatus(
+    arrrEnabled,
+    hasWalletSession ? `${account}:${session.value?.revision ?? ''}` : account,
+    true
+  );
+  const sessionLabel =
+    session.error ??
+    (session.value?.lifecycle === 'DEGRADED'
+      ? t('arrr.session_restart')
+      : session.value && !session.value.enabled
+        ? t('arrr.session_stopped')
+        : session.value?.relation === 'OTHER'
+          ? t('arrr.session_other')
+          : session.value?.relation === 'NONE'
+            ? t('arrr.session_none')
+            : null);
+  const arrrStatus =
+    hasWalletSession && !session.active && sessionLabel
+      ? {
+          ...rawArrrStatus,
+          snapshot: null,
+          loading: false,
+          error: { message: sessionLabel },
+        }
+      : rawArrrStatus;
   const {
     assets,
     loading: assetsLoading,
@@ -594,8 +822,13 @@ export function CoinGrid() {
             setForeignActions([]);
           });
       };
+      // Deliberately does not clear foreignActions to [] before refreshing:
+      // that transient empty-capability state briefly made every foreign
+      // coin's computed availability look "changed" to the balance-cache
+      // pass below, defeating the "unchanged capability set -> no refetch"
+      // rule (round 2, item B) on every bridge-state event, not just real
+      // host swaps. A failed refresh still falls through to [] below.
       const handleBridgeChange = () => {
-        setForeignActions([]);
         void refreshForeignActions();
       };
       refreshForeignActions();
@@ -673,39 +906,53 @@ export function CoinGrid() {
   const sortedItems = useMemo(() => {
     const arr = [...items];
     if (sortMode === 'name-asc')
-      return arr.sort((a, b) => itemName(a).localeCompare(itemName(b)));
+      return arr.sort((a, b) =>
+        compareWithAssetGrouping(a, b, (x, y) =>
+          itemName(x).localeCompare(itemName(y))
+        )
+      );
     if (sortMode === 'name-desc')
-      return arr.sort((a, b) => itemName(b).localeCompare(itemName(a)));
+      return arr.sort((a, b) =>
+        compareWithAssetGrouping(a, b, (x, y) =>
+          itemName(y).localeCompare(itemName(x))
+        )
+      );
     if (sortMode === 'balance-asc' || sortMode === 'balance-desc') {
       const dir = sortMode === 'balance-asc' ? 1 : -1;
-      return arr.sort((a, b) => {
-        const aLoading = itemIsLoading(a);
-        const bLoading = itemIsLoading(b);
-        if (aLoading && bLoading) return 0;
-        if (aLoading) return 1;
-        if (bLoading) return -1;
-        const ba = itemBalanceStr(a);
-        const bb = itemBalanceStr(b);
-        if (ba === null && bb === null) return 0;
-        if (ba === null) return 1;
-        if (bb === null) return -1;
-        // Assets have no market price feed, so they sort as 0 fiat value here.
-        const priceA = a.kind === 'chain' ? (prices[a.chain.coinEnum] ?? 0) : 0;
-        const priceB = b.kind === 'chain' ? (prices[b.chain.coinEnum] ?? 0) : 0;
-        const fiatA = parseFloat(ba) * priceA;
-        const fiatB = parseFloat(bb) * priceB;
-        return dir * (fiatA - fiatB);
-      });
+      return arr.sort((a, b) =>
+        compareWithAssetGrouping(a, b, (x, y) => {
+          const aLoading = itemIsLoading(x);
+          const bLoading = itemIsLoading(y);
+          if (aLoading && bLoading) return 0;
+          if (aLoading) return 1;
+          if (bLoading) return -1;
+          const ba = itemBalanceStr(x);
+          const bb = itemBalanceStr(y);
+          if (ba === null && bb === null) return 0;
+          if (ba === null) return 1;
+          if (bb === null) return -1;
+          // Assets have no market price feed, so they sort as 0 fiat value here.
+          const priceA =
+            x.kind === 'chain' ? (prices[x.chain.coinEnum] ?? 0) : 0;
+          const priceB =
+            y.kind === 'chain' ? (prices[y.chain.coinEnum] ?? 0) : 0;
+          const fiatA = parseFloat(ba) * priceA;
+          const fiatB = parseFloat(bb) * priceB;
+          return dir * (fiatA - fiatB);
+        })
+      );
     }
     // custom: respect persisted order
-    return arr.sort((a, b) => {
-      const ai = customOrder.indexOf(a.key);
-      const bi = customOrder.indexOf(b.key);
-      if (ai === -1 && bi === -1) return 0;
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    });
+    return arr.sort((a, b) =>
+      compareWithAssetGrouping(a, b, (x, y) => {
+        const ai = customOrder.indexOf(x.key);
+        const bi = customOrder.indexOf(y.key);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      })
+    );
   }, [sortMode, customOrder, items, balances, loading, prices, assetsLoading]);
 
   const visibleItems = useMemo(() => {
@@ -771,17 +1018,187 @@ export function CoinGrid() {
     );
   };
 
-  // Balance loading with concurrency limit
-  useEffect(() => {
-    if (!walletReady) return;
+  // Fetch a single chain's balance, retrying once (not the previous blind
+  // 3x) and only when the decoded error says the failure is retryable.
+  // Shared by the initial concurrency-limited load below and the manual
+  // per-coin retry affordance. Every outcome (success, unavailable, or
+  // failure) is written into the shared balance cache (round 2, item B) so
+  // a remounted grid can render instantly instead of re-fetching everything.
+  const fetchChainBalance = useCallback(
+    async (chain: ChainConfig, isCancelled: () => boolean) => {
+      if (
+        !chain.isNative &&
+        !foreignWalletAvailability(chain, foreignActions ?? []).canReadBalance
+      ) {
+        if (!isCancelled()) {
+          setBalances((prev) => ({ ...prev, [chain.key]: null }));
+          setBalanceErrors((prev) => {
+            const next = { ...prev };
+            delete next[chain.key];
+            return next;
+          });
+          setProvisionalTotals((prev) => ({ ...prev, [chain.key]: null }));
+          setLoading((prev) => ({ ...prev, [chain.key]: false }));
+          setCachedBalance(account, chain.key, { balance: null });
+        }
+        return;
+      }
+
+      // Balances remain cache-only; the shared sync-status hook above owns
+      // status polling while the grid is visible. The grid never
+      // fetches ARRR balances independently of the detail page.
+      if (chain.coinEnum === 'ARRR') {
+        if (!isCancelled()) {
+          setLoading((prev) => ({ ...prev, [chain.key]: false }));
+        }
+        return;
+      }
+
+      const MAX_ATTEMPTS = 2; // one retry, and only if the error is retryable
+      const RETRY_DELAY = 1200;
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY));
+        if (isCancelled()) return;
+        try {
+          let balance: string;
+          if (chain.isNative) {
+            const res = await requestQortBalance();
+            balance = String(parseFloat(String(res ?? 0)));
+          } else {
+            const res = await requestWithTimeout(
+              { action: 'GET_WALLET_BALANCE', coin: chain.coinEnum },
+              45000
+            );
+            if (res?.error) throw new Error(res.error);
+            // GET_WALLET_BALANCE returns satoshis; convert to coin units
+            const divisor = Math.pow(10, chain.decimalPlaces);
+            balance = res != null ? String(Number(res) / divisor) : '0';
+          }
+          if (isCancelled()) return;
+          setBalances((prev) => ({ ...prev, [chain.key]: balance }));
+          setBalanceErrors((prev) => {
+            const next = { ...prev };
+            delete next[chain.key];
+            return next;
+          });
+          setLoading((prev) => ({ ...prev, [chain.key]: false }));
+          setCachedBalance(account, chain.key, { balance });
+          return;
+        } catch (err) {
+          lastError = err;
+          const decoded = describeBridgeError(err);
+          if (!decoded.retryable) break;
+        }
+      }
+
+      if (!isCancelled()) {
+        const decoded = describeBridgeError(lastError);
+        console.warn('[wallet] balance', chain.ticker, decoded.message);
+        setBalances((prev) => ({ ...prev, [chain.key]: null }));
+        setBalanceErrors((prev) => ({ ...prev, [chain.key]: decoded.message }));
+        setLoading((prev) => ({ ...prev, [chain.key]: false }));
+        setCachedBalance(account, chain.key, {
+          balance: null,
+          error: decoded.message,
+        });
+      }
+    },
+    [foreignActions, account]
+  );
+
+  const retryChainBalanceRef = useRef(fetchChainBalance);
+  retryChainBalanceRef.current = fetchChainBalance;
+
+  const retryBalance = useCallback((chain: ChainConfig) => {
+    setLoading((prev) => ({ ...prev, [chain.key]: true }));
+    void retryChainBalanceRef.current(chain, () => false);
+  }, []);
+
+  // Per-chain foreign-capability fingerprint from the last completed pass,
+  // used below to tell "the SHOW_ACTIONS array changed identity" apart from
+  // "this coin's actual send/receive/read capabilities changed" - only the
+  // latter should force a re-fetch (round 2, item B).
+  const lastAvailabilityKeyRef = useRef<Record<string, string>>({});
+  // The account the currently-rendered `balances`/`balanceErrors` state was
+  // last built for - lets a real account switch (the same grid instance
+  // re-rendering with a new `account`, e.g. once Home's SELECTED_ACCOUNT_
+  // CHANGED re-authenticates) clear the previous account's values instead
+  // of merely not overwriting them (round 2 review finding 1: seeding only
+  // *adds* cache hits, so without this, a value that has no cache entry
+  // under the new account - most of them, right after a switch - would
+  // keep showing the old account's last-rendered balance indefinitely).
+  const lastAccountRef = useRef<string | null | undefined>(undefined);
+
+  // Seeds every chain's render from the shared cache (instant on a remount
+  // within the freshness window), then fetches only the chains that are
+  // missing, stale, or whose foreign capability set actually changed -
+  // never the whole grid just because a component remounted or a
+  // qortiumBridgeStateChanged event fired with an unchanged capability set.
+  const runBalancePass = useCallback((): (() => void) => {
+    if (!walletReady) return () => {};
 
     let cancelled = false;
 
-    const init: Record<string, boolean> = {};
-    chains.forEach((c) => {
-      init[c.key] = true;
+    const accountChanged = lastAccountRef.current !== account;
+    lastAccountRef.current = account;
+    if (accountChanged) lastAvailabilityKeyRef.current = {};
+
+    setBalances((prev) => {
+      const next = accountChanged ? {} : { ...prev };
+      chains.forEach((chain) => {
+        const cached = getCachedBalance(account, chain.key);
+        if (cached) next[chain.key] = cached.balance;
+      });
+      return next;
     });
-    setLoading(init);
+    setBalanceErrors((prev) => {
+      const next = accountChanged ? {} : { ...prev };
+      chains.forEach((chain) => {
+        const cached = getCachedBalance(account, chain.key);
+        if (cached?.error) next[chain.key] = cached.error;
+        else if (cached) delete next[chain.key];
+      });
+      return next;
+    });
+    setProvisionalTotals((prev) => {
+      const next = accountChanged ? {} : { ...prev };
+      chains.forEach((chain) => {
+        const cached = getCachedBalance(account, chain.key);
+        if (cached) next[chain.key] = cached.provisionalTotal ?? null;
+      });
+      return next;
+    });
+
+    const toFetch: ChainConfig[] = [];
+    const loadingPatch: Record<string, boolean> = {};
+    chains.forEach((chain) => {
+      // Foreign capabilities aren't known yet this session (the initial
+      // SHOW_ACTIONS call hasn't resolved) - defer the decision entirely
+      // rather than recording a key computed from an empty placeholder,
+      // which would look like a real capability change the moment the
+      // real SHOW_ACTIONS result arrives and force a spurious re-fetch.
+      if (!chain.isNative && foreignActions === null) return;
+
+      const availabilityKey = chain.isNative
+        ? 'native'
+        : JSON.stringify(
+            foreignWalletAvailability(chain, foreignActions ?? [])
+          );
+      const previousKey = lastAvailabilityKeyRef.current[chain.key];
+      const availabilityChanged =
+        previousKey !== undefined && previousKey !== availabilityKey;
+      lastAvailabilityKeyRef.current[chain.key] = availabilityKey;
+
+      if (availabilityChanged || !isBalanceCacheFresh(account, chain.key)) {
+        toFetch.push(chain);
+        loadingPatch[chain.key] = true;
+      } else {
+        loadingPatch[chain.key] = false;
+      }
+    });
+    setLoading((prev) => ({ ...prev, ...loadingPatch }));
 
     let slots = 2;
     const waiting: Array<() => void> = [];
@@ -798,60 +1215,128 @@ export function CoinGrid() {
       else slots++;
     };
 
-    chains.forEach(async (chain) => {
+    toFetch.forEach(async (chain) => {
       await acquire();
-      const MAX_ATTEMPTS = 3;
-      const RETRY_DELAY = 1200;
       try {
         if (cancelled) return;
-        if (
-          !chain.isNative &&
-          !foreignWalletAvailability(chain, foreignActions).canReadBalance
-        ) {
-          if (!cancelled) {
-            setBalances((prev) => ({ ...prev, [chain.key]: null }));
-            setLoading((prev) => ({ ...prev, [chain.key]: false }));
-          }
-          return;
-        }
-        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-          if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY));
-          if (cancelled) return;
-          try {
-            let balance: string;
-            if (chain.isNative) {
-              const res = await requestQortBalance();
-              balance = String(parseFloat(String(res ?? 0)));
-            } else {
-              const res = await requestWithTimeout(
-                { action: 'GET_WALLET_BALANCE', coin: chain.coinEnum },
-                45000
-              );
-              if (res?.error) throw new Error(res.error);
-              // GET_WALLET_BALANCE returns satoshis; convert to coin units
-              const divisor = Math.pow(10, chain.decimalPlaces);
-              balance = res != null ? String(Number(res) / divisor) : '0';
-            }
-            if (cancelled) return;
-            setBalances((prev) => ({ ...prev, [chain.key]: balance }));
-            setLoading((prev) => ({ ...prev, [chain.key]: false }));
-            return;
-          } catch {
-            /* retry */
-          }
-        }
-        if (!cancelled) {
-          setBalances((prev) => ({ ...prev, [chain.key]: null }));
-          setLoading((prev) => ({ ...prev, [chain.key]: false }));
-        }
+        await fetchChainBalance(chain, () => cancelled);
       } finally {
         release();
       }
     });
+
     return () => {
       cancelled = true;
     };
-  }, [chains, foreignActions, walletReady]);
+  }, [chains, fetchChainBalance, foreignActions, walletReady, account]);
+
+  useEffect(() => {
+    const cancel = runBalancePass();
+    return cancel;
+  }, [runBalancePass]);
+
+  // "Page becomes visible again after being hidden for > 2 minutes" also
+  // re-runs the freshness pass (round 2, item B) - the cache-TTL check
+  // above already covers the "hidden for less than the freshness window"
+  // case, since the same 2-minute window applies to both.
+  useDocumentVisible(() => {
+    runBalancePass();
+  }, BALANCE_CACHE_TTL_MS);
+
+  // QORT-only fast balance poll while the grid is mounted (round 2, item
+  // C). Kept separate from the cache-freshness pass above, which is tuned
+  // for "don't hammer every coin on every remount", not "notice an
+  // incoming payment within a minute".
+  useEffect(() => {
+    if (!walletReady) return;
+    const qortChain = chains.find((chain) => chain.isNative);
+    if (!qortChain) return;
+
+    let cancelled = false;
+    let lastBalance = getCachedBalance(account, qortChain.key)?.balance ?? null;
+    const id = setInterval(async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const res = await requestQortBalance();
+        const next = String(parseFloat(String(res ?? 0)));
+        if (cancelled || next === lastBalance) return;
+        lastBalance = next;
+        setBalances((prev) => ({ ...prev, [qortChain.key]: next }));
+        setBalanceErrors((prev) => {
+          const nextErrors = { ...prev };
+          delete nextErrors[qortChain.key];
+          return nextErrors;
+        });
+        setLoading((prev) => ({ ...prev, [qortChain.key]: false }));
+        setCachedBalance(account, qortChain.key, { balance: next });
+      } catch {
+        /* a transient poll failure isn't worth surfacing - the next tick retries */
+      }
+    }, NATIVE_BALANCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [chains, walletReady, account]);
+
+  // Mirror any balance-cache write into local render state while the grid
+  // is mounted - not just the writes this component made itself. The
+  // pendingSends module refreshes a coin's cached balance the moment a
+  // confirmation lands (round 2, item A), which can happen while the user
+  // is looking at the grid rather than the coin page; without this
+  // subscription that fresh value would sit in the cache unseen until the
+  // next freshness pass (round 2 review finding 2).
+  useEffect(() => {
+    return subscribeBalanceCache(() => {
+      setBalances((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        chains.forEach((chain) => {
+          const cached = getCachedBalance(account, chain.key);
+          if (cached && next[chain.key] !== cached.balance) {
+            next[chain.key] = cached.balance;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+      setBalanceErrors((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        chains.forEach((chain) => {
+          const cached = getCachedBalance(account, chain.key);
+          if (cached?.error && next[chain.key] !== cached.error) {
+            next[chain.key] = cached.error;
+            changed = true;
+          } else if (cached && !cached.error && chain.key in next) {
+            delete next[chain.key];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+      setProvisionalTotals((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        chains.forEach((chain) => {
+          const cached = getCachedBalance(account, chain.key);
+          const provisional = cached?.provisionalTotal ?? null;
+          if (cached && next[chain.key] !== provisional) {
+            next[chain.key] = provisional;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    });
+  }, [chains, account]);
+
+  // Keep the shared pendingSends poller running for as long as the grid is
+  // mounted, even with no pending row of its own to show - navigating from
+  // the coin page to the grid (or starting on the grid) must not pause
+  // confirmation tracking (round 2 review finding 2).
+  useEffect(() => registerPendingSendsSubscriber(), []);
 
   const isCustom = sortMode === 'custom';
   const isClassic = uiStyle === 'classic';
@@ -893,14 +1378,31 @@ export function CoinGrid() {
                 (() => {
                   const foreign = foreignWalletAvailability(
                     item.chain,
-                    foreignActions
+                    foreignActions ?? []
                   );
                   return (
                     <SortableCoinItem
                       key={item.key}
                       chain={item.chain}
                       balance={balances[item.key] ?? null}
-                      canReceive={item.chain.isNative || foreign.canReceive}
+                      balanceError={balanceErrors[item.key]}
+                      provisionalTotal={provisionalTotals[item.key] ?? null}
+                      arrrStatus={
+                        item.chain.coinEnum === 'ARRR' && arrrAvailable
+                          ? arrrStatus
+                          : undefined
+                      }
+                      onRetryBalance={retryBalance}
+                      cachedAddress={
+                        item.chain.coinEnum === 'ARRR' && hasWalletSession
+                          ? (session.value?.address ?? null)
+                          : undefined
+                      }
+                      canReceive={
+                        item.chain.coinEnum === 'ARRR' && hasWalletSession
+                          ? foreign.canReceive && !!session.value?.address
+                          : item.chain.isNative || foreign.canReceive
+                      }
                       canSend={
                         item.chain.isNative ? canSendNative : foreign.canSend
                       }

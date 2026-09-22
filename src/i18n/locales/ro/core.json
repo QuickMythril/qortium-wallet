@@ -18,7 +18,36 @@
     "transfer_coin": "transferă {{ coin }}"
   },
   "address": "adresă:",
+  "balance_unavailable": "soldul nu este disponibil",
+  "transactions_unavailable": "tranzacțiile nu sunt disponibile",
   "amount": "sumă",
+  "arrr": {
+    "send_unavailable": "Trimiterea ARRR nu este încă disponibilă",
+    "unavailable_fallback": "Funcțiile portofelului ARRR nu sunt disponibile pe acest nod.",
+    "custody_consent_denied": "custodia nu a fost aprobată",
+    "wallet_busy": "Core-ul tău este ocupat cu un alt portofel ARRR",
+    "sync_contract_unsupported": "Actualizează Qortium Core pentru a vedea soldurile ARRR",
+    "state_loading": "Se conectează la Pirate Chain…",
+    "state_disabled": "Suportul ARRR este dezactivat",
+    "state_disabled_detail_fallback": "Cere operatorului nodului tău să activeze custodia ARRR.",
+    "state_synchronizing": "Se sincronizează Pirate Chain…",
+    "state_degraded": "Sincronizarea Pirate Chain este degradată",
+    "restart_required": "Repornește Qortium Core pentru a te recupera.",
+    "progress_heights": "bloc {{ scanned }} din {{ tip }}",
+    "progress_blocks": "bloc {{ synced }} din {{ total }}",
+    "progress_indeterminate": "se sincronizează…",
+    "verifying_balance": "se verifică…",
+    "total_balance": "total incl. neconfirmat/neverificat",
+    "stale_label": "ultima actualizare {{ time }}",
+    "provisional_label": "provizoriu",
+    "transactions_pending": "Tranzacțiile vor fi disponibile după sincronizare"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "activ nr. {{id}} · emis de {{issuer}}",
+    "issuer_line_unknown": "activ nr. {{id}} · emitent necunoscut"
+  },
   "balance": "sold:",
   "balance_available": "sold disponibil:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "taxă personalizată opțională ({{ coin }})",
     "optional_fee_per_byte": "taxă opțională pe byte ({{ coin }})",
     "arrr_fixed_fee": "taxa de rețea ARRR este fixă - această valoare este doar pentru afișare",
+    "fee_loading": "se încarcă taxa…",
     "fee_lookup_unavailable": "căutarea taxei nu este disponibilă - se va folosi valoarea implicită Home/Core",
     "confirm_send": "confirmă trimiterea",
     "transaction_sent": "tranzacție trimisă",
     "send_failed": "ceva a mers greșit. încearcă din nou.",
+    "send_pending_title": "starea tranzacției este necunoscută",
+    "send_pending_hint": "nu am putut confirma că aceasta a trecut. nu încerca din nou - verifică mai întâi tranzacțiile în așteptare din Home.",
+    "core_spend_context_bug_hint": "Qortium Core-ul tău trebuie actualizat (eroare de serializare spend-context); aceasta nu este o problemă de portofel sau sold.",
     "amount_invalid": "introdu o sumă pozitivă cu cel mult {{ decimals }} zecimale.",
+    "amount_below_minimum": "minimul este {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "suma plus taxa estimată poate depăși soldul tău",
     "recipient_invalid": "adresa destinatarului este obligatorie și poate avea cel mult 256 de caractere.",
-    "fee_per_byte_invalid": "introdu o taxă pozitivă pe byte cu cel mult 8 zecimale."
+    "recipient_invalid_coin": "adresă {{ ticker }} invalidă",
+    "recipient_invalid_taproot": "Adresele Taproot ({{ example }}) nu sunt încă acceptate - folosește o adresă veche sau {{ legacy }}.",
+    "recipient_invalid_mweb": "Adresele Litecoin MWEB nu sunt acceptate - folosește o adresă ltc1q sau una veche.",
+    "recipient_invalid_spark": "Adresele Firo Spark/Lelantus nu sunt acceptate - folosește o adresă transparentă (a…).",
+    "recipient_invalid_cashaddr": "Aceasta este o adresă Bitcoin Cash; BCH nu este acceptat aici.",
+    "recipient_invalid_wrong_coin": "Aceasta pare o adresă {{ otherCoin }}, nu {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Aceasta pare o adresă {{ ticker }}, dar suma de control nu se potrivește - verifică eventualele greșeli de tastare.",
+    "doge_dgb_look_alike": "adresele vechi DOGE și DGB seamănă - verifică din nou moneda.",
+    "fee_per_byte_invalid": "introdu o taxă pozitivă pe byte cu cel mult 8 zecimale.",
+    "resolution_invalid_coin_address": "adresa {{ ticker }} a contactului nu este validă"
   },
   "prepared_transaction": {
     "title": "tranzacție pregătită",
@@ -196,5 +240,9 @@
   "total_amount": "sumă totală",
   "transactions": "lista tranzacțiilor",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "în așteptarea confirmării",
+    "pending_timeout": "neconfirmată - verifică mai târziu"
+  },
   "wallets": "portofele"
 }

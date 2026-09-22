@@ -18,7 +18,36 @@
     "transfer_coin": "تحويل {{ coin }}"
   },
   "address": "العنوان:",
+  "balance_unavailable": "الرصيد غير متوفر",
+  "transactions_unavailable": "المعاملات غير متوفرة",
   "amount": "المبلغ",
+  "arrr": {
+    "send_unavailable": "إرسال ARRR غير متاح بعد",
+    "unavailable_fallback": "ميزات محفظة ARRR غير متاحة على هذا العقدة.",
+    "custody_consent_denied": "لم تتم الموافقة على الحفظ",
+    "wallet_busy": "الـ Core الخاص بك مشغول بمحفظة ARRR أخرى",
+    "sync_contract_unsupported": "قم بتحديث Qortium Core لعرض أرصدة ARRR",
+    "state_loading": "جارٍ الاتصال بـ Pirate Chain…",
+    "state_disabled": "دعم ARRR معطّل",
+    "state_disabled_detail_fallback": "اطلب من مشغّل عقدتك تفعيل حفظ ARRR.",
+    "state_synchronizing": "جارٍ مزامنة Pirate Chain…",
+    "state_degraded": "مزامنة Pirate Chain متدهورة",
+    "restart_required": "أعد تشغيل Qortium Core للتعافي.",
+    "progress_heights": "الكتلة {{ scanned }} من {{ tip }}",
+    "progress_blocks": "الكتلة {{ synced }} من {{ total }}",
+    "progress_indeterminate": "جارٍ المزامنة…",
+    "verifying_balance": "جارٍ التحقق…",
+    "total_balance": "الإجمالي شاملاً غير المؤكد/غير المتحقق منه",
+    "stale_label": "آخر تحديث {{ time }}",
+    "provisional_label": "مؤقت",
+    "transactions_pending": "ستتوفر المعاملات بعد المزامنة"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "الأصل رقم {{id}} · أصدره {{issuer}}",
+    "issuer_line_unknown": "الأصل رقم {{id}} · جهة إصدار غير معروفة"
+  },
   "balance": "الرصيد:",
   "balance_available": "الرصيد المتاح:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "جارٍ تحميل الرسوم…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
+    "send_pending_title": "transaction status unknown",
+    "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "يحتاج Qortium Core الخاص بك إلى التحديث (خطأ في تسلسل سياق الإنفاق)؛ هذه ليست مشكلة في المحفظة أو الرصيد.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
+    "amount_below_minimum": "Minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
-    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
+    "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "عناوين Taproot ({{ example }}) غير مدعومة بعد - استخدم عنوانًا قديمًا أو {{ legacy }}.",
+    "recipient_invalid_mweb": "عناوين MWEB الخاصة بـ Litecoin غير مدعومة - استخدم عنوان ltc1q أو عنوانًا قديمًا.",
+    "recipient_invalid_spark": "عناوين Firo Spark/Lelantus غير مدعومة - استخدم عنوانًا شفافًا (a…).",
+    "recipient_invalid_cashaddr": "هذا عنوان Bitcoin Cash؛ لا يتم دعم BCH هنا.",
+    "recipient_invalid_wrong_coin": "يبدو هذا كعنوان {{ otherCoin }}، وليس {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "يبدو هذا كعنوان {{ ticker }}، لكن مجموع التحقق غير مطابق - تحقق من وجود خطأ إملائي.",
+    "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
+    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
+    "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"
   },
   "prepared_transaction": {
     "title": "Prepared transaction",
@@ -196,5 +240,9 @@
   "total_amount": "المبلغ الإجمالي",
   "transactions": "قائمة المعاملات",
   "transaction_hash": "تجزئة TX",
+  "transaction_status": {
+    "pending_confirmation": "بانتظار التأكيد",
+    "pending_timeout": "غير مؤكدة - تحقق لاحقًا"
+  },
   "wallets": "المحافظ"
 }

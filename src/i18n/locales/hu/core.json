@@ -18,7 +18,36 @@
     "transfer_coin": "{{ coin }} átutalása"
   },
   "address": "cím:",
+  "balance_unavailable": "az egyenleg nem érhető el",
+  "transactions_unavailable": "a tranzakciók nem érhetők el",
   "amount": "összeg",
+  "arrr": {
+    "send_unavailable": "Az ARRR küldése még nem érhető el",
+    "unavailable_fallback": "Az ARRR tárca funkciói nem érhetők el ezen a csomóponton.",
+    "custody_consent_denied": "az őrzés nincs jóváhagyva",
+    "wallet_busy": "A Core-od egy másik ARRR tárcával van elfoglalva",
+    "sync_contract_unsupported": "Frissítsd a Qortium Core-ot az ARRR egyenlegek megtekintéséhez",
+    "state_loading": "Kapcsolódás a Pirate Chainhez…",
+    "state_disabled": "Az ARRR támogatás le van tiltva",
+    "state_disabled_detail_fallback": "Kérd meg a csomópont üzemeltetőjét, hogy engedélyezze az ARRR őrzést.",
+    "state_synchronizing": "Pirate Chain szinkronizálása…",
+    "state_degraded": "A Pirate Chain szinkronizálása leromlott",
+    "restart_required": "Indítsd újra a Qortium Core-ot a helyreálláshoz.",
+    "progress_heights": "blokk {{ scanned }} / {{ tip }}",
+    "progress_blocks": "blokk {{ synced }} / {{ total }}",
+    "progress_indeterminate": "szinkronizálás…",
+    "verifying_balance": "ellenőrzés…",
+    "total_balance": "összesen (megerősítetlen/nem ellenőrzött is)",
+    "stale_label": "utoljára frissítve {{ time }}",
+    "provisional_label": "ideiglenes",
+    "transactions_pending": "A tranzakciók szinkronizálás után lesznek elérhetők"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "eszköz #{{id}} · kibocsátó: {{issuer}}",
+    "issuer_line_unknown": "eszköz #{{id}} · ismeretlen kibocsátó"
+  },
   "balance": "egyenleg:",
   "balance_available": "elérhető egyenleg:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "opcionális egyéni díj ({{ coin }})",
     "optional_fee_per_byte": "opcionális díj byte-onként ({{ coin }})",
     "arrr_fixed_fee": "az ARRR hálózati díj rögzített - ez az érték csak megjelenítési célokat szolgál",
+    "fee_loading": "díj betöltése…",
     "fee_lookup_unavailable": "a díjlekérdezés nem érhető el - a Home/Core alapértelmezett értéket használja",
     "confirm_send": "küldés megerősítése",
     "transaction_sent": "tranzakció elküldve",
     "send_failed": "valami hiba történt. kérjük, próbáld újra.",
+    "send_pending_title": "a tranzakció állapota ismeretlen",
+    "send_pending_hint": "nem tudtuk megerősíteni, hogy ez átment. ne próbáld újra - előbb nézd meg a függőben lévő tranzakciókat a Home-ban.",
+    "core_spend_context_bug_hint": "A Qortium Core-odat frissíteni kell (spend-context szerializációs hiba); ez nem a tárca vagy az egyenleg hibája.",
     "amount_invalid": "adj meg egy pozitív összeget legfeljebb {{ decimals }} tizedesjeggyel.",
+    "amount_below_minimum": "a minimum {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "az összeg és a becsült díj együtt meghaladhatja az egyenleged",
     "recipient_invalid": "a címzett címe kötelező és legfeljebb 256 karakter lehet.",
-    "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel."
+    "recipient_invalid_coin": "nem érvényes {{ ticker }} cím",
+    "recipient_invalid_taproot": "A Taproot ({{ example }}) címek még nem támogatottak - használj régi típusú vagy {{ legacy }} címet.",
+    "recipient_invalid_mweb": "A Litecoin MWEB címek nem támogatottak - használj ltc1q vagy régi típusú címet.",
+    "recipient_invalid_spark": "A Firo Spark/Lelantus címek nem támogatottak - használj átlátszó (a…) címet.",
+    "recipient_invalid_cashaddr": "Ez egy Bitcoin Cash cím; a BCH itt nem támogatott.",
+    "recipient_invalid_wrong_coin": "Ez egy {{ otherCoin }} címnek tűnik, nem {{ ticker }} címnek.",
+    "recipient_invalid_bad_checksum": "Ez egy {{ ticker }} címnek tűnik, de az ellenőrző összeg nem egyezik - nézd meg, nincs-e elgépelés.",
+    "doge_dgb_look_alike": "A DOGE és a DGB régi típusú címei hasonlóak - ellenőrizd újra az érmét.",
+    "fee_per_byte_invalid": "adj meg egy pozitív byte-onkénti díjat legfeljebb 8 tizedesjeggyel.",
+    "resolution_invalid_coin_address": "a kapcsolat {{ ticker }} címe nem érvényes"
   },
   "prepared_transaction": {
     "title": "előkészített tranzakció",
@@ -196,5 +240,9 @@
   "total_amount": "teljes összeg",
   "transactions": "tranzakciók listája",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "megerősítésre vár",
+    "pending_timeout": "nincs megerősítve - nézd meg később"
+  },
   "wallets": "tárcák"
 }

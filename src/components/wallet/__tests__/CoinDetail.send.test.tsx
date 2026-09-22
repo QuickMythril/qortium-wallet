@@ -1,6 +1,12 @@
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  act,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getDefaultStore } from 'jotai';
 import ThemeProviderWrapper from '../../../styles/theme/theme-provider';
@@ -11,12 +17,27 @@ import { decimalToAtomic } from '../../../utils/walletSend';
 import * as resolveContactModule from '../../../utils/resolveContact';
 import { walletReadyAtom } from '../../../state/global/system';
 import { HOME_WALLET_CONTRACT } from '../../../common/homeWalletCapabilities';
+import {
+  invalidateCachedAccountUnlocked,
+  setCachedAccountUnlocked,
+} from '../../../common/accountUnlockState';
+import { __resetBalanceCacheForTests } from '../../../common/balanceCache';
+import { __resetPendingSendsForTests } from '../../../common/pendingSends';
 
 vi.mock('../../../utils/resolveContact');
 
 vi.mock('react-qr-code', () => ({
   default: () => null,
 }));
+
+// The unlock-state cache, the balance cache, and the pending-sends tracker
+// are all module-level singletons shared across every test in this file
+// (and beyond) - reset them so one test's state never leaks into the next.
+afterEach(() => {
+  invalidateCachedAccountUnlocked();
+  __resetBalanceCacheForTests();
+  __resetPendingSendsForTests();
+});
 
 vi.mock('qapp-core', () => ({
   useAuth: () => ({ address: 'qort-user-address', name: 'testuser' }),
@@ -33,6 +54,34 @@ const btcChain: ChainConfig = {
   coinEnum: 'BTC',
   route: 'bitcoin',
   defaultFee: 0.00001,
+  isNative: false,
+  decimalPlaces: 8,
+  activeNetwork: 'MAIN',
+  supportsHtlc: true,
+  supportsLocalChainTrades: true,
+  homeWallet: {
+    contract: HOME_WALLET_CONTRACT,
+    implemented: true,
+    protocol: 'qdnRequest',
+    read: true,
+    readMode: 'PUBLIC_NODE',
+    receive: true,
+    receiveMode: 'HOME_LOCAL',
+    requiresUnlockedAccount: true,
+    send: true,
+    serverManagement: true,
+    sendMode: 'HOME_SIGNED_PUBLIC_NODE',
+    serverManagementMode: 'HOME_LOCAL',
+  },
+};
+
+const dgbChain: ChainConfig = {
+  key: 'DGB',
+  name: 'DigiByte',
+  ticker: 'DGB',
+  coinEnum: 'DGB',
+  route: 'digibyte',
+  defaultFee: 0.001,
   isNative: false,
   decimalPlaces: 8,
   activeNetwork: 'MAIN',
@@ -183,7 +232,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'qort-recipient-address'
+      'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -196,7 +245,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     );
     expect(qortalRequestMock).toHaveBeenCalledWith({
       action: 'SEND_QORT',
-      recipient: 'qort-recipient-address',
+      recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
       amount: 1.25,
     });
     expect(qortalRequestMock).not.toHaveBeenCalledWith({
@@ -206,6 +255,94 @@ describe('CoinDetail QORT qortalRequest flow', () => {
       qdnRequestMock.mock.calls.some(
         ([request]) =>
           request.action === 'SEND_QORT' || request.action === 'SEND_COIN'
+      )
+    ).toBe(false);
+  });
+
+  it('treats a null/undefined SEND_QORT result as an error, never success', async () => {
+    qortalRequestMock.mockImplementation(
+      async (opts: Record<string, unknown>) => {
+        switch (opts.action) {
+          case 'SHOW_ACTIONS':
+            return ['SEND_QORT'];
+          case 'GET_USER_ACCOUNT':
+            return { address: 'qort-wallet-address' };
+          case 'GET_BALANCE':
+            return '12.5';
+          case 'SEARCH_TRANSACTIONS':
+            return [];
+          case 'SEND_QORT':
+            return undefined;
+          default:
+            return null;
+        }
+      }
+    );
+    const user = userEvent.setup();
+    renderDetail(qortChain);
+
+    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/home returned no send result/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/transaction sent/i)).not.toBeInTheDocument();
+  });
+
+  it('does not trust the qdnRequest-populated unlock cache for a native send whose unlock actually goes through qortalRequest', async () => {
+    // Simulate the cache having been populated true by Home's qdnRequest
+    // GET_SELECTED_ACCOUNT (e.g. from AppLayout's mount check) - it must be
+    // ignored for this chain, since qortBridge() prefers qortalRequest here.
+    setCachedAccountUnlocked(true);
+
+    qortalRequestMock.mockImplementation(
+      async (opts: Record<string, unknown>) => {
+        switch (opts.action) {
+          case 'SHOW_ACTIONS':
+            return ['SEND_QORT', 'UNLOCK_SELECTED_ACCOUNT'];
+          case 'GET_USER_ACCOUNT':
+            return { address: 'qort-wallet-address' };
+          case 'GET_BALANCE':
+            return '12.5';
+          case 'SEARCH_TRANSACTIONS':
+            return [];
+          case 'UNLOCK_SELECTED_ACCOUNT':
+            return { isUnlocked: true };
+          case 'SEND_QORT':
+            return { accepted: true };
+          default:
+            return null;
+        }
+      }
+    );
+    const user = userEvent.setup();
+    renderDetail(qortChain);
+
+    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    await waitFor(() =>
+      expect(
+        qortalRequestMock.mock.calls.filter(
+          ([request]) => request.action === 'UNLOCK_SELECTED_ACCOUNT'
+        )
+      ).toHaveLength(1)
+    );
+    // The qdnRequest side must never have been consulted for this unlock.
+    expect(
+      qdnRequestMock.mock.calls.some(
+        ([request]) => request.action === 'GET_SELECTED_ACCOUNT'
       )
     ).toBe(false);
   });
@@ -253,7 +390,7 @@ describe('CoinDetail foreign send flow', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -263,7 +400,7 @@ describe('CoinDetail foreign send flow', () => {
     expect(payload).toMatchObject({
       action: 'SEND_COIN',
       coin: 'BTC',
-      recipient: 'btc-recipient-address',
+      recipient: '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu',
       amount: '1.25',
       feePerByte: '0.0002',
     });
@@ -287,7 +424,7 @@ describe('CoinDetail foreign send flow', () => {
     expect(screen.getByLabelText(/amount \(BTC\)/i)).toBeDisabled();
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
@@ -297,7 +434,7 @@ describe('CoinDetail foreign send flow', () => {
     expect(payload).toMatchObject({
       action: 'SEND_COIN',
       coin: 'BTC',
-      recipient: 'btc-recipient-address',
+      recipient: '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu',
       sendMax: true,
       feePerByte: '0.0002',
     });
@@ -319,7 +456,7 @@ describe('CoinDetail foreign send flow', () => {
     const confirm = screen.getByRole('button', { name: /confirm send/i });
 
     await user.type(amountInput, '0');
-    await user.type(recipientInput, 'btc-recipient-address');
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
     expect(confirm).toBeDisabled();
 
     await user.clear(amountInput);
@@ -335,6 +472,161 @@ describe('CoinDetail foreign send flow', () => {
     expect(sendCalls(qdnRequestMock)).toHaveLength(0);
   });
 
+  // Round 4, item B: per-coin address validation (real base58check, not a
+  // generic length/shape check).
+  it('shows a coin-specific error and blocks Send for a recipient that fails the checksum', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const confirm = screen.getByRole('button', { name: /confirm send/i });
+
+    await user.type(amountInput, '1');
+    // Well-formed length/shape, but not a real base58check-encoded address.
+    await user.type(recipientInput, 'btc-recipient-address');
+
+    expect(
+      await screen.findByText(/not a valid BTC address/i)
+    ).toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    expect(sendCalls(qdnRequestMock)).toHaveLength(0);
+  });
+
+  it("accepts a real checksummed address and doesn't show the coin-specific error", async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+
+    await user.type(amountInput, '1');
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+    expect(
+      screen.queryByText(/not a valid BTC address/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm send/i })).toBeEnabled();
+  });
+
+  // Round 4 review item 3: DOGE and DGB share Core's P2PKH version byte
+  // (30) - a valid address can't be told apart as one coin vs. the other
+  // by decoding alone (see the NOTE on validateDogeAddress() in
+  // addressValidation.ts), so the form shows a soft, non-blocking
+  // reminder instead of trying to (wrongly) distinguish them.
+  it('shows a soft, non-blocking note that DOGE and DGB legacy addresses look alike', async () => {
+    const user = userEvent.setup();
+    renderDetail(dgbChain);
+
+    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await screen.findByLabelText(/amount \(DGB\)/i);
+    await waitFor(() =>
+      expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(
+        0.0002
+      )
+    );
+
+    expect(
+      screen.getByText(/DOGE and DGB legacy addresses look alike/i)
+    ).toBeInTheDocument();
+
+    // Informational only - never blocks Send.
+    await user.type(screen.getByLabelText(/amount \(DGB\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      'DLhVrzoqSXssQxcKkXt7Cr1ny8uG9gSCHR'
+    );
+    expect(screen.getByRole('button', { name: /confirm send/i })).toBeEnabled();
+  });
+
+  it('does not show the DOGE/DGB look-alike note for a coin unrelated to the collision (BTC)', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+
+    expect(
+      screen.queryByText(/DOGE and DGB legacy addresses look alike/i)
+    ).not.toBeInTheDocument();
+  });
+
+  // Round 4, item C: dust minimum (Core's own declared minNonDustOutput -
+  // 546 sats for BTC) and balance-vs-(amount+fee) warning.
+  it('blocks Send and shows an inline minimum message for an amount below the dust threshold', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const confirm = screen.getByRole('button', { name: /confirm send/i });
+
+    await user.type(amountInput, '0.000005'); // 500 sats < 546 sat minimum
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+    expect(
+      await screen.findByText(/minimum is 0\.00000546 BTC/i)
+    ).toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    expect(sendCalls(qdnRequestMock)).toHaveLength(0);
+  });
+
+  it('allows an amount exactly at the dust minimum', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+
+    await user.type(amountInput, '0.00000546'); // exactly 546 sats
+    await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+    expect(
+      screen.queryByText(/minimum is 0\.00000546 BTC/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm send/i })).toBeEnabled();
+  });
+
+  it('shows a non-blocking warning when amount plus the estimated fee exceeds the balance', async () => {
+    // The balance fetch is gated on walletReadyAtom (see CoinDetail's
+    // fetchBalance-triggering effect) - none of this describe block's
+    // other tests need a loaded balance, so it's off by default here.
+    getDefaultStore().set(walletReadyAtom, true);
+    try {
+      const user = userEvent.setup();
+      renderDetail();
+
+      await openSendDialog(user);
+      await waitFor(() =>
+        expect(
+          screen.getByText(/balance:/i).closest('div')?.textContent
+        ).toMatch(/1\.23456789\s*BTC/)
+      );
+      const amountInput = screen.getByLabelText(/amount \(BTC\)/i);
+      const recipientInput = screen.getByLabelText(/recipient address/i);
+
+      // Balance is 1.23456789 BTC (123456789 sats from GET_WALLET_BALANCE).
+      // The default suggested fee is 0.0002 BTC/byte * 250 bytes = 0.05
+      // BTC, so 1.2 + 0.05 = 1.25 > the balance.
+      await user.type(amountInput, '1.2');
+      await user.type(recipientInput, '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu');
+
+      expect(
+        await screen.findByText(
+          /amount plus the estimated fee may exceed your balance/i
+        )
+      ).toBeInTheDocument();
+      // A balance warning is informational only - it never blocks Send.
+      expect(
+        screen.getByRole('button', { name: /confirm send/i })
+      ).toBeEnabled();
+    } finally {
+      getDefaultStore().set(walletReadyAtom, false);
+    }
+  });
+
   it('revokes an open send dialog immediately on a bridge-state change', async () => {
     const user = userEvent.setup();
     renderDetail();
@@ -343,7 +635,7 @@ describe('CoinDetail foreign send flow', () => {
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await user.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     const confirm = screen.getByRole('button', { name: /confirm send/i });
     expect(confirm).toBeEnabled();
@@ -358,6 +650,125 @@ describe('CoinDetail foreign send flow', () => {
     await waitFor(() => expect(confirm).toBeDisabled());
     fireEvent.click(confirm);
     expect(sendCalls(qdnRequestMock)).toHaveLength(0);
+  });
+
+  it('treats a null/undefined SEND_COIN result as an error, never success', async () => {
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_COIN', 'GET_WALLET_BALANCE', 'UNLOCK_SELECTED_ACCOUNT'];
+        case 'GET_USER_WALLET':
+          return { address: 'btc-wallet-address' };
+        case 'GET_WALLET_BALANCE':
+          return '123456789';
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        case 'GET_FOREIGN_FEE':
+          return { fee: '0.0002' };
+        case 'UNLOCK_SELECTED_ACCOUNT':
+          return { isUnlocked: true };
+        case 'SEND_COIN':
+          return null;
+        default:
+          return null;
+      }
+    });
+    const user = userEvent.setup();
+    renderDetail();
+
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/home returned no send result/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/transaction sent/i)).not.toBeInTheDocument();
+  });
+
+  it('drops the post-send balance/transaction refresh if the component unmounts first', async () => {
+    getDefaultStore().set(walletReadyAtom, true);
+    try {
+      const user = userEvent.setup();
+      const { unmount } = renderDetail();
+
+      await openSendDialog(user);
+      await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+      await user.type(
+        screen.getByLabelText(/recipient address/i),
+        '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+      );
+      await user.click(screen.getByRole('button', { name: /confirm send/i }));
+      await screen.findByText(/transaction sent/i);
+
+      const countByAction = (action: string) =>
+        qdnRequestMock.mock.calls.filter(([o]) => o.action === action).length;
+      const balanceCallsAtSend = countByAction('GET_WALLET_BALANCE');
+      const txCallsAtSend = countByAction('GET_USER_WALLET_TRANSACTIONS');
+
+      unmount();
+
+      // Let the 3s post-send refresh timer's window pass for real - it must
+      // have been cleared on unmount rather than firing into a dead
+      // component.
+      await new Promise((resolve) => setTimeout(resolve, 3200));
+
+      expect(countByAction('GET_WALLET_BALANCE')).toBe(balanceCallsAtSend);
+      expect(countByAction('GET_USER_WALLET_TRANSACTIONS')).toBe(txCallsAtSend);
+    } finally {
+      getDefaultStore().set(walletReadyAtom, false);
+    }
+  }, 10000);
+
+  it('retries a balance fetch exactly once when the error is retryable, then succeeds', async () => {
+    getDefaultStore().set(walletReadyAtom, true);
+    try {
+      let balanceCalls = 0;
+      qdnRequestMock.mockImplementation(
+        async (opts: Record<string, unknown>) => {
+          switch (opts.action) {
+            case 'SHOW_ACTIONS':
+              return [
+                'SEND_COIN',
+                'GET_WALLET_BALANCE',
+                'UNLOCK_SELECTED_ACCOUNT',
+              ];
+            case 'GET_USER_WALLET':
+              return { address: 'btc-wallet-address' };
+            case 'GET_WALLET_BALANCE':
+              balanceCalls++;
+              if (balanceCalls === 1) {
+                return Promise.reject({
+                  message: 'temporary hiccup',
+                  retryable: true,
+                });
+              }
+              return '250000000';
+            case 'GET_USER_WALLET_TRANSACTIONS':
+              return [];
+            default:
+              return null;
+          }
+        }
+      );
+      renderDetail();
+
+      await waitFor(() => expect(balanceCalls).toBe(2), { timeout: 3000 });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /retry balance/i })
+        ).not.toBeInTheDocument()
+      );
+      expect(
+        screen.queryByText(/balance unavailable/i)
+      ).not.toBeInTheDocument();
+    } finally {
+      getDefaultStore().set(walletReadyAtom, false);
+    }
   });
 });
 
@@ -413,7 +824,7 @@ describe('CoinDetail foreign capability refusal', () => {
     await userEvent.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
     await userEvent.type(
       screen.getByLabelText(/recipient address/i),
-      'btc-recipient-address'
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
     );
     const confirm = screen.getByRole('button', { name: /confirm send/i });
     expect(confirm).toBeDisabled();
@@ -471,7 +882,7 @@ describe('CoinDetail recipient-by-name flow', () => {
     const user = userEvent.setup();
     vi.mocked(resolveContactModule.resolveContact).mockResolvedValue({
       status: 'resolved',
-      address: 'btc-resolved-address',
+      address: '16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf',
       coin: 'BTC',
       name: 'Alice',
     });
@@ -486,7 +897,7 @@ describe('CoinDetail recipient-by-name flow', () => {
 
     expect(
       await screen.findByText(
-        /sending to Alice's BTC address: btc-resolved-address/i
+        /sending to Alice's BTC address: 16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf/i
       )
     ).toBeInTheDocument();
 
@@ -495,8 +906,49 @@ describe('CoinDetail recipient-by-name flow', () => {
 
     await waitFor(() => expect(sendCalls(qdnRequestMock)).toHaveLength(1));
     expect(sendCalls(qdnRequestMock)[0]).toMatchObject({
-      recipient: 'btc-resolved-address',
+      recipient: '16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf',
     });
+  });
+
+  // Round 4 review item 2: a resolved name/contact card supplies its
+  // address verbatim (resolveContact.ts) - that address is exactly as
+  // untrusted as one typed directly, so it must be validated too, not
+  // just trusted because "a name resolved".
+  it('disables Confirm Send when a resolved contact address is not valid for this coin (wrong chain)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveContactModule.resolveContact).mockResolvedValue({
+      status: 'resolved',
+      // A genuinely valid, correctly-checksummed QORT address (version 58)
+      // published under the BTC slot of a contact card - never a valid
+      // BTC address (versions 0/5).
+      address: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
+      coin: 'BTC',
+      name: 'Wrongchain',
+    });
+
+    renderDetail();
+    await openSendDialog(user);
+    await user.click(screen.getByRole('button', { name: /^name$/i }));
+    await user.type(
+      screen.getByLabelText(/recipient's qortium name/i),
+      'Wrongchain'
+    );
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1.25');
+
+    expect(
+      await screen.findByText(/the contact's BTC address is not valid/i)
+    ).toBeInTheDocument();
+    // The green "resolved to" line must not also show for an invalid
+    // resolved address.
+    expect(
+      screen.queryByText(/sending to Wrongchain's BTC address/i)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /confirm send/i })
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
+    expect(sendCalls(qdnRequestMock)).toHaveLength(0);
   });
 
   it('shows the coin-not-published message and disables Confirm Send', async () => {
@@ -531,13 +983,13 @@ describe('CoinDetail recipient-by-name flow', () => {
     vi.mocked(resolveContactModule.resolveContact)
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-old-address',
+        address: '1BcktgV7EjHmxEwQDFFhhztzNqZkd5gdm',
         coin: 'BTC',
         name: 'Alice',
       })
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-new-address',
+        address: '1GvdqXEAMbSARrubpNP44Vqz4kr6TDPgC',
         coin: 'BTC',
         name: 'Alice',
       });
@@ -549,13 +1001,15 @@ describe('CoinDetail recipient-by-name flow', () => {
       screen.getByLabelText(/recipient's qortium name/i),
       'Alice'
     );
-    await screen.findByText(/btc-old-address/i);
+    await screen.findByText(/1BcktgV7EjHmxEwQDFFhhztzNqZkd5gdm/i);
     await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1.25');
 
     await user.click(screen.getByRole('button', { name: /confirm send/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/btc-new-address/i)).toBeInTheDocument()
+      expect(
+        screen.getByText(/1GvdqXEAMbSARrubpNP44Vqz4kr6TDPgC/i)
+      ).toBeInTheDocument()
     );
     expect(sendCalls(qdnRequestMock)).toHaveLength(0);
     expect(
@@ -644,13 +1098,13 @@ describe('CoinDetail recipient-by-name flow', () => {
     vi.mocked(resolveContactModule.resolveContact)
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-alice-address',
+        address: '1NEWnMyDUTaYuUsoRVWQQznykg8Yc2Ynn',
         coin: 'BTC',
         name: 'Alice',
       })
       .mockResolvedValueOnce({
         status: 'resolved',
-        address: 'btc-bob-address',
+        address: '1TYPjCiGbKiwP6r12cdkmVjySbQryonEV',
         coin: 'BTC',
         name: 'Bob',
       });
@@ -697,5 +1151,767 @@ describe('CoinDetail recipient-by-name flow', () => {
     // into later tests.
     await screen.findByText(/sending to Bob's BTC address/i);
     expect(sendCalls(qdnRequestMock)).toHaveLength(0);
+  });
+});
+
+describe('CoinDetail structured send errors (W1)', () => {
+  let qdnRequestMock: ReturnType<typeof vi.fn>;
+  let sendCoinResult: Record<string, unknown>;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    getDefaultStore().set(walletReadyAtom, true);
+
+    qdnRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_COIN', 'GET_WALLET_BALANCE', 'UNLOCK_SELECTED_ACCOUNT'];
+        case 'GET_USER_WALLET':
+          return { address: 'btc-wallet-address' };
+        case 'GET_WALLET_BALANCE':
+          return '123456789';
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        case 'GET_FOREIGN_FEE':
+          return { fee: '0.0002' };
+        case 'GET_SELECTED_ACCOUNT':
+          return { isUnlocked: true };
+        case 'UNLOCK_SELECTED_ACCOUNT':
+          return { isUnlocked: true };
+        case 'SEND_COIN':
+          return sendCoinResult;
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+  });
+
+  afterEach(() => {
+    getDefaultStore().set(walletReadyAtom, false);
+    delete (globalThis as any).qdnRequest;
+  });
+
+  it('shows a pending state - never success - when a foreign send resolves with an ambiguous outcome', async () => {
+    sendCoinResult = {
+      accepted: false,
+      foreignOutcome: 'unknown',
+      error: 'broadcast outcome could not be confirmed',
+      retryable: false,
+    };
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/transaction status unknown/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/broadcast outcome could not be confirmed/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/transaction sent/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the decoded rejection message - never success - when a foreign send is rejected outright', async () => {
+    sendCoinResult = {
+      accepted: false,
+      error: 'insufficient funds for fee',
+    };
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/insufficient funds for fee/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/transaction sent/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a decoded balance error with a manual retry affordance when the balance fetch fails', async () => {
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_COIN', 'GET_WALLET_BALANCE', 'UNLOCK_SELECTED_ACCOUNT'];
+        case 'GET_USER_WALLET':
+          return { address: 'btc-wallet-address' };
+        case 'GET_WALLET_BALANCE':
+          return Promise.reject({
+            message: 'backend unavailable',
+            code: 'FOREIGN_WALLET_BACKEND_UNAVAILABLE',
+          });
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        default:
+          return null;
+      }
+    });
+    const user = userEvent.setup();
+    renderDetail();
+
+    expect(await screen.findByText(/balance unavailable/i)).toBeInTheDocument();
+
+    const balanceCallsBefore = qdnRequestMock.mock.calls.filter(
+      ([o]) => o.action === 'GET_WALLET_BALANCE'
+    ).length;
+    // Not marked retryable - fetchBalance should not have retried on its own.
+    expect(balanceCallsBefore).toBe(1);
+
+    await user.click(screen.getByRole('button', { name: /retry balance/i }));
+    await waitFor(() =>
+      expect(
+        qdnRequestMock.mock.calls.filter(
+          ([o]) => o.action === 'GET_WALLET_BALANCE'
+        ).length
+      ).toBeGreaterThan(balanceCallsBefore)
+    );
+  });
+});
+
+describe('CoinDetail redundant-unlock avoidance (W2)', () => {
+  let qdnRequestMock: ReturnType<typeof vi.fn>;
+  let selectedAccountUnlocked: boolean;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    selectedAccountUnlocked = true;
+
+    qdnRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_COIN', 'GET_WALLET_BALANCE', 'UNLOCK_SELECTED_ACCOUNT'];
+        case 'GET_USER_WALLET':
+          return { address: 'btc-wallet-address' };
+        case 'GET_WALLET_BALANCE':
+          return '123456789';
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        case 'GET_FOREIGN_FEE':
+          return { fee: '0.0002' };
+        case 'GET_SELECTED_ACCOUNT':
+          return { isUnlocked: selectedAccountUnlocked };
+        case 'UNLOCK_SELECTED_ACCOUNT':
+          return { isUnlocked: true };
+        case 'SEND_COIN':
+          return { accepted: true };
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).qdnRequest;
+  });
+
+  it('skips UNLOCK_SELECTED_ACCOUNT when GET_SELECTED_ACCOUNT reports the account is already unlocked', async () => {
+    selectedAccountUnlocked = true;
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    await waitFor(() => expect(sendCalls(qdnRequestMock)).toHaveLength(1));
+    expect(
+      qdnRequestMock.mock.calls.filter(
+        ([o]) => o.action === 'UNLOCK_SELECTED_ACCOUNT'
+      )
+    ).toHaveLength(0);
+  });
+
+  it('calls UNLOCK_SELECTED_ACCOUNT exactly once when the account is locked', async () => {
+    selectedAccountUnlocked = false;
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    await waitFor(() => expect(sendCalls(qdnRequestMock)).toHaveLength(1));
+    expect(
+      qdnRequestMock.mock.calls.filter(
+        ([o]) => o.action === 'UNLOCK_SELECTED_ACCOUNT'
+      )
+    ).toHaveLength(1);
+  });
+});
+
+describe('CoinDetail pending native send confirmation (round 2, item A)', () => {
+  let qortalRequestMock: ReturnType<typeof vi.fn>;
+
+  const flushMicrotasks = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    getDefaultStore().set(walletReadyAtom, true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    getDefaultStore().set(walletReadyAtom, false);
+    delete (globalThis as any).qdnRequest;
+    delete (globalThis as any).qortalRequest;
+  });
+
+  it("shows the accepted send as a pending row immediately (using Home 2's transactionSignature field), then flips it to confirmed and refreshes the balance exactly once", async () => {
+    let balanceValue = '12.5';
+    qortalRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_QORT'];
+        case 'GET_USER_ACCOUNT':
+          return { address: 'qort-wallet-address' };
+        case 'GET_BALANCE':
+          return balanceValue;
+        case 'SEARCH_TRANSACTIONS':
+          // The confirmation poll searches BOTH; the periodic/initial
+          // history load searches CONFIRMED only and never sees this tx
+          // until the poll clears pendingSend and re-fetches it for real.
+          // A confirmed Qortal transaction row carries `signature` (its
+          // own field, unrelated to the send result's transactionSignature)
+          // and `blockHeight` once mined - verified live on two nodes.
+          if (opts.confirmationStatus === 'BOTH') {
+            return [
+              {
+                signature: 'sig-abc',
+                recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
+                amount: '1.25',
+                fee: '0.001',
+                timestamp: Date.now(),
+                blockHeight: 500,
+              },
+            ];
+          }
+          return [];
+        case 'SEND_QORT':
+          // Home 2's broadcastHomeV2Payment result shape (electron/home-v2-app-bridge.ts):
+          // { action, amount, assetId, network, recipient, transactionSignature, accepted: true }.
+          return {
+            action: 'PAYMENT',
+            accepted: true,
+            amount: '1.25',
+            recipient: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8',
+            transactionSignature: 'sig-abc',
+          };
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qortalRequest = qortalRequestMock;
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+
+    renderDetail(qortChain);
+    await flushMicrotasks();
+
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await flushMicrotasks();
+    fireEvent.change(screen.getByLabelText(/amount \(QORT\)/i), {
+      target: { value: '1.25' },
+    });
+    fireEvent.change(screen.getByLabelText(/recipient address/i), {
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
+    await flushMicrotasks();
+
+    expect(screen.getByText(/transaction sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/pending confirmation/i)).toBeInTheDocument();
+
+    const balanceCallsBeforePoll = qortalRequestMock.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).action === 'GET_BALANCE'
+    ).length;
+    balanceValue = '11.25';
+
+    // 30-minute cap is 120 attempts at 15 s - the mock confirms on the
+    // very first tick, well before either limit.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    expect(screen.queryByText(/pending confirmation/i)).not.toBeInTheDocument();
+    expect(
+      qortalRequestMock.mock.calls.filter(
+        (call: unknown[]) =>
+          (call[0] as Record<string, unknown>).action === 'GET_BALANCE'
+      ).length
+    ).toBe(balanceCallsBeforePoll + 1);
+  });
+
+  it('also shows a pending row for a plain Qortal host that returns `signature` instead of `transactionSignature`', async () => {
+    qortalRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_QORT'];
+        case 'GET_USER_ACCOUNT':
+          return { address: 'qort-wallet-address' };
+        case 'GET_BALANCE':
+          return '12.5';
+        case 'SEARCH_TRANSACTIONS':
+          return [];
+        case 'SEND_QORT':
+          // A plain Qortal host's SEND_COIN/SEND_QORT returns the Qortal
+          // transaction object itself, which carries `signature`.
+          return { accepted: true, signature: 'sig-plain-qortal' };
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qortalRequest = qortalRequestMock;
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+
+    renderDetail(qortChain);
+    await flushMicrotasks();
+
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await flushMicrotasks();
+    fireEvent.change(screen.getByLabelText(/amount \(QORT\)/i), {
+      target: { value: '1.25' },
+    });
+    fireEvent.change(screen.getByLabelText(/recipient address/i), {
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
+    await flushMicrotasks();
+
+    expect(screen.getByText(/pending confirmation/i)).toBeInTheDocument();
+  });
+
+  it('treats a native accepted:false with outcome:"unknown" as pending, not a hard error', async () => {
+    qortalRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_QORT'];
+        case 'GET_USER_ACCOUNT':
+          return { address: 'qort-wallet-address' };
+        case 'GET_BALANCE':
+          return '12.5';
+        case 'SEARCH_TRANSACTIONS':
+          return [];
+        case 'SEND_QORT':
+          // Home 2's ambiguous-broadcast shape (broadcastHomeV2Payment):
+          // { accepted:false, errorType:'BROADCAST_UNKNOWN', outcome:'unknown', error, retryable:false, timestamp }.
+          return {
+            accepted: false,
+            errorType: 'BROADCAST_UNKNOWN',
+            outcome: 'unknown',
+            error: 'broadcast outcome could not be confirmed',
+            retryable: false,
+            timestamp: Date.now(),
+          };
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qortalRequest = qortalRequestMock;
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+
+    renderDetail(qortChain);
+    await flushMicrotasks();
+
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await flushMicrotasks();
+    fireEvent.change(screen.getByLabelText(/amount \(QORT\)/i), {
+      target: { value: '1.25' },
+    });
+    fireEvent.change(screen.getByLabelText(/recipient address/i), {
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
+    await flushMicrotasks();
+
+    expect(screen.getByText(/transaction status unknown/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/broadcast outcome could not be confirmed/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/transaction sent/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pending confirmation/i)).not.toBeInTheDocument();
+  });
+
+  it('shows "unconfirmed - check later" after the 30-minute cap without ever seeing a confirmation', async () => {
+    qortalRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_QORT'];
+        case 'GET_USER_ACCOUNT':
+          return { address: 'qort-wallet-address' };
+        case 'GET_BALANCE':
+          return '12.5';
+        case 'SEARCH_TRANSACTIONS':
+          return []; // never confirms
+        case 'SEND_QORT':
+          return { accepted: true, signature: 'sig-abc' };
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qortalRequest = qortalRequestMock;
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+
+    renderDetail(qortChain);
+    await flushMicrotasks();
+
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await flushMicrotasks();
+    fireEvent.change(screen.getByLabelText(/amount \(QORT\)/i), {
+      target: { value: '1.25' },
+    });
+    fireEvent.change(screen.getByLabelText(/recipient address/i), {
+      target: { value: 'QLhKCGi5ZvnS9amYgdA353vzbdbWYBoxD8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm send/i }));
+    await flushMicrotasks();
+
+    expect(screen.getByText(/pending confirmation/i)).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120 * 15000 + 1000);
+    });
+
+    expect(screen.getByText(/unconfirmed - check later/i)).toBeInTheDocument();
+  }, 20000);
+});
+
+describe('CoinDetail deep-linked send dialog loads a suggested fee (round 2, item D)', () => {
+  let qdnRequestMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    vi.clearAllMocks();
+    getDefaultStore().set(walletReadyAtom, true);
+  });
+
+  afterEach(() => {
+    getDefaultStore().set(walletReadyAtom, false);
+    delete (globalThis as any).qdnRequest;
+  });
+
+  it('loads a live suggested fee and disables Send until it resolves, the same as the button-triggered dialog', async () => {
+    let resolveFee: (value: unknown) => void = () => {};
+    qdnRequestMock = vi.fn((opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return Promise.resolve([
+            'SEND_COIN',
+            'GET_WALLET_BALANCE',
+            'UNLOCK_SELECTED_ACCOUNT',
+          ]);
+        case 'GET_USER_WALLET':
+          return Promise.resolve({ address: 'btc-wallet-address' });
+        case 'GET_WALLET_BALANCE':
+          return Promise.resolve('123456789');
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return Promise.resolve([]);
+        case 'GET_FOREIGN_FEE':
+          return new Promise((resolve) => {
+            resolveFee = resolve;
+          });
+        default:
+          return Promise.resolve(null);
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+
+    // This is exactly what the grid's quick-send button navigates to
+    // (CoinBlock/CoinListRow's handleSend) - the bug was that arriving
+    // this way never called openSend(), so no fee was ever loaded.
+    renderDetail(btcChain, [
+      '/bitcoin?send=true&to=16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu',
+    ]);
+
+    // The URL-prefilled recipient must survive - openSend()'s full form
+    // reset must not run for this path.
+    expect(await screen.findByLabelText(/recipient address/i)).toHaveValue(
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(
+      'loading fee…'
+    );
+    expect(
+      screen.getByRole('button', { name: /confirm send/i })
+    ).toBeDisabled();
+
+    resolveFee({ fee: '0.00035' });
+    await waitFor(() =>
+      expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(
+        0.00035
+      )
+    );
+
+    await userEvent.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /confirm send/i })
+      ).toBeEnabled()
+    );
+  });
+
+  it('shows the fee-lookup-unavailable note and lets Home/Core apply the default when the lookup fails', async () => {
+    qdnRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_COIN', 'GET_WALLET_BALANCE', 'UNLOCK_SELECTED_ACCOUNT'];
+        case 'GET_USER_WALLET':
+          return { address: 'btc-wallet-address' };
+        case 'GET_WALLET_BALANCE':
+          return '123456789';
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        case 'GET_FOREIGN_FEE':
+          throw new Error('fee service unavailable');
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+
+    renderDetail(btcChain, ['/bitcoin?send=true']);
+
+    expect(
+      await screen.findByText(/fee lookup unavailable/i)
+    ).toBeInTheDocument();
+    // An empty number-type input's value is null, not '', per jest-dom.
+    expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(null);
+  });
+});
+
+describe('CoinDetail Core spend-context bug hint (round 2, item E)', () => {
+  let qdnRequestMock: ReturnType<typeof vi.fn>;
+  let sendCoinResult: Record<string, unknown>;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    vi.clearAllMocks();
+    getDefaultStore().set(walletReadyAtom, true);
+
+    qdnRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_COIN', 'GET_WALLET_BALANCE', 'UNLOCK_SELECTED_ACCOUNT'];
+        case 'GET_USER_WALLET':
+          return { address: 'btc-wallet-address' };
+        case 'GET_WALLET_BALANCE':
+          return '123456789';
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        case 'GET_FOREIGN_FEE':
+          return { fee: '0.0002' };
+        case 'UNLOCK_SELECTED_ACCOUNT':
+          return { isUnlocked: true };
+        case 'SEND_COIN':
+          return sendCoinResult;
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+  });
+
+  afterEach(() => {
+    getDefaultStore().set(walletReadyAtom, false);
+    delete (globalThis as any).qdnRequest;
+  });
+
+  it('appends the Core-update hint when the decoded rejection matches the known serialization bug', async () => {
+    sendCoinResult = {
+      accepted: false,
+      error: 'Decode error: previous transaction hash is invalid',
+    };
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/previous transaction hash is invalid/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/needs updating \(spend-context serialization\)/i)
+    ).toBeInTheDocument();
+  });
+
+  it('also appends the hint on the ambiguous/pending outcome path', async () => {
+    sendCoinResult = {
+      accepted: false,
+      foreignOutcome: 'unknown',
+      error: 'previous transaction hash is invalid for this input',
+      retryable: false,
+    };
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/transaction status unknown/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/needs updating \(spend-context serialization\)/i)
+    ).toBeInTheDocument();
+  });
+
+  it('does not show the hint for an unrelated send failure', async () => {
+    sendCoinResult = {
+      accepted: false,
+      error: 'insufficient funds for fee',
+    };
+    const user = userEvent.setup();
+    renderDetail();
+    await openSendDialog(user);
+    await user.type(screen.getByLabelText(/amount \(BTC\)/i), '1');
+    await user.type(
+      screen.getByLabelText(/recipient address/i),
+      '16L5yRNPTuciSgXGHqYwn9N6NeoKqopAu'
+    );
+    await user.click(screen.getByRole('button', { name: /confirm send/i }));
+
+    expect(
+      await screen.findByText(/insufficient funds for fee/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/needs updating \(spend-context serialization\)/i)
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('CoinDetail native 60s balance poll (round 2 review finding 3)', () => {
+  let qortalRequestMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    getDefaultStore().set(walletReadyAtom, true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    getDefaultStore().set(walletReadyAtom, false);
+    delete (globalThis as any).qdnRequest;
+    delete (globalThis as any).qortalRequest;
+  });
+
+  it('an unchanged balance across two 60s ticks triggers zero history refetches', async () => {
+    qortalRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_QORT'];
+        case 'GET_USER_ACCOUNT':
+          return { address: 'qort-wallet-address' };
+        case 'GET_BALANCE':
+          return '12.5'; // never changes across ticks
+        case 'SEARCH_TRANSACTIONS':
+          return [];
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qortalRequest = qortalRequestMock;
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+
+    renderDetail(qortChain);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const historyCallsAfterMount = qortalRequestMock.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).action === 'SEARCH_TRANSACTIONS'
+    ).length;
+    expect(historyCallsAfterMount).toBe(1);
+
+    // Two 60 s ticks, both seeing the same balance Home reported at mount -
+    // the old bug compared against a value captured when the effect was
+    // set up (always null on the very first tick), so it always looked
+    // "changed" and refetched history for no reason.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+
+    const historyCallsAfterTicks = qortalRequestMock.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).action === 'SEARCH_TRANSACTIONS'
+    ).length;
+    expect(historyCallsAfterTicks).toBe(historyCallsAfterMount);
+  });
+
+  it('a balance that actually changes on a 60s tick does trigger exactly one history refetch', async () => {
+    let balanceValue = '12.5';
+    qortalRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return ['SEND_QORT'];
+        case 'GET_USER_ACCOUNT':
+          return { address: 'qort-wallet-address' };
+        case 'GET_BALANCE':
+          return balanceValue;
+        case 'SEARCH_TRANSACTIONS':
+          return [];
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qortalRequest = qortalRequestMock;
+    (globalThis as any).qdnRequest = vi.fn(async () => null);
+
+    renderDetail(qortChain);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const historyCallsAfterMount = qortalRequestMock.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).action === 'SEARCH_TRANSACTIONS'
+    ).length;
+
+    balanceValue = '13.75'; // an incoming payment landed
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+
+    const historyCallsAfterChange = qortalRequestMock.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).action === 'SEARCH_TRANSACTIONS'
+    ).length;
+    expect(historyCallsAfterChange).toBe(historyCallsAfterMount + 1);
+    expect(screen.getByText('13.75')).toBeInTheDocument();
   });
 });

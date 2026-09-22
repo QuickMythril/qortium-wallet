@@ -18,7 +18,36 @@
     "transfer_coin": "siirrä {{ coin }}"
   },
   "address": "osoite:",
+  "balance_unavailable": "saldo ei ole käytettävissä",
+  "transactions_unavailable": "tapahtumat eivät ole käytettävissä",
   "amount": "määrä",
+  "arrr": {
+    "send_unavailable": "ARRR:n lähettäminen ei ole vielä käytettävissä",
+    "unavailable_fallback": "ARRR-lompakon toiminnot eivät ole käytettävissä tässä solmussa.",
+    "custody_consent_denied": "säilytystä ei hyväksytty",
+    "wallet_busy": "Coresi on varattu toisella ARRR-lompakolla",
+    "sync_contract_unsupported": "Päivitä Qortium Core nähdäksesi ARRR-saldot",
+    "state_loading": "Yhdistetään Pirate Chainiin…",
+    "state_disabled": "ARRR-tuki on poistettu käytöstä",
+    "state_disabled_detail_fallback": "Pyydä solmun ylläpitäjää ottamaan ARRR-säilytys käyttöön.",
+    "state_synchronizing": "Synkronoidaan Pirate Chainia…",
+    "state_degraded": "Pirate Chainin synkronointi on heikentynyt",
+    "restart_required": "Käynnistä Qortium Core uudelleen palautuaksesi.",
+    "progress_heights": "lohko {{ scanned }} / {{ tip }}",
+    "progress_blocks": "lohko {{ synced }} / {{ total }}",
+    "progress_indeterminate": "synkronoidaan…",
+    "verifying_balance": "varmistetaan…",
+    "total_balance": "yhteensä (sis. vahvistamattoman/varmistamattoman)",
+    "stale_label": "päivitetty viimeksi {{ time }}",
+    "provisional_label": "alustava",
+    "transactions_pending": "Tapahtumat saatavilla synkronoinnin jälkeen"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "omaisuuserä nro {{id}} · liikkeeseenlaskija {{issuer}}",
+    "issuer_line_unknown": "omaisuuserä nro {{id}} · tuntematon liikkeeseenlaskija"
+  },
   "balance": "saldo:",
   "balance_available": "käytettävissä oleva saldo:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "valinnainen mukautettu maksu ({{ coin }})",
     "optional_fee_per_byte": "valinnainen maksu per tavu ({{ coin }})",
     "arrr_fixed_fee": "ARRR-verkon maksu on kiinteä - tämä arvo on vain näyttöä varten",
+    "fee_loading": "ladataan maksua…",
     "fee_lookup_unavailable": "maksuhaku ei ole käytettävissä - Home/Core-oletusta käytetään",
     "confirm_send": "vahvista lähetys",
     "transaction_sent": "tapahtuma lähetetty",
     "send_failed": "jotain meni pieleen. yritä uudelleen.",
+    "send_pending_title": "tapahtuman tila tuntematon",
+    "send_pending_hint": "emme voineet vahvistaa, että tämä meni läpi. älä yritä uudelleen - tarkista odottavat tapahtumat Homessa ensin.",
+    "core_spend_context_bug_hint": "Qortium Core -sovelluksesi täytyy päivittää (spend-context-sarjallistus); tämä ei ole lompakko- tai saldo-ongelma.",
     "amount_invalid": "syötä positiivinen määrä enintään {{ decimals }} desimaalilla.",
+    "amount_below_minimum": "vähimmäismäärä on {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "summa ja arvioitu maksu saattavat ylittää saldosi",
     "recipient_invalid": "vastaanottajan osoite on pakollinen ja saa olla enintään 256 merkkiä.",
-    "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla."
+    "recipient_invalid_coin": "ei kelvollinen {{ ticker }}-osoite",
+    "recipient_invalid_taproot": "Taproot-osoitteita ({{ example }}) ei vielä tueta - käytä legacy- tai {{ legacy }}-osoitetta.",
+    "recipient_invalid_mweb": "Litecoinin MWEB-osoitteita ei tueta - käytä ltc1q- tai legacy-osoitetta.",
+    "recipient_invalid_spark": "Firon Spark/Lelantus-osoitteita ei tueta - käytä läpinäkyvää (a…) osoitetta.",
+    "recipient_invalid_cashaddr": "Tämä on Bitcoin Cash -osoite; BCH:ta ei tueta täällä.",
+    "recipient_invalid_wrong_coin": "Tämä näyttää {{ otherCoin }}-osoitteelta, ei {{ ticker }}-osoitteelta.",
+    "recipient_invalid_bad_checksum": "Tämä näyttää {{ ticker }}-osoitteelta, mutta tarkistussumma ei täsmää - tarkista mahdolliset kirjoitusvirheet.",
+    "doge_dgb_look_alike": "DOGE- ja DGB-legacy-osoitteet näyttävät samalta - tarkista kolikko.",
+    "fee_per_byte_invalid": "syötä positiivinen maksu per tavu enintään 8 desimaalilla.",
+    "resolution_invalid_coin_address": "yhteystiedon {{ ticker }}-osoite ei ole kelvollinen"
   },
   "prepared_transaction": {
     "title": "valmisteltu tapahtuma",
@@ -196,5 +240,9 @@
   "total_amount": "kokonaismäärä",
   "transactions": "tapahtumaluettelo",
   "transaction_hash": "TX-hash",
+  "transaction_status": {
+    "pending_confirmation": "odottaa vahvistusta",
+    "pending_timeout": "vahvistamaton - tarkista myöhemmin"
+  },
   "wallets": "lompakot"
 }

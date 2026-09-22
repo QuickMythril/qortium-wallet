@@ -18,7 +18,36 @@
     "transfer_coin": "trasferisci {{ coin }}"
   },
   "address": "indirizzo:",
+  "balance_unavailable": "saldo non disponibile",
+  "transactions_unavailable": "transazioni non disponibili",
   "amount": "importo",
+  "arrr": {
+    "send_unavailable": "L'invio di ARRR non è ancora disponibile",
+    "unavailable_fallback": "Le funzioni del portafoglio ARRR non sono disponibili su questo nodo.",
+    "custody_consent_denied": "custodia non approvata",
+    "wallet_busy": "Il tuo Core è occupato con un altro portafoglio ARRR",
+    "sync_contract_unsupported": "Aggiorna Qortium Core per vedere i saldi ARRR",
+    "state_loading": "Connessione a Pirate Chain…",
+    "state_disabled": "Il supporto ARRR è disabilitato",
+    "state_disabled_detail_fallback": "Chiedi all'operatore del tuo nodo di abilitare la custodia ARRR.",
+    "state_synchronizing": "Sincronizzazione di Pirate Chain…",
+    "state_degraded": "La sincronizzazione di Pirate Chain è degradata",
+    "restart_required": "Riavvia Qortium Core per recuperare.",
+    "progress_heights": "blocco {{ scanned }} di {{ tip }}",
+    "progress_blocks": "blocco {{ synced }} di {{ total }}",
+    "progress_indeterminate": "sincronizzazione…",
+    "verifying_balance": "verifica in corso…",
+    "total_balance": "totale incl. non confermato/non verificato",
+    "stale_label": "ultimo aggiornamento {{ time }}",
+    "provisional_label": "provvisorio",
+    "transactions_pending": "Transazioni disponibili dopo la sincronizzazione"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "asset n. {{id}} · emesso da {{issuer}}",
+    "issuer_line_unknown": "asset n. {{id}} · emittente sconosciuto"
+  },
   "balance": "saldo:",
   "balance_available": "saldo disponibile:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "caricamento commissione…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
+    "send_pending_title": "transaction status unknown",
+    "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "Il tuo Qortium Core deve essere aggiornato (bug di serializzazione dello spend-context); non è un problema del wallet o del saldo.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
+    "amount_below_minimum": "Minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
-    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
+    "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "Gli indirizzi Taproot ({{ example }}) non sono ancora supportati - usa un indirizzo legacy o {{ legacy }}.",
+    "recipient_invalid_mweb": "Gli indirizzi MWEB di Litecoin non sono supportati - usa un indirizzo ltc1q o legacy.",
+    "recipient_invalid_spark": "Gli indirizzi Firo Spark/Lelantus non sono supportati - usa un indirizzo trasparente (a…).",
+    "recipient_invalid_cashaddr": "Questo è un indirizzo Bitcoin Cash; BCH non è supportato qui.",
+    "recipient_invalid_wrong_coin": "Sembra un indirizzo {{ otherCoin }}, non {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Sembra un indirizzo {{ ticker }}, ma il checksum non corrisponde - controlla eventuali errori di battitura.",
+    "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
+    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
+    "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"
   },
   "prepared_transaction": {
     "title": "Prepared transaction",
@@ -196,5 +240,9 @@
   "total_amount": "importo totale",
   "transactions": "elenco delle transazioni",
   "transaction_hash": "Hash TX",
+  "transaction_status": {
+    "pending_confirmation": "in attesa di conferma",
+    "pending_timeout": "non confermata - controlla più tardi"
+  },
   "wallets": "portafogli"
 }

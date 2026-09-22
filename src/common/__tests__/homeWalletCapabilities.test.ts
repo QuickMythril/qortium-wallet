@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChainConfig } from '../../config/chains';
 import {
+  ARRR_CUSTODY_CONTRACT,
   foreignWalletAvailability,
   HOME_1_WALLET_READ_CONTRACT,
   HOME_WALLET_CONTRACT,
@@ -261,6 +262,187 @@ describe('foreign wallet capability contract', () => {
       canReadBalance: false,
       canReadTransactions: false,
       canReceive: false,
+      canSend: false,
+    });
+  });
+});
+
+describe('ARRR custody gate (round 5)', () => {
+  const arrrChain: ChainConfig = {
+    key: 'ARRR',
+    name: 'Pirate Chain',
+    ticker: 'ARRR',
+    coinEnum: 'ARRR',
+    route: 'pirate-chain',
+    defaultFee: 0.0001,
+    isNative: false,
+    decimalPlaces: 8,
+    activeNetwork: 'MAIN',
+    supportsHtlc: false,
+    supportsLocalChainTrades: false,
+    homeWallet: {
+      contract: HOME_WALLET_CONTRACT,
+      implemented: true,
+      protocol: 'qdnRequest',
+      read: true,
+      readMode: 'TRUSTED_CORE_CUSTODY',
+      receive: true,
+      receiveMode: 'TRUSTED_CORE_CUSTODY',
+      requiresUnlockedAccount: true,
+      send: false,
+      sendMode: 'NONE',
+      serverManagement: false,
+      serverManagementMode: 'NONE',
+      custodyContract: ARRR_CUSTODY_CONTRACT,
+      syncStatus: true,
+    },
+  };
+  const arrrActions = [
+    'GET_USER_WALLET',
+    'GET_WALLET_BALANCE',
+    'GET_USER_WALLET_TRANSACTIONS',
+    'GET_ARRR_SYNC_STATUS',
+  ];
+
+  it('accepts a fully-conforming ARRR custody capability for read/receive/transactions, never send', () => {
+    expect(foreignWalletAvailability(arrrChain, arrrActions)).toEqual({
+      canManageServer: false,
+      canReadBalance: true,
+      canReadTransactions: true,
+      canReceive: true,
+      canSend: false,
+    });
+  });
+
+  it('rejects TRUSTED_CORE_CUSTODY for every other coin', () => {
+    const btcWithCustody: ChainConfig = {
+      ...chain,
+      homeWallet: { ...arrrChain.homeWallet!, contract: HOME_WALLET_CONTRACT },
+    };
+    expect(foreignWalletAvailability(btcWithCustody, arrrActions)).toEqual({
+      canManageServer: false,
+      canReadBalance: false,
+      canReadTransactions: false,
+      canReceive: false,
+      canSend: false,
+    });
+  });
+
+  it('rejects ARRR custody advertised with send:true', () => {
+    const sendable: ChainConfig = {
+      ...arrrChain,
+      homeWallet: {
+        ...arrrChain.homeWallet!,
+        send: true,
+        sendMode: 'HOME_LOCAL',
+      },
+    };
+    expect(foreignWalletAvailability(sendable, arrrActions).canSend).toBe(
+      false
+    );
+    expect(foreignWalletAvailability(sendable, arrrActions)).toEqual({
+      canManageServer: false,
+      canReadBalance: false,
+      canReadTransactions: false,
+      canReceive: false,
+      canSend: false,
+    });
+  });
+
+  it('rejects a missing or wrong custodyContract', () => {
+    expect(
+      foreignWalletAvailability(
+        {
+          ...arrrChain,
+          homeWallet: { ...arrrChain.homeWallet!, custodyContract: undefined },
+        },
+        arrrActions
+      ).canReceive
+    ).toBe(false);
+    expect(
+      foreignWalletAvailability(
+        {
+          ...arrrChain,
+          homeWallet: {
+            ...arrrChain.homeWallet!,
+            custodyContract: 'some-other-contract',
+          },
+        },
+        arrrActions
+      ).canReceive
+    ).toBe(false);
+  });
+
+  it('rejects missing syncStatus', () => {
+    expect(
+      foreignWalletAvailability(
+        {
+          ...arrrChain,
+          homeWallet: { ...arrrChain.homeWallet!, syncStatus: false },
+        },
+        arrrActions
+      ).canReceive
+    ).toBe(false);
+    expect(
+      foreignWalletAvailability(
+        {
+          ...arrrChain,
+          homeWallet: { ...arrrChain.homeWallet!, syncStatus: undefined },
+        },
+        arrrActions
+      ).canReceive
+    ).toBe(false);
+  });
+
+  it('rejects when GET_ARRR_SYNC_STATUS is not advertised, even with a valid capability', () => {
+    const withoutSyncAction = arrrActions.filter(
+      (a) => a !== 'GET_ARRR_SYNC_STATUS'
+    );
+    expect(foreignWalletAvailability(arrrChain, withoutSyncAction)).toEqual({
+      canManageServer: false,
+      canReadBalance: false,
+      canReadTransactions: false,
+      canReceive: false,
+      canSend: false,
+    });
+  });
+
+  it('never grants server management for ARRR, even if advertised', () => {
+    expect(
+      foreignWalletAvailability(arrrChain, [
+        ...arrrActions,
+        'GET_CROSSCHAIN_SERVER_INFO',
+        'SET_CURRENT_FOREIGN_SERVER',
+      ]).canManageServer
+    ).toBe(false);
+  });
+
+  it('is unavailable with no capability at all - old Home without the custody extension', () => {
+    expect(
+      foreignWalletAvailability(
+        { ...arrrChain, homeWallet: undefined },
+        arrrActions
+      )
+    ).toEqual({
+      canManageServer: false,
+      canReadBalance: false,
+      canReadTransactions: false,
+      canReceive: false,
+      canSend: false,
+    });
+  });
+
+  it('gates each ARRR read independently on its own advertised action', () => {
+    expect(
+      foreignWalletAvailability(arrrChain, [
+        'GET_ARRR_SYNC_STATUS',
+        'GET_USER_WALLET',
+      ])
+    ).toEqual({
+      canManageServer: false,
+      canReadBalance: false,
+      canReadTransactions: false,
+      canReceive: true,
       canSend: false,
     });
   });

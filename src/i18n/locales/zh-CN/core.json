@@ -18,7 +18,36 @@
     "transfer_coin": "转移 {{ coin }}"
   },
   "address": "地址：",
+  "balance_unavailable": "余额不可用",
+  "transactions_unavailable": "交易记录不可用",
   "amount": "金额",
+  "arrr": {
+    "send_unavailable": "暂不支持发送 ARRR",
+    "unavailable_fallback": "此节点不支持 ARRR 钱包功能。",
+    "custody_consent_denied": "托管未获批准",
+    "wallet_busy": "您的 Core 正忙于处理另一个 ARRR 钱包",
+    "sync_contract_unsupported": "请更新 Qortium Core 以查看 ARRR 余额",
+    "state_loading": "正在连接 Pirate Chain…",
+    "state_disabled": "ARRR 支持已禁用",
+    "state_disabled_detail_fallback": "请联系节点运营者启用 ARRR 托管。",
+    "state_synchronizing": "正在同步 Pirate Chain…",
+    "state_degraded": "Pirate Chain 同步状态不佳",
+    "restart_required": "重启 Qortium Core 以恢复。",
+    "progress_heights": "区块 {{ scanned }} / {{ tip }}",
+    "progress_blocks": "区块 {{ synced }} / {{ total }}",
+    "progress_indeterminate": "同步中…",
+    "verifying_balance": "验证中…",
+    "total_balance": "总额(含未确认/未验证)",
+    "stale_label": "最后更新时间 {{ time }}",
+    "provisional_label": "临时",
+    "transactions_pending": "同步完成后即可查看交易记录"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "资产 #{{id}} · 发行方:{{issuer}}",
+    "issuer_line_unknown": "资产 #{{id}} · 发行方未知"
+  },
   "balance": "余额：",
   "balance_available": "可用余额：",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "可选自定义手续费 ({{ coin }})",
     "optional_fee_per_byte": "可选每字节手续费 ({{ coin }})",
     "arrr_fixed_fee": "ARRR网络手续费固定不变 - 此值仅供显示",
+    "fee_loading": "正在加载手续费…",
     "fee_lookup_unavailable": "手续费查询不可用 - 将使用 Home/Core 默认值",
     "confirm_send": "确认发送",
     "transaction_sent": "交易已发送",
     "send_failed": "发生错误。请重试。",
+    "send_pending_title": "交易状态未知",
+    "send_pending_hint": "我们无法确认这笔交易是否成功。请勿重试 - 请先在 Home 中查看待处理交易。",
+    "core_spend_context_bug_hint": "您的 Qortium Core 需要更新(spend-context 序列化错误);这不是钱包或余额的问题。",
     "amount_invalid": "请输入最多 {{ decimals }} 位小数的正数金额。",
+    "amount_below_minimum": "最低金额为 {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "金额加上预估手续费可能超过您的余额",
     "recipient_invalid": "收款地址为必填项，且不得超过256个字符。",
-    "fee_per_byte_invalid": "请输入最多8位小数的正数每字节手续费。"
+    "recipient_invalid_coin": "不是有效的 {{ ticker }} 地址",
+    "recipient_invalid_taproot": "暂不支持 Taproot（{{ example }}）地址 - 请使用传统地址或 {{ legacy }} 地址。",
+    "recipient_invalid_mweb": "不支持 Litecoin 的 MWEB 地址 - 请使用 ltc1q 地址或传统地址。",
+    "recipient_invalid_spark": "不支持 Firo 的 Spark/Lelantus 地址 - 请使用透明（a…）地址。",
+    "recipient_invalid_cashaddr": "这是一个 Bitcoin Cash 地址；此处不支持 BCH。",
+    "recipient_invalid_wrong_coin": "这看起来像是 {{ otherCoin }} 地址，而不是 {{ ticker }} 地址。",
+    "recipient_invalid_bad_checksum": "这看起来像是 {{ ticker }} 地址，但校验和不匹配 - 请检查是否有拼写错误。",
+    "doge_dgb_look_alike": "DOGE 和 DGB 的传统地址格式相似 - 请再次确认所选币种。",
+    "fee_per_byte_invalid": "请输入最多8位小数的正数每字节手续费。",
+    "resolution_invalid_coin_address": "该联系人的 {{ ticker }} 地址无效"
   },
   "prepared_transaction": {
     "title": "已准备的交易",
@@ -196,5 +240,9 @@
   "total_amount": "总金额",
   "transactions": "交易列表",
   "transaction_hash": "TX 哈希",
+  "transaction_status": {
+    "pending_confirmation": "待确认",
+    "pending_timeout": "未确认 - 请稍后查看"
+  },
   "wallets": "钱包"
 }

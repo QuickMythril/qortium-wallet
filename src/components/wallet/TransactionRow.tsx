@@ -2,22 +2,31 @@ import { Box, IconButton } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import { useAtomValue } from 'jotai';
+import { useTranslation } from 'react-i18next';
 import { uiStyleAtom } from '../../state/global/system';
 import { useColors } from '../../theme/ColorTokensContext';
 import { tokens } from '../../theme/tokens';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
 import type { ChainConfig } from '../../config/chains';
 import { epochToAgo } from '../../common/functions';
+import { CoinImage } from './CoinImage';
 
 export interface TxRow {
   txHash?: string;
-  totalAmount?: number;
-  feeAmount?: number;
+  totalAmount?: number | null;
+  totalAmountEstimate?: number | null;
+  feeAmountEstimate?: number | null;
+  metadataComplete?: boolean;
+  feeAmount?: number | null;
   timestamp?: number;
   sender?: string;
   recipient?: string;
   inputs?: { address: string; amount: number; addressInWallet?: boolean }[];
   outputs?: { address: string; amount: number; addressInWallet?: boolean }[];
+  /** A just-sent row shown before the poll has confirmed it (round 2, item A). */
+  pending?: boolean;
+  /** The 30-minute confirmation poll gave up without ever seeing a block height. */
+  pendingTimedOut?: boolean;
 }
 
 interface TransactionRowProps {
@@ -47,17 +56,31 @@ export function TransactionRow({
   showCoinBadge,
 }: TransactionRowProps) {
   const c = useColors();
+  const { t } = useTranslation('core');
   const uiStyle = useAtomValue(uiStyleAtom);
   const isClassic = uiStyle === 'classic';
   const coinImageUrl = useCoinImageUrl(chain.ticker);
   const divisor = Math.pow(10, chain.decimalPlaces);
-  const isPositive = (row.totalAmount ?? 0) > 0;
+  const displayedAmount = row.totalAmount ?? row.totalAmountEstimate;
+  const amountUnknown = displayedAmount == null;
+  const amountEstimated =
+    row.totalAmount == null && row.totalAmountEstimate != null;
+  const isPositive = (displayedAmount ?? 0) > 0;
+  const amountColor = amountUnknown
+    ? c.textSecondary
+    : amountEstimated
+      ? c.warning
+      : isPositive
+        ? c.success
+        : c.error;
 
   const txAmount = () =>
-    (Number(row.totalAmount ?? 0) / divisor).toFixed(chain.decimalPlaces);
+    (Number(displayedAmount) / divisor).toFixed(chain.decimalPlaces);
 
   const txFee = () =>
-    (Number(row.feeAmount ?? 0) / divisor).toFixed(chain.decimalPlaces);
+    (Number(row.feeAmount ?? row.feeAmountEstimate) / divisor).toFixed(
+      chain.decimalPlaces
+    );
 
   const fmtAddr = (addr?: string) => {
     if (!addr) return '—';
@@ -69,6 +92,14 @@ export function TransactionRow({
     typeof v === 'string' && v ? v : undefined;
 
   const counterparty = (): string | undefined => {
+    if (amountUnknown) {
+      return (
+        str(row.recipient) ??
+        str(row.sender) ??
+        str(row.outputs?.find((o) => !o.addressInWallet)?.address) ??
+        str(row.inputs?.find((i) => !i.addressInWallet)?.address)
+      );
+    }
     if (isPositive) {
       if (str(row.sender)) return str(row.sender);
       return str(row.inputs?.find((i) => !i.addressInWallet)?.address);
@@ -116,14 +147,12 @@ export function TransactionRow({
               flexShrink: 0,
             }}
           >
-            {coinImageUrl && (
-              <Box
-                component="img"
-                src={coinImageUrl}
-                alt={chain.ticker}
-                sx={{ height: 16, width: 16, objectFit: 'contain' }}
-              />
-            )}
+            <CoinImage
+              url={coinImageUrl}
+              ticker={chain.ticker}
+              size={16}
+              placeholderSx={{ fontSize: '0.5rem' }}
+            />
             <Box
               sx={{
                 fontSize: '0.6rem',
@@ -145,7 +174,7 @@ export function TransactionRow({
             height: 8,
             borderRadius: '50%',
             flexShrink: 0,
-            bgcolor: isPositive ? c.success : c.error,
+            bgcolor: amountColor,
           }}
         />
 
@@ -153,13 +182,14 @@ export function TransactionRow({
           sx={{
             fontWeight: tokens.typography.weightBold,
             fontSize: '0.9rem',
-            color: isPositive ? c.success : c.error,
+            color: amountColor,
             minWidth: { xs: 90, sm: 140 },
             flexShrink: 0,
           }}
         >
-          {isPositive ? '+' : ''}
-          {txAmount()} {chain.ticker}
+          {amountUnknown
+            ? 'Amount unavailable'
+            : `${amountEstimated ? 'Estimated ' : ''}${isPositive ? '+' : ''}${txAmount()} ${chain.ticker}`}
         </Box>
 
         <Box
@@ -174,22 +204,30 @@ export function TransactionRow({
           }}
         >
           {cp
-            ? isPositive
-              ? `from ${fmtAddr(cp)}`
-              : `to ${fmtAddr(cp)}`
+            ? amountUnknown
+              ? fmtAddr(cp)
+              : isPositive
+                ? `from ${fmtAddr(cp)}`
+                : `to ${fmtAddr(cp)}`
             : '—'}
         </Box>
 
         <Box
           sx={{
             fontSize: '0.7rem',
-            color: c.textSecondary,
+            color: row.pending ? c.warning : c.textSecondary,
             whiteSpace: 'nowrap',
             letterSpacing: '0.04em',
             flexShrink: 0,
           }}
         >
-          {row.timestamp ? epochToAgo(row.timestamp) : 'Unconfirmed'}
+          {row.pendingTimedOut
+            ? t('transaction_status.pending_timeout')
+            : row.pending
+              ? t('transaction_status.pending_confirmation')
+              : row.timestamp
+                ? epochToAgo(row.timestamp)
+                : 'Unconfirmed'}
         </Box>
       </Box>
 
@@ -206,6 +244,12 @@ export function TransactionRow({
             gap: 1.25,
           }}
         >
+          {row.metadataComplete === false && (
+            <Box sx={{ color: c.textSecondary, fontSize: '0.75rem' }}>
+              Some transaction details are unavailable. Recovered recipients may
+              be incomplete.
+            </Box>
+          )}
           {/* Standard detail rows */}
           {[
             {
@@ -214,9 +258,17 @@ export function TransactionRow({
               mono: true,
               copyIdx: index,
             },
-            { label: isPositive ? 'From' : 'To', value: cp, mono: true },
             {
-              label: isPositive ? 'To' : 'From',
+              label: amountUnknown
+                ? 'Counterparty'
+                : isPositive
+                  ? 'From'
+                  : 'To',
+              value: cp,
+              mono: true,
+            },
+            {
+              label: amountUnknown ? 'Wallet' : isPositive ? 'To' : 'From',
               value: isPositive
                 ? userAddress
                 : (str(row.sender) ?? userAddress),
@@ -225,9 +277,11 @@ export function TransactionRow({
             {
               label: 'Fee',
               value:
-                row.feeAmount != null
-                  ? `${txFee()} ${chain.ticker}`
-                  : undefined,
+                row.feeAmount != null || row.feeAmountEstimate != null
+                  ? `${row.feeAmount == null ? 'Estimated ' : ''}${txFee()} ${chain.ticker}`
+                  : row.metadataComplete !== undefined
+                    ? 'Unavailable'
+                    : undefined,
             },
             {
               label: 'Date',

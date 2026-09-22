@@ -18,7 +18,36 @@
     "transfer_coin": "prześlij {{ coin }}"
   },
   "address": "adres:",
+  "balance_unavailable": "saldo niedostępne",
+  "transactions_unavailable": "transakcje niedostępne",
   "amount": "kwota",
+  "arrr": {
+    "send_unavailable": "Wysyłanie ARRR nie jest jeszcze dostępne",
+    "unavailable_fallback": "Funkcje portfela ARRR nie są dostępne na tym węźle.",
+    "custody_consent_denied": "przechowywanie nie zostało zatwierdzone",
+    "wallet_busy": "Twój Core jest zajęty innym portfelem ARRR",
+    "sync_contract_unsupported": "Zaktualizuj Qortium Core, aby zobaczyć salda ARRR",
+    "state_loading": "Łączenie z Pirate Chain…",
+    "state_disabled": "Obsługa ARRR jest wyłączona",
+    "state_disabled_detail_fallback": "Poproś operatora węzła o włączenie przechowywania ARRR.",
+    "state_synchronizing": "Synchronizowanie Pirate Chain…",
+    "state_degraded": "Synchronizacja Pirate Chain jest zdegradowana",
+    "restart_required": "Uruchom ponownie Qortium Core, aby odzyskać sprawność.",
+    "progress_heights": "blok {{ scanned }} z {{ tip }}",
+    "progress_blocks": "blok {{ synced }} z {{ total }}",
+    "progress_indeterminate": "synchronizowanie…",
+    "verifying_balance": "weryfikowanie…",
+    "total_balance": "suma wraz z niepotwierdzonym/niezweryfikowanym",
+    "stale_label": "ostatnia aktualizacja {{ time }}",
+    "provisional_label": "tymczasowe",
+    "transactions_pending": "Transakcje będą dostępne po synchronizacji"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "aktywo nr {{id}} · wyemitowane przez {{issuer}}",
+    "issuer_line_unknown": "aktywo nr {{id}} · nieznany emitent"
+  },
   "balance": "saldo:",
   "balance_available": "dostępne saldo:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "opcjonalna niestandardowa opłata ({{ coin }})",
     "optional_fee_per_byte": "opcjonalna opłata za bajt ({{ coin }})",
     "arrr_fixed_fee": "opłata sieciowa ARRR jest stała - ta wartość służy tylko do wyświetlania",
+    "fee_loading": "wczytywanie opłaty…",
     "fee_lookup_unavailable": "wyszukiwanie opłat niedostępne - zostanie użyta domyślna wartość Home/Core",
     "confirm_send": "potwierdź wysłanie",
     "transaction_sent": "transakcja wysłana",
     "send_failed": "coś poszło nie tak. spróbuj ponownie.",
+    "send_pending_title": "status transakcji nieznany",
+    "send_pending_hint": "nie mogliśmy potwierdzić, że transakcja się powiodła. nie próbuj ponownie - najpierw sprawdź oczekujące transakcje w Home.",
+    "core_spend_context_bug_hint": "Twój Qortium Core wymaga aktualizacji (błąd serializacji spend-context); to nie jest problem portfela ani salda.",
     "amount_invalid": "wprowadź dodatnią kwotę z maksymalnie {{ decimals }} miejscami dziesiętnymi.",
+    "amount_below_minimum": "minimum to {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "kwota plus szacowana opłata może przekroczyć twoje saldo",
     "recipient_invalid": "adres odbiorcy jest wymagany i może mieć maksymalnie 256 znaków.",
-    "fee_per_byte_invalid": "wprowadź dodatnią opłatę za bajt z maksymalnie 8 miejscami dziesiętnymi."
+    "recipient_invalid_coin": "nieprawidłowy adres {{ ticker }}",
+    "recipient_invalid_taproot": "adresy Taproot ({{ example }}) nie są jeszcze obsługiwane - użyj adresu starszego typu lub {{ legacy }}.",
+    "recipient_invalid_mweb": "adresy Litecoin MWEB nie są obsługiwane - użyj adresu ltc1q lub starszego typu.",
+    "recipient_invalid_spark": "adresy Firo Spark/Lelantus nie są obsługiwane - użyj przezroczystego adresu (a…).",
+    "recipient_invalid_cashaddr": "to adres Bitcoin Cash; BCH nie jest tu obsługiwany.",
+    "recipient_invalid_wrong_coin": "to wygląda na adres {{ otherCoin }}, a nie {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "to wygląda na adres {{ ticker }}, ale suma kontrolna się nie zgadza - sprawdź, czy nie ma literówki.",
+    "doge_dgb_look_alike": "starsze adresy DOGE i DGB wyglądają podobnie - sprawdź jeszcze raz monetę.",
+    "fee_per_byte_invalid": "wprowadź dodatnią opłatę za bajt z maksymalnie 8 miejscami dziesiętnymi.",
+    "resolution_invalid_coin_address": "adres {{ ticker }} kontaktu jest nieprawidłowy"
   },
   "prepared_transaction": {
     "title": "przygotowana transakcja",
@@ -196,5 +240,9 @@
   "total_amount": "łączna kwota",
   "transactions": "lista transakcji",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "oczekuje na potwierdzenie",
+    "pending_timeout": "niepotwierdzona - sprawdź później"
+  },
   "wallets": "portfele"
 }

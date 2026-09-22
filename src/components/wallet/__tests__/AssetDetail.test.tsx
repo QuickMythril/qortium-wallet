@@ -160,3 +160,73 @@ describe('AssetDetail unlock gating', () => {
     delete (globalThis as any).qdnRequest;
   });
 });
+
+describe('AssetDetail chain badge (round 3b)', () => {
+  it('shows the chain badge in the header, separate from the letter-avatar circle, with no leftover plain-text network label', async () => {
+    await i18n.changeLanguage('en');
+
+    const qdnRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'GET_ASSET_INFO':
+          return {
+            assetId: 42,
+            owner: 'Qissuer',
+            name: 'GOLD',
+            quantity: '1000000000000',
+            isDivisible: true,
+            isUnspendable: false,
+            creationGroupId: 0,
+            isOwnerForSale: false,
+          };
+        case 'GET_USER_WALLET':
+          return { address: 'Qholder' };
+        case 'GET_ASSET_BALANCES':
+          return [{ address: 'Qholder', assetId: 42, balance: '500000000' }];
+        case 'GET_ASSET_TRANSFERS':
+          return [];
+        case 'SHOW_ACTIONS':
+          return ['TRANSFER_ASSET'];
+        case 'GET_PRIMARY_NAME':
+          return 'gold-issuer';
+        case 'FETCH_QDN_RESOURCE':
+          return ''; // no avatar published - irrelevant to this test
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+
+    const store = createStore();
+    store.set(walletReadyAtom, true);
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <ThemeProviderWrapper>
+            <AssetDetail assetId={42} />
+          </ThemeProviderWrapper>
+        </MemoryRouter>
+      </Provider>
+    );
+
+    const badge = await screen.findByTestId('chain-badge-qortium');
+    expect(badge).toHaveTextContent('Qortium');
+    expect(screen.getAllByTestId('chain-badge-qortium')).toHaveLength(1);
+
+    // The header's small letter-avatar circle is a separate, aria-hidden
+    // element - the badge must not be nested inside it.
+    const avatarCircle = document.querySelector('[aria-hidden="true"]');
+    expect(avatarCircle).not.toBeNull();
+    expect(avatarCircle!.contains(badge)).toBe(false);
+
+    // No separate lowercase "qortium" text node duplicating the badge.
+    expect(screen.queryByText('qortium')).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('asset-issuer-line')).toHaveTextContent(
+        'gold-issuer'
+      )
+    );
+
+    delete (globalThis as any).qdnRequest;
+  });
+});

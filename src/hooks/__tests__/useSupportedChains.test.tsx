@@ -67,6 +67,59 @@ describe('useSupportedChains bridge availability', () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps stopped ARRR discoverable across refresh and a fresh mount', async () => {
+    let enabled = true;
+    const capability = {
+      contract: HOME_WALLET_CONTRACT,
+      syncControlContract: 'qortium-home-arrr-sync-control-v1',
+    };
+    const request = vi.fn(async () => [
+      {
+        currencyCode: 'ARRR',
+        walletEnabled: enabled,
+        decimalPlaces: 8,
+        homeWallet: capability,
+      },
+      { currencyCode: 'BTC', walletEnabled: false, homeWallet: capability },
+    ]);
+    (globalThis as any).qdnRequest = request;
+    const first = renderHook(() => useSupportedChains());
+    await waitFor(() => expect(first.result.current.status).toBe('live'));
+    enabled = false;
+    window.dispatchEvent(new Event('qortiumBridgeStateChanged'));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(first.result.current.status).toBe('live'));
+    expect(first.result.current.chains.map((c) => c.key)).toEqual([
+      'QORT',
+      'ARRR',
+    ]);
+    first.unmount();
+    sessionStorage.clear();
+    const fresh = renderHook(() => useSupportedChains());
+    await waitFor(() => expect(fresh.result.current.status).toBe('live'));
+    expect(
+      fresh.result.current.chains.find((c) => c.route === 'pirate-chain')
+        ?.homeWallet
+    ).toEqual(capability);
+    expect(fresh.result.current.chains.map((c) => c.key)).toEqual([
+      'QORT',
+      'ARRR',
+    ]);
+  });
+
+  it('does not expose a disabled ARRR wallet without the current Home control contract', async () => {
+    (globalThis as any).qdnRequest = vi.fn(async () => [
+      {
+        currencyCode: 'ARRR',
+        walletEnabled: false,
+        homeWallet: { contract: HOME_WALLET_CONTRACT },
+      },
+    ]);
+    const { result } = renderHook(() => useSupportedChains());
+    await waitFor(() => expect(result.current.status).toBe('live'));
+    expect(result.current.chains.map((c) => c.key)).toEqual(['QORT']);
+  });
+
   it('does not trust a cached wallet capability before live discovery', async () => {
     sessionStorage.setItem(
       'qortium_supported_chains_v2',

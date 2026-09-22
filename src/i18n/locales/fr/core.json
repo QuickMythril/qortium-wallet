@@ -18,7 +18,36 @@
     "transfer_coin": "Transférer {{ coin }}"
   },
   "address": "adresse :",
+  "balance_unavailable": "solde indisponible",
+  "transactions_unavailable": "transactions indisponibles",
   "amount": "montant",
+  "arrr": {
+    "send_unavailable": "L'envoi d'ARRR n'est pas encore disponible",
+    "unavailable_fallback": "Les fonctions du portefeuille ARRR ne sont pas disponibles sur ce nœud.",
+    "custody_consent_denied": "garde non approuvée",
+    "wallet_busy": "Votre Core est occupé avec un autre portefeuille ARRR",
+    "sync_contract_unsupported": "Mettez à jour Qortium Core pour voir les soldes ARRR",
+    "state_loading": "Connexion à Pirate Chain…",
+    "state_disabled": "La prise en charge d'ARRR est désactivée",
+    "state_disabled_detail_fallback": "Demandez à l'opérateur de votre nœud d'activer la garde ARRR.",
+    "state_synchronizing": "Synchronisation de Pirate Chain…",
+    "state_degraded": "La synchronisation de Pirate Chain est dégradée",
+    "restart_required": "Redémarrez Qortium Core pour vous rétablir.",
+    "progress_heights": "bloc {{ scanned }} sur {{ tip }}",
+    "progress_blocks": "bloc {{ synced }} sur {{ total }}",
+    "progress_indeterminate": "synchronisation…",
+    "verifying_balance": "vérification…",
+    "total_balance": "total incl. non confirmé/non vérifié",
+    "stale_label": "dernière mise à jour {{ time }}",
+    "provisional_label": "provisoire",
+    "transactions_pending": "Transactions disponibles une fois synchronisé"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "actif n° {{id}} · émis par {{issuer}}",
+    "issuer_line_unknown": "actif n° {{id}} · émetteur inconnu"
+  },
   "balance": "solde :",
   "balance_available": "solde disponible :",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "chargement des frais…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
+    "send_pending_title": "transaction status unknown",
+    "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "Votre Qortium Core doit être mis à jour (sérialisation du spend-context) ; ce n'est pas un problème de portefeuille ou de solde.",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
+    "amount_below_minimum": "Minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
-    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
+    "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "Les adresses Taproot ({{ example }}) ne sont pas encore prises en charge - utilisez une adresse historique ou {{ legacy }}.",
+    "recipient_invalid_mweb": "Les adresses MWEB de Litecoin ne sont pas prises en charge - utilisez une adresse ltc1q ou une adresse historique.",
+    "recipient_invalid_spark": "Les adresses Firo Spark/Lelantus ne sont pas prises en charge - utilisez une adresse transparente (a…).",
+    "recipient_invalid_cashaddr": "Il s'agit d'une adresse Bitcoin Cash ; le BCH n'est pas pris en charge ici.",
+    "recipient_invalid_wrong_coin": "Cela ressemble à une adresse {{ otherCoin }}, pas {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Cela ressemble à une adresse {{ ticker }}, mais la somme de contrôle ne correspond pas - vérifiez les fautes de frappe.",
+    "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
+    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
+    "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"
   },
   "prepared_transaction": {
     "title": "Prepared transaction",
@@ -196,5 +240,9 @@
   "total_amount": "montant total",
   "transactions": "liste des transactions",
   "transaction_hash": "Hachage TX",
+  "transaction_status": {
+    "pending_confirmation": "en attente de confirmation",
+    "pending_timeout": "non confirmée - vérifiez plus tard"
+  },
   "wallets": "portefeuilles"
 }

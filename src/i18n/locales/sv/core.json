@@ -18,7 +18,36 @@
     "transfer_coin": "överför {{ coin }}"
   },
   "address": "adress:",
+  "balance_unavailable": "saldot är inte tillgängligt",
+  "transactions_unavailable": "transaktioner är inte tillgängliga",
   "amount": "belopp",
+  "arrr": {
+    "send_unavailable": "Det går ännu inte att skicka ARRR",
+    "unavailable_fallback": "ARRR-plånbokens funktioner är inte tillgängliga på denna nod.",
+    "custody_consent_denied": "förvaring inte godkänd",
+    "wallet_busy": "Din Core är upptagen med en annan ARRR-plånbok",
+    "sync_contract_unsupported": "Uppdatera Qortium Core för att se ARRR-saldon",
+    "state_loading": "Ansluter till Pirate Chain…",
+    "state_disabled": "ARRR-stöd är inaktiverat",
+    "state_disabled_detail_fallback": "Be din nodoperatör aktivera ARRR-förvaring.",
+    "state_synchronizing": "Synkroniserar Pirate Chain…",
+    "state_degraded": "Pirate Chain-synkroniseringen är försämrad",
+    "restart_required": "Starta om Qortium Core för att återhämta dig.",
+    "progress_heights": "block {{ scanned }} av {{ tip }}",
+    "progress_blocks": "block {{ synced }} av {{ total }}",
+    "progress_indeterminate": "synkroniserar…",
+    "verifying_balance": "verifierar…",
+    "total_balance": "totalt inkl. obekräftat/overifierat",
+    "stale_label": "senast uppdaterad {{ time }}",
+    "provisional_label": "preliminär",
+    "transactions_pending": "Transaktioner tillgängliga efter synkronisering"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "tillgång nr {{id}} · utgiven av {{issuer}}",
+    "issuer_line_unknown": "tillgång nr {{id}} · okänd utgivare"
+  },
   "balance": "saldo:",
   "balance_available": "tillgängligt saldo:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "valfri anpassad avgift ({{ coin }})",
     "optional_fee_per_byte": "valfri avgift per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR-nätverksavgiften är fast - det här värdet visas bara",
+    "fee_loading": "läser in avgift…",
     "fee_lookup_unavailable": "avgiftsuppslag ej tillgängligt - Home/Core-standard används",
     "confirm_send": "bekräfta sändning",
     "transaction_sent": "transaktion skickad",
     "send_failed": "något gick fel. försök igen.",
+    "send_pending_title": "transaktionsstatus okänd",
+    "send_pending_hint": "vi kunde inte bekräfta att detta gick igenom. försök inte igen - kontrollera väntande transaktioner i Home först.",
+    "core_spend_context_bug_hint": "Din Qortium Core behöver uppdateras (spend-context-serialiseringsfel); detta är inte ett problem med plånboken eller saldot.",
     "amount_invalid": "ange ett positivt belopp med upp till {{ decimals }} decimaler.",
+    "amount_below_minimum": "minimum är {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "belopp plus uppskattad avgift kan överstiga ditt saldo",
     "recipient_invalid": "mottagarens adress är obligatorisk och får vara högst 256 tecken.",
-    "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler."
+    "recipient_invalid_coin": "inte en giltig {{ ticker }}-adress",
+    "recipient_invalid_taproot": "Taproot-adresser ({{ example }}) stöds inte än - använd en legacy- eller {{ legacy }}-adress.",
+    "recipient_invalid_mweb": "Litecoin MWEB-adresser stöds inte - använd en ltc1q- eller legacy-adress.",
+    "recipient_invalid_spark": "Firo Spark/Lelantus-adresser stöds inte - använd en transparent (a…)-adress.",
+    "recipient_invalid_cashaddr": "Det här är en Bitcoin Cash-adress; BCH stöds inte här.",
+    "recipient_invalid_wrong_coin": "Det här ser ut som en {{ otherCoin }}-adress, inte {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "Det här ser ut som en {{ ticker }}-adress, men kontrollsumman stämmer inte - kolla om det är ett skrivfel.",
+    "doge_dgb_look_alike": "DOGE- och DGB-legacyadresser liknar varandra - dubbelkolla myntet.",
+    "fee_per_byte_invalid": "ange en positiv avgift per byte med upp till 8 decimaler.",
+    "resolution_invalid_coin_address": "kontaktens {{ ticker }}-adress är inte giltig"
   },
   "prepared_transaction": {
     "title": "förberedd transaktion",
@@ -196,5 +240,9 @@
   "total_amount": "totalt belopp",
   "transactions": "transaktionslista",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "väntar på bekräftelse",
+    "pending_timeout": "obekräftad - kontrollera senare"
+  },
   "wallets": "plånböcker"
 }

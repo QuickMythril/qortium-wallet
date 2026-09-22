@@ -18,7 +18,36 @@
     "transfer_coin": "{{ coin }} 전송"
   },
   "address": "주소:",
+  "balance_unavailable": "잔액을 사용할 수 없습니다",
+  "transactions_unavailable": "거래 내역을 사용할 수 없습니다",
   "amount": "금액",
+  "arrr": {
+    "send_unavailable": "ARRR 보내기는 아직 사용할 수 없습니다",
+    "unavailable_fallback": "이 노드에서는 ARRR 지갑 기능을 사용할 수 없습니다.",
+    "custody_consent_denied": "커스터디가 승인되지 않았습니다",
+    "wallet_busy": "Core가 다른 ARRR 지갑으로 사용 중입니다",
+    "sync_contract_unsupported": "ARRR 잔액을 보려면 Qortium Core를 업데이트하세요",
+    "state_loading": "Pirate Chain에 연결 중…",
+    "state_disabled": "ARRR 지원이 비활성화되어 있습니다",
+    "state_disabled_detail_fallback": "노드 운영자에게 ARRR 커스터디 활성화를 요청하세요.",
+    "state_synchronizing": "Pirate Chain 동기화 중…",
+    "state_degraded": "Pirate Chain 동기화가 저하되었습니다",
+    "restart_required": "복구하려면 Qortium Core를 재시작하세요.",
+    "progress_heights": "블록 {{ scanned }} / {{ tip }}",
+    "progress_blocks": "블록 {{ synced }} / {{ total }}",
+    "progress_indeterminate": "동기화 중…",
+    "verifying_balance": "확인 중…",
+    "total_balance": "미확인/미검증 포함 총액",
+    "stale_label": "마지막 업데이트 {{ time }}",
+    "provisional_label": "잠정",
+    "transactions_pending": "동기화 후 거래 내역을 이용할 수 있습니다"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "자산 #{{id}} · 발행자: {{issuer}}",
+    "issuer_line_unknown": "자산 #{{id}} · 발행자 알 수 없음"
+  },
   "balance": "잔액:",
   "balance_available": "사용 가능한 잔액:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "선택적 사용자 정의 수수료 ({{ coin }})",
     "optional_fee_per_byte": "선택적 바이트당 수수료 ({{ coin }})",
     "arrr_fixed_fee": "ARRR 네트워크 수수료는 고정되어 있습니다 - 이 값은 표시 전용입니다",
+    "fee_loading": "수수료 불러오는 중…",
     "fee_lookup_unavailable": "수수료 조회를 사용할 수 없습니다 - Home/Core 기본값이 사용됩니다",
     "confirm_send": "전송 확인",
     "transaction_sent": "거래가 전송되었습니다",
     "send_failed": "오류가 발생했습니다. 다시 시도해 주세요.",
+    "send_pending_title": "거래 상태를 알 수 없습니다",
+    "send_pending_hint": "이 거래가 성공했는지 확인할 수 없습니다. 다시 시도하지 마세요 - 먼저 Home에서 대기 중인 거래를 확인하세요.",
+    "core_spend_context_bug_hint": "Qortium Core를 업데이트해야 합니다 (spend-context 직렬화 오류). 지갑이나 잔액 문제가 아닙니다.",
     "amount_invalid": "소수점 {{ decimals }}자리 이하의 양수 금액을 입력하세요.",
+    "amount_below_minimum": "최소 금액은 {{ min }} {{ coin }}입니다",
+    "amount_exceeds_balance_with_fee": "금액과 예상 수수료의 합이 잔액을 초과할 수 있습니다",
     "recipient_invalid": "수신자 주소는 필수이며 256자 이하여야 합니다.",
-    "fee_per_byte_invalid": "소수점 8자리 이하의 양수 바이트당 수수료를 입력하세요."
+    "recipient_invalid_coin": "유효한 {{ ticker }} 주소가 아닙니다",
+    "recipient_invalid_taproot": "Taproot({{ example }}) 주소는 아직 지원되지 않습니다 - 레거시 또는 {{ legacy }} 주소를 사용하세요.",
+    "recipient_invalid_mweb": "Litecoin MWEB 주소는 지원되지 않습니다 - ltc1q 또는 레거시 주소를 사용하세요.",
+    "recipient_invalid_spark": "Firo Spark/Lelantus 주소는 지원되지 않습니다 - 투명(a…) 주소를 사용하세요.",
+    "recipient_invalid_cashaddr": "이것은 Bitcoin Cash 주소입니다. 여기서는 BCH를 지원하지 않습니다.",
+    "recipient_invalid_wrong_coin": "이것은 {{ ticker }}가 아니라 {{ otherCoin }} 주소처럼 보입니다.",
+    "recipient_invalid_bad_checksum": "이것은 {{ ticker }} 주소처럼 보이지만 체크섬이 일치하지 않습니다 - 오타가 없는지 확인하세요.",
+    "doge_dgb_look_alike": "DOGE와 DGB의 레거시 주소는 비슷해 보입니다 - 코인을 다시 확인하세요.",
+    "fee_per_byte_invalid": "소수점 8자리 이하의 양수 바이트당 수수료를 입력하세요.",
+    "resolution_invalid_coin_address": "연락처의 {{ ticker }} 주소가 유효하지 않습니다"
   },
   "prepared_transaction": {
     "title": "준비된 거래",
@@ -196,5 +240,9 @@
   "total_amount": "총 금액",
   "transactions": "거래 목록",
   "transaction_hash": "TX Hash",
+  "transaction_status": {
+    "pending_confirmation": "확인 대기 중",
+    "pending_timeout": "미확인 - 나중에 확인하세요"
+  },
   "wallets": "지갑"
 }

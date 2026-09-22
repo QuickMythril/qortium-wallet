@@ -18,7 +18,36 @@
     "transfer_coin": "{{ coin }} を送金"
   },
   "address": "アドレス:",
+  "balance_unavailable": "残高を取得できません",
+  "transactions_unavailable": "取引履歴を取得できません",
   "amount": "金額",
+  "arrr": {
+    "send_unavailable": "ARRRの送金はまだご利用いただけません",
+    "unavailable_fallback": "このノードではARRRウォレット機能を利用できません。",
+    "custody_consent_denied": "カストディが承認されていません",
+    "wallet_busy": "Coreは別のARRRウォレットで使用中です",
+    "sync_contract_unsupported": "ARRR残高を表示するにはQortium Coreを更新してください",
+    "state_loading": "Pirate Chainに接続中…",
+    "state_disabled": "ARRRサポートは無効です",
+    "state_disabled_detail_fallback": "ノード運営者にARRRカストディの有効化を依頼してください。",
+    "state_synchronizing": "Pirate Chainを同期中…",
+    "state_degraded": "Pirate Chainの同期が低下しています",
+    "restart_required": "復旧するにはQortium Coreを再起動してください。",
+    "progress_heights": "ブロック {{ scanned }} / {{ tip }}",
+    "progress_blocks": "ブロック {{ synced }} / {{ total }}",
+    "progress_indeterminate": "同期中…",
+    "verifying_balance": "確認中…",
+    "total_balance": "未確認/未検証を含む合計",
+    "stale_label": "最終更新 {{ time }}",
+    "provisional_label": "暫定",
+    "transactions_pending": "同期後にトランザクションが利用可能になります"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "アセット #{{id}} · 発行者: {{issuer}}",
+    "issuer_line_unknown": "アセット #{{id}} · 発行者不明"
+  },
   "balance": "残高:",
   "balance_available": "利用可能残高:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "Optional custom fee ({{ coin }})",
     "optional_fee_per_byte": "Optional fee per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR network fee is fixed - this value is for display only",
+    "fee_loading": "手数料を読み込み中…",
     "fee_lookup_unavailable": "Fee lookup unavailable - Home/Core default will be used",
     "confirm_send": "Confirm Send",
     "transaction_sent": "Transaction sent",
     "send_failed": "Something went wrong. Please try again.",
+    "send_pending_title": "transaction status unknown",
+    "send_pending_hint": "we couldn't confirm this went through. don't retry - check pending transactions in Home first.",
+    "core_spend_context_bug_hint": "お使いのQortium Coreの更新が必要です(spend-contextのシリアライズの不具合)。これはウォレットや残高の問題ではありません。",
     "amount_invalid": "Enter a positive amount with up to {{ decimals }} decimals.",
+    "amount_below_minimum": "Minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "Amount plus the estimated fee may exceed your balance",
     "recipient_invalid": "Recipient address is required and must be 256 characters or less.",
-    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals."
+    "recipient_invalid_coin": "Not a valid {{ ticker }} address",
+    "recipient_invalid_taproot": "Taproot（{{ example }}）アドレスはまだサポートされていません - レガシーまたは {{ legacy }} アドレスを使用してください。",
+    "recipient_invalid_mweb": "Litecoin の MWEB アドレスはサポートされていません - ltc1q またはレガシーアドレスを使用してください。",
+    "recipient_invalid_spark": "Firo の Spark/Lelantus アドレスはサポートされていません - 透過型（a…）アドレスを使用してください。",
+    "recipient_invalid_cashaddr": "これは Bitcoin Cash のアドレスです。BCH はここではサポートされていません。",
+    "recipient_invalid_wrong_coin": "これは {{ ticker }} ではなく {{ otherCoin }} のアドレスのようです。",
+    "recipient_invalid_bad_checksum": "これは {{ ticker }} アドレスのようですが、チェックサムが一致しません - 入力ミスがないか確認してください。",
+    "doge_dgb_look_alike": "DOGE and DGB legacy addresses look alike - double-check the coin.",
+    "fee_per_byte_invalid": "Enter a positive fee per byte with up to 8 decimals.",
+    "resolution_invalid_coin_address": "The contact's {{ ticker }} address is not valid"
   },
   "prepared_transaction": {
     "title": "Prepared transaction",
@@ -197,5 +241,9 @@
   "total_amount": "合計金額",
   "transactions": "トランザクション一覧",
   "transaction_hash": "TX ハッシュ",
+  "transaction_status": {
+    "pending_confirmation": "承認待ち",
+    "pending_timeout": "未確認 - 後で確認してください"
+  },
   "wallets": "ウォレット"
 }

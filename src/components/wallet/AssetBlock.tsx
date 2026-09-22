@@ -9,6 +9,8 @@ import { useColors } from '../../theme/ColorTokensContext';
 import { formatAssetBalance } from '../../utils/assetAmount';
 import type { AssetHolding } from '../../utils/Types';
 import { requestAssetWallet } from '../../common/assetBridge';
+import { useAssetImageUrl } from '../../hooks/useAssetImageUrl';
+import { ChainBadge } from './ChainBadge';
 
 interface AssetBlockProps {
   asset: AssetHolding;
@@ -34,6 +36,14 @@ export function AssetBlock({
 
   const balance = formatAssetBalance(asset.balance, asset.isDivisible);
   const label = asset.name || `Asset #${asset.assetId}`;
+  // A resolved image is already a `data:` URL fetched (and, if needed,
+  // retried) inside the hook itself - no further onError/retry needed here,
+  // unlike a coin icon's THUMBNAIL http URL.
+  const { url: assetImageSrc, issuerName } = useAssetImageUrl(asset.network, {
+    assetId: asset.assetId,
+    name: asset.name,
+    owner: asset.owner,
+  });
 
   const handleMouseEnter = () => {
     setHovered(true);
@@ -110,21 +120,43 @@ export function AssetBlock({
           justifyContent: 'center',
         }}
       >
+        {assetImageSrc && (
+          <Box
+            component="img"
+            src={assetImageSrc}
+            alt=""
+            sx={{
+              position: 'absolute',
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              objectFit: 'cover',
+              opacity: hovered ? 0 : 1,
+              transition: 'opacity 0.15s ease',
+            }}
+          />
+        )}
         <Box
           sx={{
             position: 'absolute',
             width: '100%',
             height: '100%',
             borderRadius: '50%',
-            bgcolor: hovered ? 'rgba(255,255,255,0.15)' : c.accentSoft,
-            boxShadow: `0 0 0 2px ${hovered ? 'rgba(255,255,255,0.5)' : c.accent}`,
+            bgcolor: hovered
+              ? 'rgba(255,255,255,0.15)'
+              : assetImageSrc
+                ? 'transparent'
+                : c.accentSoft,
+            boxShadow: assetImageSrc
+              ? 'none'
+              : `0 0 0 2px ${hovered ? 'rgba(255,255,255,0.5)' : c.accent}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '0.75rem',
             fontWeight: tokens.typography.weightBold,
             color: hovered ? c.accentText : c.accent,
-            opacity: hovered ? 0 : 1,
+            opacity: hovered ? 0 : assetImageSrc ? 0 : 1,
             transition: 'opacity 0.15s ease',
           }}
         >
@@ -209,15 +241,12 @@ export function AssetBlock({
         >
           {label}
         </Box>
-        <Box
-          sx={{
-            fontSize: '0.5rem',
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-            color: hovered ? c.accentText : c.textSecondary,
-          }}
-        >
-          {asset.network}
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <ChainBadge
+            network={asset.network}
+            assetId={asset.assetId}
+            issuerName={issuerName}
+          />
         </Box>
         <Box
           sx={{

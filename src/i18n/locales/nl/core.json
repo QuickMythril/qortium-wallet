@@ -18,7 +18,36 @@
     "transfer_coin": "{{ coin }} overmaken"
   },
   "address": "adres:",
+  "balance_unavailable": "saldo niet beschikbaar",
+  "transactions_unavailable": "transacties niet beschikbaar",
   "amount": "bedrag",
+  "arrr": {
+    "send_unavailable": "ARRR verzenden is nog niet beschikbaar",
+    "unavailable_fallback": "ARRR-walletfuncties zijn niet beschikbaar op dit knooppunt.",
+    "custody_consent_denied": "bewaring niet goedgekeurd",
+    "wallet_busy": "Je Core is bezet met een andere ARRR-wallet",
+    "sync_contract_unsupported": "Werk Qortium Core bij om ARRR-saldi te zien",
+    "state_loading": "Verbinden met Pirate Chain…",
+    "state_disabled": "ARRR-ondersteuning is uitgeschakeld",
+    "state_disabled_detail_fallback": "Vraag je nodebeheerder om ARRR-bewaring in te schakelen.",
+    "state_synchronizing": "Pirate Chain synchroniseren…",
+    "state_degraded": "Pirate Chain-synchronisatie is verslechterd",
+    "restart_required": "Start Qortium Core opnieuw om te herstellen.",
+    "progress_heights": "blok {{ scanned }} van {{ tip }}",
+    "progress_blocks": "blok {{ synced }} van {{ total }}",
+    "progress_indeterminate": "synchroniseren…",
+    "verifying_balance": "verifiëren…",
+    "total_balance": "totaal incl. onbevestigd/ongeverifieerd",
+    "stale_label": "laatst bijgewerkt {{ time }}",
+    "provisional_label": "voorlopig",
+    "transactions_pending": "Transacties beschikbaar na synchronisatie"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "asset #{{id}} · uitgegeven door {{issuer}}",
+    "issuer_line_unknown": "asset #{{id}} · onbekende uitgever"
+  },
   "balance": "saldo:",
   "balance_available": "beschikbaar saldo:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "optionele aangepaste vergoeding ({{ coin }})",
     "optional_fee_per_byte": "optionele vergoeding per byte ({{ coin }})",
     "arrr_fixed_fee": "ARRR-netwerkvergoeding is vast - deze waarde is alleen ter weergave",
+    "fee_loading": "vergoeding laden…",
     "fee_lookup_unavailable": "vergoedingsopzoeking niet beschikbaar - standaard van Home/Core wordt gebruikt",
     "confirm_send": "verzending bevestigen",
     "transaction_sent": "transactie verzonden",
     "send_failed": "er is iets misgegaan. probeer het opnieuw.",
+    "send_pending_title": "transactiestatus onbekend",
+    "send_pending_hint": "we konden niet bevestigen dat dit is gelukt. probeer het niet opnieuw - controleer eerst de openstaande transacties in Home.",
+    "core_spend_context_bug_hint": "Je Qortium Core moet worden bijgewerkt (spend-context-serialisatiefout); dit is geen wallet- of saldoprobleem.",
     "amount_invalid": "voer een positief bedrag in met maximaal {{ decimals }} decimalen.",
+    "amount_below_minimum": "minimum is {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "bedrag plus de geschatte vergoeding kan uw saldo overschrijden",
     "recipient_invalid": "adres van ontvanger is verplicht en mag maximaal 256 tekens bevatten.",
-    "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen."
+    "recipient_invalid_coin": "geen geldig {{ ticker }}-adres",
+    "recipient_invalid_taproot": "Taproot-adressen ({{ example }}) worden nog niet ondersteund - gebruik een legacy- of {{ legacy }}-adres.",
+    "recipient_invalid_mweb": "Litecoin MWEB-adressen worden niet ondersteund - gebruik een ltc1q- of legacyadres.",
+    "recipient_invalid_spark": "Firo Spark/Lelantus-adressen worden niet ondersteund - gebruik een transparant (a…)-adres.",
+    "recipient_invalid_cashaddr": "Dit is een Bitcoin Cash-adres; BCH wordt hier niet ondersteund.",
+    "recipient_invalid_wrong_coin": "dit lijkt op een {{ otherCoin }}-adres, niet {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "dit lijkt op een {{ ticker }}-adres, maar de checksum klopt niet - controleer op typefouten.",
+    "doge_dgb_look_alike": "DOGE- en DGB-legacyadressen lijken op elkaar - controleer de munt nog eens.",
+    "fee_per_byte_invalid": "voer een positieve vergoeding per byte in met maximaal 8 decimalen.",
+    "resolution_invalid_coin_address": "het {{ ticker }}-adres van het contact is niet geldig"
   },
   "prepared_transaction": {
     "title": "voorbereide transactie",
@@ -196,5 +240,9 @@
   "total_amount": "totaalbedrag",
   "transactions": "lijst met transacties",
   "transaction_hash": "TX hash",
+  "transaction_status": {
+    "pending_confirmation": "wacht op bevestiging",
+    "pending_timeout": "onbevestigd - later controleren"
+  },
   "wallets": "portemonnees"
 }

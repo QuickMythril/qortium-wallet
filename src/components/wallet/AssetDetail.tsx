@@ -61,6 +61,9 @@ import {
   isUnlockedResult,
   shouldAttemptAccountUnlock,
 } from '../../common/walletBridge';
+import { useAssetImageUrl } from '../../hooks/useAssetImageUrl';
+import { useTranslation } from 'react-i18next';
+import { ChainBadge } from './ChainBadge';
 
 interface Props {
   assetId: number;
@@ -117,11 +120,20 @@ export function AssetDetail({ assetId, network = 'qortium' }: Props) {
     null
   );
 
+  const { t } = useTranslation('core');
   const selectedPinnedIds = network === 'qortal' ? pinnedQortalIds : pinnedIds;
   const isPinned = selectedPinnedIds.includes(assetId);
   const isDivisible = assetInfo?.isDivisible ?? true;
   const decimalPlaces = isDivisible ? 8 : 0;
   const label = assetInfo?.name || `Asset #${assetId}`;
+  const { issuerName } = useAssetImageUrl(network, {
+    assetId,
+    name: assetInfo?.name ?? '',
+    owner: assetInfo?.owner ?? '',
+  });
+  const issuerLine = issuerName
+    ? t('asset.issuer_line_known', { id: assetId, issuer: issuerName })
+    : t('asset.issuer_line_unknown', { id: assetId });
 
   const fetchAddress = useCallback(async () => {
     try {
@@ -467,16 +479,11 @@ export function AssetDetail({ assetId, network = 'qortium' }: Props) {
         >
           {label}
         </Box>
-        <Box
-          sx={{
-            color: c.textSecondary,
-            fontSize: '0.65rem',
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {network}
-        </Box>
+        <ChainBadge
+          network={network}
+          assetId={assetId}
+          issuerName={issuerName}
+        />
         <Tooltip
           title={isPinned ? 'Stop tracking this asset' : 'Track this asset'}
         >
@@ -528,6 +535,19 @@ export function AssetDetail({ assetId, network = 'qortium' }: Props) {
           py: isClassic ? 3 : 4,
         }}
       >
+        {/* ── issuer / asset id line ── */}
+        <Box
+          data-testid="asset-issuer-line"
+          sx={{
+            color: c.textSecondary,
+            fontSize: '0.7rem',
+            letterSpacing: '0.04em',
+            mb: 1.5,
+          }}
+        >
+          {issuerLine}
+        </Box>
+
         {/* ── balance hero ── */}
         <Box
           sx={{
@@ -700,6 +720,11 @@ export function AssetDetail({ assetId, network = 'qortium' }: Props) {
               {
                 label: 'Description',
                 value: assetInfo.description || undefined,
+                // Issuer-supplied text - rendered as a plain text node only
+                // (React escapes it; never dangerouslySetInnerHTML), and
+                // clamped so a long description can't push the rest of the
+                // panel down indefinitely.
+                clamp: true,
               },
               { label: 'Owner', value: assetInfo.owner, mono: true },
               {
@@ -748,6 +773,14 @@ export function AssetDetail({ assetId, network = 'qortium' }: Props) {
                       color: c.textPrimary,
                       wordBreak: 'break-all',
                       flex: 1,
+                      ...(row.clamp
+                        ? {
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }
+                        : {}),
                     }}
                   >
                     {row.value}

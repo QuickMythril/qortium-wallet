@@ -18,7 +18,36 @@
     "transfer_coin": "העבר {{ coin }}"
   },
   "address": "כתובת:",
+  "balance_unavailable": "היתרה אינה זמינה",
+  "transactions_unavailable": "העסקאות אינן זמינות",
   "amount": "סכום",
+  "arrr": {
+    "send_unavailable": "שליחת ARRR עדיין אינה זמינה",
+    "unavailable_fallback": "תכונות ארנק ה-ARRR אינן זמינות בצומת זה.",
+    "custody_consent_denied": "המשמורת לא אושרה",
+    "wallet_busy": "ה-Core שלך עסוק בארנק ARRR אחר",
+    "sync_contract_unsupported": "עדכן את Qortium Core כדי לראות יתרות ARRR",
+    "state_loading": "מתחבר ל-Pirate Chain…",
+    "state_disabled": "התמיכה ב-ARRR מושבתת",
+    "state_disabled_detail_fallback": "בקש ממפעיל הצומת שלך להפעיל משמורת ARRR.",
+    "state_synchronizing": "מסנכרן את Pirate Chain…",
+    "state_degraded": "סנכרון Pirate Chain פגום",
+    "restart_required": "הפעל מחדש את Qortium Core כדי להתאושש.",
+    "progress_heights": "בלוק {{ scanned }} מתוך {{ tip }}",
+    "progress_blocks": "בלוק {{ synced }} מתוך {{ total }}",
+    "progress_indeterminate": "מסנכרן…",
+    "verifying_balance": "מאמת…",
+    "total_balance": "סה״כ כולל לא מאושר/לא מאומת",
+    "stale_label": "עודכן לאחרונה {{ time }}",
+    "provisional_label": "זמני",
+    "transactions_pending": "עסקאות יהיו זמינות לאחר הסנכרון"
+  },
+  "asset": {
+    "chain_qortium": "Qortium",
+    "chain_qortal": "Qortal",
+    "issuer_line_known": "נכס מס' {{id}} · הונפק על ידי {{issuer}}",
+    "issuer_line_unknown": "נכס מס' {{id}} · מנפיק לא ידוע"
+  },
   "balance": "יתרה:",
   "balance_available": "יתרה זמינה:",
   "coins": {
@@ -51,13 +80,28 @@
     "optional_custom_fee": "עמלה מותאמת אישית אופציונלית ({{ coin }})",
     "optional_fee_per_byte": "עמלה לבייט אופציונלית ({{ coin }})",
     "arrr_fixed_fee": "עמלת רשת ARRR קבועה - ערך זה מיועד לתצוגה בלבד",
+    "fee_loading": "טוען עמלה…",
     "fee_lookup_unavailable": "בדיקת עמלה אינה זמינה - ייעשה שימוש בברירת המחדל של Home/Core",
     "confirm_send": "אשר שליחה",
     "transaction_sent": "העסקה נשלחה",
     "send_failed": "משהו השתבש. אנא נסה שוב.",
+    "send_pending_title": "מצב העסקה אינו ידוע",
+    "send_pending_hint": "לא הצלחנו לאשר שהעסקה בוצעה. אל תנסה שוב - בדוק את העסקאות הממתינות ב-Home קודם.",
+    "core_spend_context_bug_hint": "ה-Qortium Core שלך זקוק לעדכון (תקלת סריאליזציה של הקשר ההוצאה); זו אינה בעיה בארנק או ביתרה.",
     "amount_invalid": "הזן סכום חיובי עם עד {{ decimals }} ספרות עשרוניות.",
+    "amount_below_minimum": "המינימום הוא {{ min }} {{ coin }}",
+    "amount_exceeds_balance_with_fee": "הסכום בתוספת העמלה המשוערת עשוי לחרוג מהיתרה שלך",
     "recipient_invalid": "כתובת המקבל נדרשת ועד 256 תווים.",
-    "fee_per_byte_invalid": "הזן עמלה חיובית לבייט עם עד 8 ספרות עשרוניות."
+    "recipient_invalid_coin": "כתובת {{ ticker }} לא תקינה",
+    "recipient_invalid_taproot": "כתובות Taproot ({{ example }}) עדיין לא נתמכות - השתמש בכתובת ישנה (legacy) או ב-{{ legacy }}.",
+    "recipient_invalid_mweb": "כתובות MWEB של Litecoin אינן נתמכות - השתמש בכתובת ltc1q או בכתובת ישנה.",
+    "recipient_invalid_spark": "כתובות Firo Spark/Lelantus אינן נתמכות - השתמש בכתובת שקופה (a…).",
+    "recipient_invalid_cashaddr": "זו כתובת Bitcoin Cash; BCH אינו נתמך כאן.",
+    "recipient_invalid_wrong_coin": "זה נראה ככתובת {{ otherCoin }}, לא {{ ticker }}.",
+    "recipient_invalid_bad_checksum": "זה נראה ככתובת {{ ticker }}, אבל סכום הביקורת אינו תואם - בדוק אם יש שגיאת הקלדה.",
+    "doge_dgb_look_alike": "כתובות DOGE ו-DGB מדור קודם נראות דומות - בדוק שוב את המטבע.",
+    "fee_per_byte_invalid": "הזן עמלה חיובית לבייט עם עד 8 ספרות עשרוניות.",
+    "resolution_invalid_coin_address": "כתובת ה-{{ ticker }} של איש הקשר אינה תקינה"
   },
   "prepared_transaction": {
     "title": "עסקה מוכנה",
@@ -196,5 +240,9 @@
   "total_amount": "סכום כולל",
   "transactions": "רשימת עסקאות",
   "transaction_hash": "TX Hash",
+  "transaction_status": {
+    "pending_confirmation": "ממתין לאישור",
+    "pending_timeout": "לא מאושר - בדוק מאוחר יותר"
+  },
   "wallets": "ארנקים"
 }

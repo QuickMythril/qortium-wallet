@@ -1,4 +1,19 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
+import { useArrrWalletSession } from '../../hooks/useArrrWalletSession';
+import { ArrrWalletSessionControls } from './ArrrWalletSessionControls';
+import {
+  ArrrSyncControls,
+  ARRR_SYNC_CONTROL_CONTRACT,
+} from './ArrrSyncControls';
+import { ArrrSyncProgress } from './ArrrSyncProgress';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react';
 import {
   Box,
   Button,
@@ -19,6 +34,8 @@ import CheckIcon from '@mui/icons-material/Check';
 import DnsIcon from '@mui/icons-material/Dns';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import _QRCodeDefault from 'react-qr-code';
@@ -28,9 +45,14 @@ import _QRCodeDefault from 'react-qr-code';
 const QRCode = ((_QRCodeDefault as any).default ??
   _QRCodeDefault) as typeof _QRCodeDefault;
 import { useAtomValue } from 'jotai';
+import { useAuth } from 'qapp-core';
 import { NumericFormat as _NumericFormat } from 'react-number-format';
 import { useMarketPrices } from '../../hooks/useMarketPrices';
-import { copyToClipboard, formatFiat } from '../../common/functions';
+import {
+  copyToClipboard,
+  epochToAgo,
+  formatFiat,
+} from '../../common/functions';
 const NumericFormat = _NumericFormat as React.FC<
   React.ComponentProps<typeof _NumericFormat> & Record<string, unknown>
 >;
@@ -42,22 +64,64 @@ import {
   walletReadyAtom,
 } from '../../state/global/system';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
+import { CoinImage } from './CoinImage';
 import type { ChainConfig } from '../../config/chains';
 import {
   PreparedTransactionPreview,
   type PreparedTransaction,
 } from './PreparedTransactionPreview';
 import {
+  decimalToAtomic,
+  formatAtomicAmount,
   isOptionalPositiveDecimal,
   isPositiveDecimal,
   isValidRecipient,
 } from '../../utils/walletSend';
+import {
+  classifyRecipient,
+  type RecipientInvalidReason,
+} from '../../utils/addressValidation';
+import { minNonDustOutput } from '../../config/minimums';
 import {
   resolveContact,
   type ContactResolution,
 } from '../../utils/resolveContact';
 import { requestWithTimeout } from '../../common/functions';
 import { foreignWalletAvailability } from '../../common/homeWalletCapabilities';
+import {
+  describeBridgeError,
+  isCoreSpendContextBugError,
+  isUnlockRequiredError,
+} from '../../common/bridgeErrors';
+import {
+  getCachedAccountUnlocked,
+  invalidateCachedAccountUnlocked,
+  setCachedAccountUnlocked,
+} from '../../common/accountUnlockState';
+import {
+  invalidateCachedBalance,
+  setCachedBalance,
+} from '../../common/balanceCache';
+import { useArrrSyncStatus } from '../../hooks/useArrrSyncStatus';
+import {
+  formatArrrAmount,
+  requestWithArrrBusyRetry,
+} from '../../common/arrrSync';
+import {
+  ARRR_READ_CANCELLED_CODE,
+  isArrrSyncContractUnsupportedError,
+  isArrrVerifiedBalanceUnavailableError,
+  isArrrWalletBusyError,
+} from '../../common/bridgeErrors';
+import {
+  accountKey as pendingSendsAccountKey,
+  addPendingSend,
+  getPendingSendsForChain,
+  registerPendingSendsSubscriber,
+  subscribePendingSendConfirmed,
+  subscribePendingSends,
+} from '../../common/pendingSends';
+import { useSuggestedFee } from '../../hooks/useSuggestedFee';
 import {
   EMPTY_STRING,
   TIME_MINUTES_3,
@@ -67,6 +131,7 @@ import {
 import { TransactionRow, type TxRow } from './TransactionRow';
 import {
   isUnlockedResult,
+  qortBridgeProtocol,
   qortSendActionForActions,
   requestQortActions,
   requestQortBalance,
@@ -84,13 +149,21 @@ interface Props {
 
 interface SendCoinResult {
   prepared?: PreparedTransaction;
+  /** A plain Qortal host's SEND_COIN returns the Qortal transaction object, which carries this. */
+  signature?: string;
+  /** Home 2's native QORT send (SEND_QORT/PAYMENT via qortalRequest routed through Home) uses this field name instead. */
+  transactionSignature?: string;
+  amount?: string | number;
+  recipient?: string;
 }
 
-// ARRR sync loop limits: 36 × 5 s = 3 min for "not initialized", 60 × 5 s = 5 min for "initializing"
-const ARRR_OUTER_MAX = 36;
-const ARRR_INNER_MAX = 60;
-const ARRR_POLL_MS = 5000;
 const RECIPIENT_NAME_LOOKUP_DEBOUNCE_MS = 800;
+
+// While the QORT coin page is open, its balance is polled every 60 s (a
+// single cheap GET_BALANCE) so an incoming payment is noticed without the
+// user leaving and re-entering the page (round 2, item C). Foreign coins
+// keep the existing 3-minute combined balance+tx poll below.
+const NATIVE_BALANCE_POLL_MS = 60000;
 
 async function ensureAccountUnlocked(
   chain: ChainConfig,
@@ -99,10 +172,100 @@ async function ensureAccountUnlocked(
   if (chain.isNative && !qortCanUnlock) return true;
   if (!chain.isNative && chain.homeWallet?.requiresUnlockedAccount === false)
     return true;
+
+  // The unlock-state cache is only ever populated from Home's qdnRequest
+  // GET_SELECTED_ACCOUNT/UNLOCK_SELECTED_ACCOUNT. A native (QORT) send
+  // whose unlock call actually goes through qortalRequest (Qortal Core, or
+  // any host where qortalRequest is preferred - see qortBridge()) must not
+  // trust or populate that cache, since it says nothing about the
+  // qortalRequest-selected account's lock state. Foreign-coin unlocks
+  // always go through qdnRequest directly, so they're unaffected.
+  const usesQdnRequestForUnlock =
+    !chain.isNative || qortBridgeProtocol() === 'qdnRequest';
+
+  if (usesQdnRequestForUnlock) {
+    // Skip the redundant UNLOCK_SELECTED_ACCOUNT round-trip when we already
+    // know the account is unlocked (from AppLayout's mount check, a
+    // previous send, or GET_SELECTED_ACCOUNT below).
+    if (getCachedAccountUnlocked() === true) return true;
+
+    try {
+      const account = (await qdnRequest({
+        action: 'GET_SELECTED_ACCOUNT',
+      })) as { isUnlocked?: boolean } | null;
+      if (account?.isUnlocked === true) {
+        setCachedAccountUnlocked(true);
+        return true;
+      }
+    } catch {
+      /* GET_SELECTED_ACCOUNT isn't supported everywhere - fall through and
+         attempt the unlock directly, as before. */
+    }
+  }
+
   const result = await (chain.isNative
     ? requestQortUnlock()
     : qdnRequest({ action: 'UNLOCK_SELECTED_ACCOUNT' }));
-  return isUnlockedResult(result);
+  const unlocked = isUnlockedResult(result);
+  if (usesQdnRequestForUnlock) setCachedAccountUnlocked(unlocked);
+  return unlocked;
+}
+
+// Round 6, item B: bech32 HRP examples for the Taproot message - only the
+// three segwit-bech32 coins this wallet supports can even show a Taproot
+// address (bc1p.../ltc1p.../dgb1p...); see the matching TAPROOT_UNSUPPORTED
+// spec in addressValidation.ts's classifyBitcoinyCoin().
+const TAPROOT_SEGWIT_HRP: Record<string, string> = {
+  BTC: 'bc',
+  LTC: 'ltc',
+  DGB: 'dgb',
+};
+
+/**
+ * Maps a `classifyRecipient()` result to the i18n key + params for the
+ * send form's recipient helper text (round 6, item B / owner decision
+ * 2026-09-22: name WHICH unsupported format was pasted, not just "not a
+ * valid <TICKER> address"). Returns the pre-existing generic
+ * `recipient_invalid_coin` key for `UNKNOWN_FORMAT` and any reason this
+ * function doesn't otherwise recognise (defensive default).
+ */
+function recipientInvalidMessage(
+  reason: RecipientInvalidReason | undefined,
+  ticker: string,
+  otherCoin: string | undefined
+): { key: string; params?: Record<string, string> } {
+  switch (reason) {
+    case 'TAPROOT_UNSUPPORTED': {
+      const hrp = TAPROOT_SEGWIT_HRP[ticker] ?? 'bc';
+      return {
+        key: 'send_dialog.recipient_invalid_taproot',
+        params: { example: `${hrp}1p…`, legacy: `${hrp}1q…` },
+      };
+    }
+    case 'MWEB_UNSUPPORTED':
+      return { key: 'send_dialog.recipient_invalid_mweb' };
+    case 'SPARK_UNSUPPORTED':
+    case 'LELANTUS_UNSUPPORTED':
+      return { key: 'send_dialog.recipient_invalid_spark' };
+    case 'CASHADDR_WRONG_COIN':
+      return { key: 'send_dialog.recipient_invalid_cashaddr' };
+    case 'WRONG_COIN':
+      return {
+        key: 'send_dialog.recipient_invalid_wrong_coin',
+        params: { otherCoin: otherCoin ?? '?', ticker },
+      };
+    case 'BAD_CHECKSUM':
+      return {
+        key: 'send_dialog.recipient_invalid_bad_checksum',
+        params: { ticker },
+      };
+    case 'UNKNOWN_FORMAT':
+    default:
+      return {
+        key: 'send_dialog.recipient_invalid_coin',
+        params: { ticker },
+      };
+  }
 }
 
 export function CoinDetail({ chain }: Props) {
@@ -111,6 +274,11 @@ export function CoinDetail({ chain }: Props) {
   const uiStyle = useAtomValue(uiStyleAtom);
   const currency = useAtomValue(currencyAtom);
   const walletReady = useAtomValue(walletReadyAtom);
+  // Home's selected-account identity (distinct from `address` below, which
+  // is this chain's own wallet address) - used to key the shared balance
+  // cache and pending-send tracker so an account switch can never show
+  // one account's data under another (round 2 review finding 1).
+  const { address: homeAccount } = useAuth();
   const prices = useMarketPrices();
   const pricePerUnit = prices[chain.coinEnum];
   const navigate = useNavigate();
@@ -122,14 +290,22 @@ export function CoinDetail({ chain }: Props) {
   const [address, setAddress] = useState<string>(EMPTY_STRING);
   const [balance, setBalance] = useState<string | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(true);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [txError, setTxError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [loadingTx, setLoadingTx] = useState(true);
   const [expandedTx, setExpandedTx] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedHash, setCopiedHash] = useState<number | null>(null);
 
+  // ARRR send is structurally impossible, not only capability-gated
+  // (Codex round 5 review finding 5) - a `?send=true` deep link (grid
+  // quick-send, list-row send icon, asset send, or a contact card's
+  // `?send=true&to=` link - see FindPersonPage.tsx) must never auto-open
+  // the dialog for ARRR, even if some future capability regression made
+  // `canSend` true.
   const [sendOpen, setSendOpen] = useState(
-    () => searchParams.get('send') === 'true'
+    () => !isARRR && searchParams.get('send') === 'true'
   );
   const [amount, setAmount] = useState<string>('');
   const [sendMax, setSendMax] = useState(false);
@@ -143,14 +319,20 @@ export function CoinDetail({ chain }: Props) {
   const [resolution, setResolution] = useState<ContactResolution | null>(null);
   const [resolvingRecipient, setResolvingRecipient] = useState(false);
   const [staleAddressWarning, setStaleAddressWarning] = useState(false);
-  const [nativeFee, setNativeFee] = useState<string>('');
-  const [foreignFeePerByte, setForeignFeePerByte] = useState<string>('');
-  const [feeLoading, setFeeLoading] = useState(false);
+  const suggestedFee = useSuggestedFee(chain);
   const [sending, setSending] = useState(false);
-  const [sendResult, setSendResult] = useState<'success' | 'error' | null>(
-    null
-  );
+  const [sendResult, setSendResult] = useState<
+    'success' | 'error' | 'pending' | null
+  >(null);
   const [sendResponse, setSendResponse] = useState<SendCoinResult | null>(null);
+  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
+  const [sendErrorIsCoreBug, setSendErrorIsCoreBug] = useState(false);
+  // Bumped whenever the shared pendingSends module notifies a change for
+  // this account+chain, so `pendingSendRows` (below) re-reads it. The
+  // module - not local state - is the source of truth (round 2 review
+  // finding 2), since it keeps tracking/polling across CoinDetail
+  // unmounting when the user navigates to the grid and back.
+  const [pendingSendsVersion, setPendingSendsVersion] = useState(0);
 
   // SHOW_ACTIONS capability flags (updated on mount)
   const [canSend, setCanSend] = useState(false);
@@ -166,129 +348,223 @@ export function CoinDetail({ chain }: Props) {
   const [canReadTransactions, setCanReadTransactions] = useState(
     chain.isNative
   );
+  const [arrrControlRevision, setArrrControlRevision] = useState(0);
+  const [canControlArrrSync, setCanControlArrrSync] = useState(false);
   const [canManageForeignServer, setCanManageForeignServer] = useState(false);
   const canManageForeignServerRef = useRef(false);
   const addressReadRevision = useRef(0);
   const balanceReadRevision = useRef(0);
   const transactionReadRevision = useRef(0);
+  // Seeded whenever fetchBalance resolves - the native 60 s poll compares
+  // against this, never the `balance` state value captured when that
+  // effect happened to (re)run (round 2 review finding 3).
+  const lastKnownBalanceRef = useRef<string | null>(null);
+  const postSendRefreshTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
-  // ARRR initialization state
-  const cancelSyncRef = useRef(false);
   const isMountedRef = useRef(true);
-  const [arrrSynced, setArrrSynced] = useState(!isARRR);
+  // Always the latest selected-account value, read (not just captured at
+  // effect-setup time) by ARRR busy-retry abort checks below so an account
+  // switch mid-retry is detected even though the retry loop's own closure
+  // still has the old account (Codex round 5 review finding 4).
+  const currentAccountRef = useRef(homeAccount);
+  currentAccountRef.current = homeAccount;
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      // Cancel the post-send refresh timer below so it can't fire (and
+      // trigger a balance/transaction read) after unmount.
+      if (postSendRefreshTimeoutRef.current) {
+        clearTimeout(postSendRefreshTimeoutRef.current);
+        postSendRefreshTimeoutRef.current = null;
+      }
     };
   }, []);
-  const [arrrSyncing, setArrrSyncing] = useState(isARRR);
-  const [arrrSyncStatus, setArrrSyncStatus] = useState(
-    'Connecting to Pirate Chain…'
-  );
-  const [arrrSyncFailed, setArrrSyncFailed] = useState(false);
-  const [arrrServers, setArrrServers] = useState<any[]>([]);
-  const [arrrServerOpen, setArrrServerOpen] = useState(false);
 
+  // A send dialog opened via a deep link (?send=true, or the Home `wallet`
+  // assignment-role link) sets sendOpen=true directly from the lazy
+  // initializer above, bypassing openSend()'s fee lookup entirely - that
+  // was round 2 item D's root cause. Load the suggested fee here too,
+  // without touching the recipient/amount openSend() would otherwise reset
+  // (those are deliberately pre-filled from the URL for this path).
+  useEffect(() => {
+    if (sendOpen) {
+      suggestedFee.reset();
+      void suggestedFee.load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // ElectrumX server management for non-ARRR foreign coins
   const [foreignServers, setForeignServers] = useState<any[]>([]);
   const [foreignServerOpen, setForeignServerOpen] = useState(false);
   const [foreignServerLoading, setForeignServerLoading] = useState(false);
 
-  const syncArrr = useCallback(async () => {
-    cancelSyncRef.current = false;
-    setArrrSyncing(true);
-    setArrrSyncFailed(false);
-    setArrrSynced(false);
-    setArrrSyncStatus('Connecting to Pirate Chain…');
-
-    let outerCount = 0;
-    let innerCount = 0;
-
-    try {
-      while (!cancelSyncRef.current) {
-        let status: string;
-        try {
-          status = await qdnRequest({
-            action: 'GET_ARRR_SYNC_STATUS',
-          } as any);
-        } catch {
-          break;
-        }
-        if (cancelSyncRef.current) return;
-
-        if (status === 'Synchronized') {
-          setArrrSynced(true);
-          setArrrSyncing(false);
-          return;
-        }
-
-        // Server returned an XML/HTML error string
-        if (typeof status === 'string' && status.includes('<')) break;
-
-        if (status === 'Not initialized yet') {
-          outerCount++;
-          setArrrSyncStatus('Initializing Pirate Chain wallet…');
-          if (outerCount >= ARRR_OUTER_MAX) break;
-        } else if (status === 'Initializing wallet...') {
-          innerCount++;
-          const pct = Math.round((innerCount / ARRR_INNER_MAX) * 100);
-          setArrrSyncStatus(`Syncing shielded blockchain… ${pct}%`);
-          if (innerCount >= ARRR_INNER_MAX) break;
-        } else {
-          setArrrSyncStatus(typeof status === 'string' ? status : 'Syncing…');
-        }
-
-        await new Promise<void>((r) => setTimeout(r, ARRR_POLL_MS));
-      }
-    } catch {
-      /* */
-    }
-
-    if (cancelSyncRef.current) return;
-    setArrrSyncFailed(true);
-    setArrrSyncing(false);
-    setArrrSyncStatus('Sync failed — try a different server.');
-    try {
-      const servers = await qdnRequest({
-        action: 'GET_CROSSCHAIN_SERVER_INFO',
-        coin: 'ARRR',
-      } as any);
-      if (Array.isArray(servers)) setArrrServers(servers);
-    } catch {
-      /* */
-    }
-  }, []);
-
-  const handleServerChange = useCallback(
-    async (server: any) => {
-      setArrrServerOpen(false);
-      try {
-        await qdnRequest({
-          action: 'SET_CURRENT_FOREIGN_SERVER',
-          coin: 'ARRR',
-          server,
-        } as any);
-      } catch {
-        /* */
-      }
-      syncArrr();
-    },
-    [syncArrr]
+  // ── ARRR structured custody state (round 5) ──
+  // The sync-status poll is gated on the coin-aware capability gate having
+  // actually granted a read/receive/tx path - not merely "this is the ARRR
+  // page" - so an old Home / locked account / Android never polls at all
+  // (host contract item 6).
+  const arrrCapabilityGranted =
+    isARRR && (canReceive || canReadBalance || canReadTransactions);
+  const hasWalletSession =
+    isARRR &&
+    chain.homeWallet?.walletSessionContract === ARRR_WALLET_SESSION_CONTRACT;
+  const arrrSession = useArrrWalletSession(
+    hasWalletSession && arrrCapabilityGranted,
+    homeAccount
   );
-
-  // Kick off ARRR sync once on mount; cancel on unmount
+  const arrrStatus = useArrrSyncStatus(
+    arrrCapabilityGranted && (!hasWalletSession || arrrSession.active),
+    hasWalletSession
+      ? `${homeAccount}:${arrrSession.value?.revision ?? ''}`
+      : homeAccount
+  );
   useEffect(() => {
-    if (!isARRR) return;
-    syncArrr();
-    return () => {
-      cancelSyncRef.current = true;
+    if (hasWalletSession)
+      setAddress(arrrSession.value?.address ?? EMPTY_STRING);
+  }, [hasWalletSession, arrrSession.value?.address, homeAccount]);
+  const {
+    snapshot: arrrSnapshot,
+    loading: arrrStatusLoading,
+    error: arrrStatusError,
+    consentDenied: arrrConsentDenied,
+    refresh: refreshArrrStatus,
+  } = arrrStatus;
+  const arrrReady = arrrSnapshot?.ready === true;
+
+  const [arrrVerifiedBalance, setArrrVerifiedBalance] = useState<string | null>(
+    null
+  );
+  const [arrrTotalBalance, setArrrTotalBalance] = useState<string | null>(null);
+  // True once the verified read specifically rejected with
+  // ARRR_VERIFIED_BALANCE_UNAVAILABLE and total is shown provisionally
+  // instead (host contract item 4).
+  const [arrrBalanceVerifying, setArrrBalanceVerifying] = useState(false);
+  const [arrrBalanceLoading, setArrrBalanceLoading] = useState(false);
+  const [arrrBalanceError, setArrrBalanceError] = useState<ReturnType<
+    typeof describeBridgeError
+  > | null>(null);
+  const arrrBalanceRevision = useRef(0);
+
+  const fetchArrrBalances = useCallback(async () => {
+    const revision = ++arrrBalanceRevision.current;
+    const startAccount = homeAccount;
+    setArrrBalanceLoading(true);
+    setArrrBalanceError(null);
+
+    // Checked before the first attempt of each busy-retry loop and again
+    // after every retry delay, so an in-flight busy loop can't fire
+    // another bridge call once nobody cares anymore: unmount, an account
+    // switch (revision alone doesn't catch this - see currentAccountRef),
+    // or the tab going hidden (Codex round 5 review finding 4).
+    const shouldAbort = () =>
+      revision !== arrrBalanceRevision.current ||
+      !isMountedRef.current ||
+      currentAccountRef.current !== startAccount ||
+      (typeof document !== 'undefined' && document.hidden);
+
+    // Atomic decimal-integer strings straight off the bridge, formatted to
+    // an exact 8-decimal display string via string-only decimal shifting
+    // (formatArrrAmount -> formatAtomicAmount) - never through Number(),
+    // which silently loses precision above 2^53 atomic units (Codex round
+    // 5 review finding 2).
+    const fetchTotalDisplay = async (): Promise<string | null> => {
+      const totalRaw = await qdnRequest({
+        action: 'GET_WALLET_BALANCE',
+        coin: 'ARRR',
+        verified: false,
+      });
+      return formatArrrAmount(totalRaw != null ? String(totalRaw) : null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    try {
+      const verifiedRaw = await requestWithArrrBusyRetry(
+        () => qdnRequest({ action: 'GET_WALLET_BALANCE', coin: 'ARRR' }),
+        { shouldAbort }
+      );
+      if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
+        return;
+      const verified = formatArrrAmount(
+        verifiedRaw != null ? String(verifiedRaw) : null
+      );
+      setArrrVerifiedBalance(verified);
+      setArrrBalanceVerifying(false);
+
+      let total = verified;
+      try {
+        total = await fetchTotalDisplay();
+        if (revision === arrrBalanceRevision.current && isMountedRef.current)
+          setArrrTotalBalance(total);
+      } catch {
+        /* best-effort second read - the verified balance above still shows */
+      }
+
+      if (revision === arrrBalanceRevision.current && isMountedRef.current) {
+        setCachedBalance(homeAccount, chain.key, {
+          balance: verified,
+          verifiedBalance: verified,
+          totalBalance: total,
+          // Clears any stale provisional-total flag left over from an
+          // earlier ARRR_VERIFIED_BALANCE_UNAVAILABLE fallback (finding 1)
+          // now that the verified balance is known again.
+          provisionalTotal: null,
+          arrrState: arrrSnapshot?.state,
+          arrrReady: true,
+          arrrStale: arrrSnapshot?.stale,
+        });
+      }
+    } catch (err) {
+      if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
+        return;
+      const decoded = describeBridgeError(err);
+      if (decoded.code === ARRR_READ_CANCELLED_CODE) return;
+      if (isArrrVerifiedBalanceUnavailableError(decoded)) {
+        try {
+          const total = await fetchTotalDisplay();
+          if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
+            return;
+          setArrrVerifiedBalance(null);
+          setArrrTotalBalance(total);
+          setArrrBalanceVerifying(true);
+          setArrrBalanceError(null);
+          // Finding 1: the verified (spendable) balance is NOT known here -
+          // `balance`/`verifiedBalance` stay null so the grid/list can
+          // never render the total as if it were spendable. `total` is
+          // exposed only through the distinct `provisionalTotal` field,
+          // which the grid/list render with an explicit "verifying"
+          // qualifier instead of treating it as the coin's balance.
+          setCachedBalance(homeAccount, chain.key, {
+            balance: null,
+            verifiedBalance: null,
+            totalBalance: total,
+            provisionalTotal: total,
+            arrrState: arrrSnapshot?.state,
+            arrrReady: true,
+            arrrStale: arrrSnapshot?.stale,
+          });
+        } catch (err2) {
+          if (
+            revision === arrrBalanceRevision.current &&
+            isMountedRef.current
+          ) {
+            setArrrBalanceError(describeBridgeError(err2));
+          }
+        }
+      } else {
+        console.warn('[wallet] arrr balance', decoded.message);
+        setArrrBalanceError(decoded);
+      }
+    } finally {
+      if (revision === arrrBalanceRevision.current && isMountedRef.current)
+        setArrrBalanceLoading(false);
+    }
+  }, [chain, homeAccount, arrrSnapshot?.state, arrrSnapshot?.stale]);
 
   const fetchAddress = useCallback(async () => {
+    if (hasWalletSession) return;
     if (!chain.isNative && !canReceive) {
       setAddress(EMPTY_STRING);
       return;
@@ -301,18 +577,21 @@ export function CoinDetail({ chain }: Props) {
     } catch {
       /* silent */
     }
-  }, [canReceive, chain]);
+  }, [canReceive, chain, hasWalletSession]);
 
   const fetchBalance = useCallback(async () => {
     if (!chain.isNative && !canReadBalanceRef.current) {
       setBalance(null);
+      setBalanceError(null);
       setLoadingBalance(false);
       return;
     }
     const revision = balanceReadRevision.current;
     setLoadingBalance(true);
-    const MAX_ATTEMPTS = 3;
+    setBalanceError(null);
+    const MAX_ATTEMPTS = 2; // one retry, and only if the error is retryable
     const RETRY_DELAY = 1500;
+    let lastError: unknown = null;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY));
       if (!isMountedRef.current || revision !== balanceReadRevision.current)
@@ -335,14 +614,24 @@ export function CoinDetail({ chain }: Props) {
         if (!isMountedRef.current || revision !== balanceReadRevision.current)
           return;
         setBalance(result);
+        // Seeds the native 60 s poll's change comparison (below) - a ref
+        // updated only when a real fetch resolves, never the value the
+        // component happened to render with when that effect was set up
+        // (round 2 review finding 3).
+        lastKnownBalanceRef.current = result;
         setLoadingBalance(false);
         return;
-      } catch {
-        /* retry */
+      } catch (err) {
+        lastError = err;
+        const decoded = describeBridgeError(err);
+        if (!decoded.retryable) break;
       }
     }
     if (isMountedRef.current && revision === balanceReadRevision.current) {
+      const decoded = describeBridgeError(lastError);
+      console.warn('[wallet] balance', chain.ticker, decoded.message);
       setBalance(null);
+      setBalanceError(decoded.message);
       setLoadingBalance(false);
     }
   }, [canReadBalance, chain]);
@@ -381,6 +670,7 @@ export function CoinDetail({ chain }: Props) {
     }
 
     const resetForeignAvailability = () => {
+      setCanControlArrrSync(false);
       setCanReceive(false);
       setCanReadBalance(false);
       canReadBalanceRef.current = false;
@@ -413,6 +703,15 @@ export function CoinDetail({ chain }: Props) {
             chain,
             Array.isArray(actions) ? actions : []
           );
+          setCanControlArrrSync(
+            chain.coinEnum === 'ARRR' &&
+              availability.canReadBalance &&
+              chain.homeWallet?.syncControlContract ===
+                ARRR_SYNC_CONTROL_CONTRACT &&
+              Array.isArray(actions) &&
+              actions.includes('STOP_ARRR_SYNC') &&
+              actions.includes('START_ARRR_SYNC')
+          );
           setCanReceive(availability.canReceive);
           setCanReadBalance(availability.canReadBalance);
           canReadBalanceRef.current = availability.canReadBalance;
@@ -432,6 +731,7 @@ export function CoinDetail({ chain }: Props) {
         });
     };
     const handleBridgeChange = () => {
+      setArrrControlRevision((value) => value + 1);
       resetForeignAvailability();
       refreshForeignAvailability();
     };
@@ -493,6 +793,7 @@ export function CoinDetail({ chain }: Props) {
     }
     const revision = transactionReadRevision.current;
     setLoadingTx(true);
+    setTxError(null);
     try {
       if (chain.isNative) {
         const wallet = await requestWalletForChain(chain);
@@ -520,40 +821,131 @@ export function CoinDetail({ chain }: Props) {
             recipient: tx.recipient,
           };
         });
-        if (revision === transactionReadRevision.current) setTransactions(rows);
+        if (
+          isMountedRef.current &&
+          revision === transactionReadRevision.current
+        )
+          setTransactions(rows);
       } else {
-        const res = await requestWithTimeout(
-          { action: 'GET_USER_WALLET_TRANSACTIONS', coin: chain.coinEnum },
-          TIME_MINUTES_5
-        );
+        const readTransactions = () =>
+          requestWithTimeout(
+            { action: 'GET_USER_WALLET_TRANSACTIONS', coin: chain.coinEnum },
+            TIME_MINUTES_5
+          );
+        const startAccount = homeAccount;
+        const res =
+          chain.coinEnum === 'ARRR'
+            ? await requestWithArrrBusyRetry(readTransactions, {
+                // Same cancellation guard as fetchArrrBalances above -
+                // Codex round 5 review finding 4.
+                shouldAbort: () =>
+                  revision !== transactionReadRevision.current ||
+                  !isMountedRef.current ||
+                  currentAccountRef.current !== startAccount ||
+                  (typeof document !== 'undefined' && document.hidden),
+              })
+            : await readTransactions();
         const txs = Array.isArray(res) ? res : [];
-        if (revision === transactionReadRevision.current)
+        if (
+          isMountedRef.current &&
+          revision === transactionReadRevision.current
+        )
           setTransactions(chain.coinEnum === 'ARRR' ? [...txs].reverse() : txs);
       }
-    } catch {
-      if (revision === transactionReadRevision.current) setTransactions([]);
+    } catch (err) {
+      if (
+        isMountedRef.current &&
+        revision === transactionReadRevision.current
+      ) {
+        const decoded = describeBridgeError(err);
+        if (decoded.code === ARRR_READ_CANCELLED_CODE) {
+          // Aborted mid busy-retry-delay (hidden tab or account switch) -
+          // not a real error; leave whatever was already shown alone.
+          return;
+        }
+        console.warn('[wallet] transactions', chain.ticker, decoded.message);
+        setTransactions([]);
+        setTxError(decoded.message);
+      }
     } finally {
-      if (revision === transactionReadRevision.current) setLoadingTx(false);
+      if (isMountedRef.current && revision === transactionReadRevision.current)
+        setLoadingTx(false);
     }
-  }, [canReadTransactions, chain]);
+  }, [canReadTransactions, chain, homeAccount]);
 
   useEffect(() => {
     fetchAddress();
   }, [fetchAddress]);
 
-  // Fetch balance + tx only after lock check resolves and ARRR has synced (for other chains arrrSynced starts true)
+  // Fetch/refresh ARRR balances and history whenever the sync status becomes
+  // ready, and again on every subsequent READY re-poll (useArrrSyncStatus's
+  // own 3-minute cadence drives this refresh, rather than a second timer -
+  // design doc: "the grid row consumes cached progress/balance without a
+  // background ARRR timer", and the page itself has exactly one clock).
+  // ARRR is deliberately excluded from the generic lock-gated effect below -
+  // it has its own gating (the sync snapshot's `ready`, not `walletReady`
+  // alone) and its own cadence.
   useEffect(() => {
-    if (!walletReady || !arrrSynced) return;
+    if (!isARRR || !walletReady) return;
+    if (!arrrSnapshot?.ready) {
+      setTransactions([]);
+      setLoadingTx(false);
+      return;
+    }
+    fetchArrrBalances();
+    fetchTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isARRR, walletReady, arrrSnapshot?.observedAt, arrrSnapshot?.ready]);
+
+  // Fetch balance + tx once the lock check resolves, for every chain except
+  // ARRR (handled by the effect above).
+  useEffect(() => {
+    if (!walletReady || isARRR) return;
     fetchBalance();
     fetchTransactions();
+
+    // Native QORT: poll just the balance every 60 s (cheap - one GET_BALANCE)
+    // so an incoming payment is noticed while this page is open, and only
+    // re-fetch the (more expensive) transaction history when the balance
+    // actually changed. Foreign coins keep the existing combined 3-minute
+    // poll below (their balance reads go through Electrum via Core).
+    if (chain.isNative) {
+      const id = setInterval(async () => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        if (!isMountedRef.current) return;
+        try {
+          const res = await requestQortBalance();
+          const next = String(parseFloat(String(res ?? 0)));
+          if (!isMountedRef.current) return;
+          // Compare against the ref seeded by fetchBalance's own last
+          // resolution, not a value captured when this effect was set up -
+          // otherwise the very first tick always "changes" from null.
+          if (next !== lastKnownBalanceRef.current) {
+            lastKnownBalanceRef.current = next;
+            setBalance(next);
+            setBalanceError(null);
+            fetchTransactions();
+          }
+        } catch {
+          /* a transient poll failure isn't worth surfacing - the next tick retries */
+        }
+      }, NATIVE_BALANCE_POLL_MS);
+      return () => clearInterval(id);
+    }
+
     const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchBalance();
       fetchTransactions();
     }, TIME_MINUTES_3);
     return () => clearInterval(id);
-  }, [fetchBalance, fetchTransactions, arrrSynced, walletReady]);
+  }, [fetchBalance, fetchTransactions, isARRR, walletReady, chain]);
 
   const openSend = useCallback(async () => {
+    // Structural guard (Codex round 5 review finding 5) - the Send button
+    // is already disabled for ARRR, but this makes the dialog itself
+    // unreachable regardless of how openSend() is invoked.
+    if (isARRR) return;
     setAmount('');
     setSendMax(false);
     setRecipient(EMPTY_STRING);
@@ -564,26 +956,76 @@ export function CoinDetail({ chain }: Props) {
     setStaleAddressWarning(false);
     setSendResult(null);
     setSendResponse(null);
-    setNativeFee(chain.isNative ? String(chain.defaultFee) : '');
-    setForeignFeePerByte('');
+    setSendErrorMessage(null);
+    setSendErrorIsCoreBug(false);
+    suggestedFee.reset();
     setSendOpen(true);
-    if (chain.isNative || chain.coinEnum === 'ARRR') return;
-    setFeeLoading(true);
-    try {
-      const res = await qdnRequest({
-        action: 'GET_FOREIGN_FEE',
-        coin: chain.coinEnum,
-        type: 'TRADE',
-      } as any);
-      const live =
-        res?.fee ??
-        (typeof res === 'number' || typeof res === 'string' ? res : null);
-      if (live != null) setForeignFeePerByte(String(live));
-    } catch {
-      /* omit fee and let Home/Core choose the default */
-    }
-    setFeeLoading(false);
-  }, [chain.coinEnum, chain.defaultFee, chain.isNative]);
+    await suggestedFee.load();
+  }, [suggestedFee, isARRR]);
+
+  // Register as a pendingSends subscriber for as long as this page is
+  // mounted, so the shared poller (module-level; see pendingSends.ts) keeps
+  // running for this send even if it was actually accepted while a
+  // *different* CoinDetail instance (or none) was mounted, and keeps
+  // running after this page is left for the grid (round 2 review finding
+  // 2). Also react to entries changing (added/confirmed/timed-out) and to
+  // a confirmation specifically, which is the module's signal to refetch
+  // history here rather than waiting for the next periodic poll.
+  useEffect(() => {
+    const unregister = registerPendingSendsSubscriber();
+    const unsubscribeEntries = subscribePendingSends(() => {
+      setPendingSendsVersion((v) => v + 1);
+    });
+    const unsubscribeConfirmed = subscribePendingSendConfirmed(
+      (confirmedAccount, confirmedChainKey) => {
+        if (confirmedAccount !== pendingSendsAccountKey(homeAccount)) return;
+        if (confirmedChainKey !== chain.key) return;
+        if (!isMountedRef.current) return;
+        fetchTransactions();
+      }
+    );
+    return () => {
+      unregister();
+      unsubscribeEntries();
+      unsubscribeConfirmed();
+    };
+  }, [homeAccount, chain.key, fetchTransactions]);
+
+  // Every currently-tracked pending send for this account+chain, from the
+  // shared module - not local state, so it survives a navigate-away-and-
+  // back and reflects a confirmation/timeout the module made while this
+  // page wasn't mounted at all.
+  const pendingSendRows = useMemo(
+    () => getPendingSendsForChain(homeAccount, chain.key),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [homeAccount, chain.key, pendingSendsVersion]
+  );
+
+  // Merge the optimistic pending row(s) on top of the fetched transaction
+  // list, without waiting for the next periodic history refresh to show
+  // them and without mutating `transactions` itself. Deduped by signature -
+  // once the real confirmed row appears in `transactions`, the synthetic
+  // pending row for the same signature is dropped so it's never shown
+  // twice.
+  const displayedTransactions = useMemo(() => {
+    if (pendingSendRows.length === 0) return transactions;
+    const confirmedHashes = new Set(
+      transactions.map((row) => row.txHash).filter(Boolean)
+    );
+    const stillPending = pendingSendRows.filter(
+      (entry) => !confirmedHashes.has(entry.txHash)
+    );
+    if (stillPending.length === 0) return transactions;
+    const pendingRows: TxRow[] = stillPending.map((entry) => ({
+      txHash: entry.txHash,
+      totalAmount: entry.totalAmount,
+      recipient: entry.recipient,
+      sender: entry.sender,
+      pending: true,
+      pendingTimedOut: entry.timedOut,
+    }));
+    return [...pendingRows, ...transactions];
+  }, [transactions, pendingSendRows]);
 
   useEffect(() => {
     if (recipientMode !== 'name') return;
@@ -623,11 +1065,19 @@ export function CoinDetail({ chain }: Props) {
   };
 
   const handleSend = async () => {
+    // Structural guard (Codex round 5 review finding 5) - Send is disabled
+    // and the dialog is unreachable for ARRR (openSend()/sendOpen above),
+    // but this makes handleSend() itself a no-op too.
+    if (isARRR) return;
     if (!canSendRef.current || !canConfirmSend) return;
 
     setSending(true);
+    setSendErrorMessage(null);
+    setSendErrorIsCoreBug(false);
     try {
-      if (!(await ensureAccountUnlocked(chain, qortCanUnlock))) return;
+      if (!(await ensureAccountUnlocked(chain, qortCanUnlock))) {
+        throw new Error('Unable to unlock the account. Please try again.');
+      }
 
       let effectiveRecipient = recipient;
       if (recipientMode === 'name') {
@@ -651,17 +1101,62 @@ export function CoinDetail({ chain }: Props) {
       if (!canSendRef.current) return;
 
       let result: SendCoinResult | null = null;
+      let nativeSignature: string | undefined;
       if (chain.isNative) {
         if (!qortSendAction) return;
-        const res = await requestQortSend(
+        const res = (await requestQortSend(
           qortSendAction,
           effectiveRecipient,
           parseFloat(amount)
-        );
-        if (res?.accepted === false)
-          throw new Error(res.error ?? `${qortSendAction} failed`);
-        result = res as any;
+        )) as
+          | (SendCoinResult & {
+              accepted?: boolean;
+              // Home 2's ambiguous-broadcast result uses `outcome`, not
+              // `foreignOutcome` (that field name is the foreign-send
+              // shape below) - see broadcastHomeV2Payment.
+              outcome?: 'unknown' | 'mismatch';
+              errorType?: string;
+              error?: string;
+            })
+          | null;
+        if (res == null || typeof res !== 'object') {
+          throw new Error('Home returned no send result');
+        }
+        if (res.accepted === false) {
+          // Mirrors the foreign SEND_COIN handling below: Home resolves
+          // (rather than throws) with accepted:false when it can't confirm
+          // the broadcast outcome - never treat that as success, and never
+          // as a hard error either when the outcome is merely unknown.
+          const decoded = describeBridgeError(
+            res.error ?? `${qortSendAction} failed`
+          );
+          if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
+          console.warn('[wallet] send failed', chain.ticker, decoded);
+          setSendResponse(null);
+          setSendErrorMessage(decoded.message);
+          setSendErrorIsCoreBug(isCoreSpendContextBugError(decoded));
+          setSendResult(
+            res.outcome === 'unknown' || res.outcome === 'mismatch'
+              ? 'pending'
+              : 'error'
+          );
+          return;
+        }
+        result = res;
+        nativeSignature =
+          typeof res.transactionSignature === 'string'
+            ? res.transactionSignature
+            : typeof res.signature === 'string'
+              ? res.signature
+              : undefined;
       } else {
+        // Structural guard (Codex round 5 review finding 5) - the last
+        // possible checkpoint before any foreign SEND_COIN payload is
+        // built or dispatched. ARRR must never reach qdnRequest here, no
+        // matter how this function was entered.
+        if (chain.coinEnum === 'ARRR') {
+          throw new Error('ARRR sending is not supported.');
+        }
         const payload: Record<string, unknown> = {
           action: 'SEND_COIN',
           recipient: effectiveRecipient,
@@ -672,21 +1167,95 @@ export function CoinDetail({ chain }: Props) {
         } else {
           payload.amount = amount;
         }
-        if (chain.coinEnum !== 'ARRR' && foreignFeePerByte !== '') {
-          payload.feePerByte = foreignFeePerByte.trim();
+        if (chain.coinEnum !== 'ARRR' && suggestedFee.fee !== '') {
+          payload.feePerByte = suggestedFee.fee.trim();
         }
-        result = (await qdnRequest(payload as any)) as SendCoinResult | null;
+        const foreignResult = (await qdnRequest(payload as any)) as
+          | (SendCoinResult & {
+              accepted?: boolean;
+              foreignOutcome?: 'unknown' | 'mismatch';
+              error?: string;
+            })
+          | null;
+
+        if (foreignResult == null || typeof foreignResult !== 'object') {
+          throw new Error('Home returned no send result');
+        }
+
+        // Foreign SEND_COIN resolves (rather than throws) with
+        // accepted:false when Home can't confirm the broadcast outcome -
+        // never treat that as success.
+        if (foreignResult.accepted === false) {
+          const decoded = describeBridgeError(
+            foreignResult.error ?? foreignResult
+          );
+          if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
+          console.warn('[wallet] send failed', chain.ticker, decoded);
+          setSendResponse(null);
+          setSendErrorMessage(decoded.message);
+          setSendErrorIsCoreBug(isCoreSpendContextBugError(decoded));
+          setSendResult(
+            foreignResult.foreignOutcome === 'unknown' ||
+              foreignResult.foreignOutcome === 'mismatch'
+              ? 'pending'
+              : 'error'
+          );
+          return;
+        }
+        result = foreignResult;
       }
       setSendResponse(result);
       setSendResult('success');
       setStaleAddressWarning(false);
 
-      window.setTimeout(() => {
-        fetchBalance();
-        fetchTransactions();
-      }, TIME_SECONDS_3);
-    } catch {
+      // The grid's cached balance for this coin is now stale - drop it so
+      // the next time it's shown it re-fetches instead of rendering a
+      // pre-send amount (round 2, item B's "just sent from" trigger).
+      invalidateCachedBalance(homeAccount, chain.key);
+
+      if (chain.isNative && nativeSignature) {
+        // Show the sent transaction immediately as a pending row and poll
+        // for its confirmation (round 2, item A) instead of the blind
+        // fixed-delay refresh below, which has no truth source. Prefer the
+        // amount/recipient Home actually echoes back in the result over
+        // the local form state, since that's what was actually broadcast.
+        // Tracked in the shared pendingSends module (not local state) so
+        // it keeps polling/rendering correctly across navigating away from
+        // this page and back (round 2 review finding 2).
+        const resultAmount = result?.amount;
+        const resultRecipient = result?.recipient;
+        addPendingSend({
+          account: homeAccount,
+          chain,
+          txHash: nativeSignature,
+          totalAmount:
+            resultAmount != null
+              ? -Math.round(parseFloat(String(resultAmount)) * 1e8)
+              : -Math.round(parseFloat(amount) * 1e8),
+          recipient:
+            typeof resultRecipient === 'string'
+              ? resultRecipient
+              : effectiveRecipient,
+          sender: address || undefined,
+        });
+      } else {
+        if (postSendRefreshTimeoutRef.current) {
+          clearTimeout(postSendRefreshTimeoutRef.current);
+        }
+        postSendRefreshTimeoutRef.current = setTimeout(() => {
+          postSendRefreshTimeoutRef.current = null;
+          if (!isMountedRef.current) return;
+          fetchBalance();
+          fetchTransactions();
+        }, TIME_SECONDS_3);
+      }
+    } catch (err) {
+      const decoded = describeBridgeError(err);
+      if (isUnlockRequiredError(decoded)) invalidateCachedAccountUnlocked();
+      console.warn('[wallet] send failed', chain.ticker, decoded);
       setSendResponse(null);
+      setSendErrorMessage(decoded.message);
+      setSendErrorIsCoreBug(isCoreSpendContextBugError(decoded));
       setSendResult('error');
     } finally {
       setSending(false);
@@ -697,6 +1266,8 @@ export function CoinDetail({ chain }: Props) {
     setSendOpen(false);
     setSendResult(null);
     setSendResponse(null);
+    setSendErrorMessage(null);
+    setSendErrorIsCoreBug(false);
     setAmount('');
     setSendMax(false);
     setRecipient(EMPTY_STRING);
@@ -705,43 +1276,117 @@ export function CoinDetail({ chain }: Props) {
     setResolution(null);
     setResolvingRecipient(false);
     setStaleAddressWarning(false);
-    setNativeFee('');
-    setForeignFeePerByte('');
+    suggestedFee.reset();
     setSearchParams({});
   };
 
-  const sendFeeInputValue = chain.isNative ? nativeFee : foreignFeePerByte;
+  const sendFeeInputValue = suggestedFee.fee;
   const sendFeeLabel = chain.isNative
     ? t('send_dialog.optional_custom_fee', { coin: chain.ticker })
     : t('send_dialog.optional_fee_per_byte', { coin: chain.ticker });
-  const setSendFeeInputValue = chain.isNative
-    ? setNativeFee
-    : setForeignFeePerByte;
+  const setSendFeeInputValue = suggestedFee.setFee;
   const canUseForeignSendMax = !chain.isNative && chain.coinEnum !== 'ARRR';
   const amountIsValid =
     canUseForeignSendMax && sendMax
       ? true
       : isPositiveDecimal(amount, chain.decimalPlaces);
-  const recipientIsValid = isValidRecipient(recipient);
+
+  // Item C (round 4): Core's own declared minimum non-dust output per
+  // chain (see src/config/minimums.ts) - warn and block before Core
+  // rejects it at broadcast time. Never applies to send-max (no fixed
+  // amount to compare) or to QORT/ARRR (no declared minimum).
+  const minDust = minNonDustOutput(chain.coinEnum);
+  const belowMinimum =
+    minDust != null &&
+    amount !== '' &&
+    isPositiveDecimal(amount, chain.decimalPlaces) &&
+    decimalToAtomic(amount, chain.decimalPlaces) < BigInt(minDust);
+
+  // Item B (round 4): per-coin address format validation - checksum +
+  // version byte, not just "non-empty and short enough". This applies in
+  // BOTH modes: in 'address' mode it's the raw typed text; in 'name' mode
+  // `recipient` holds the resolved address (set by the resolution effect
+  // below), and that address is exactly as untrusted as a typed one - a
+  // Qortal name's crosschain address or a contact card's published
+  // address (resolveContact.ts) is supplied verbatim by whoever
+  // owns/wrote it, never validated at the source. A malformed or
+  // wrong-chain resolved address must block Send exactly like a
+  // malformed typed one (round 4 review item 2).
+  //
+  // Round 6, item B (owner decision 2026-09-22): classifyRecipient()
+  // (addressValidation.ts) reports WHICH unsupported format was pasted
+  // (Taproot/MWEB/Spark/CashAddr/wrong-coin/bad-checksum) instead of just
+  // true/false, so the helper text below can name it instead of showing
+  // a generic "not a valid <TICKER> address".
+  const genericRecipientOk = isValidRecipient(recipient);
+  const recipientClassification = classifyRecipient(chain.coinEnum, recipient);
+  const recipientFormatOk = recipientClassification.valid;
+  const recipientInvalidReason = recipientClassification.reason;
+  const recipientOtherCoin = recipientClassification.otherCoin;
+  const recipientIsValid = genericRecipientOk && recipientFormatOk;
+  // Name mode only: the name/contact resolved successfully, but what it
+  // resolved to isn't a valid address for this coin - distinct from
+  // "resolution failed" (no card, name not found, etc.) and shown instead
+  // of the green "resolved to" line.
+  const resolvedAddressInvalid =
+    recipientMode === 'name' &&
+    resolution?.status === 'resolved' &&
+    !recipientFormatOk;
+  // Round 4 review item 3: DOGE and DGB share Core's P2PKH version byte
+  // (30), so a valid address for one coin is indistinguishable from a
+  // valid address for the other by format alone (see the NOTE on
+  // validateDogeAddress() in addressValidation.ts) - a soft reminder,
+  // never blocking, since there is no way to actually tell them apart.
+  const showDogeDgbLookAlikeNote =
+    recipientMode === 'address' &&
+    (chain.coinEnum === 'DOGE' || chain.coinEnum === 'DGB');
+
   const foreignFeeIsValid =
     chain.isNative ||
     chain.coinEnum === 'ARRR' ||
-    isOptionalPositiveDecimal(foreignFeePerByte, 8);
+    isOptionalPositiveDecimal(suggestedFee.fee, 8);
   const canConfirmSend =
     canSend &&
     !sending &&
+    !suggestedFee.loading &&
     amountIsValid &&
+    !belowMinimum &&
     recipientIsValid &&
     foreignFeeIsValid &&
     (recipientMode !== 'name' ||
       (!resolvingRecipient && resolution?.status === 'resolved'));
-  const showAmountError = amount !== '' && !amountIsValid;
+  const showAmountError = amount !== '' && (!amountIsValid || belowMinimum);
   const showRecipientError = recipient !== '' && !recipientIsValid;
+  const recipientErrorIsCoinFormat =
+    showRecipientError && genericRecipientOk && !recipientFormatOk;
+  const recipientErrorMessage = recipientErrorIsCoinFormat
+    ? recipientInvalidMessage(
+        recipientInvalidReason,
+        chain.ticker,
+        recipientOtherCoin
+      )
+    : undefined;
   const showFeeError =
     !chain.isNative &&
     chain.coinEnum !== 'ARRR' &&
-    foreignFeePerByte !== '' &&
+    suggestedFee.fee !== '' &&
     !foreignFeeIsValid;
+
+  // Item C (round 4): non-blocking balance-vs-(amount+fee) warning, shown
+  // once the balance is known. Never shown for send-max - by definition
+  // that already spends everything sendable, so there's nothing useful to
+  // warn about.
+  const feeEstimate = suggestedFee.fee
+    ? chain.isNative
+      ? parseFloat(suggestedFee.fee) || 0
+      : (parseFloat(suggestedFee.fee) || 0) * 250
+    : 0;
+  const balanceExceeded =
+    balance != null &&
+    !(canUseForeignSendMax && sendMax) &&
+    amount !== '' &&
+    isPositiveDecimal(amount, chain.decimalPlaces) &&
+    parseFloat(amount) + feeEstimate > parseFloat(balance);
 
   const handleCopyHash = (i: number, hash: string) => {
     const finish = () => {
@@ -771,6 +1416,336 @@ export function CoinDetail({ chain }: Props) {
   const handleToggleExpand = useCallback((i: number) => {
     setExpandedTx((prev) => (prev === i ? null : i));
   }, []);
+
+  // ── ARRR structured state/balance panel (round 5) ──
+  // Replaces the old string-matching sync loop with rendering driven purely
+  // by the typed snapshot from useArrrSyncStatus - never a percentage
+  // derived from a retry count.
+  // arrrVerifiedBalance/arrrTotalBalance are already the fully-formatted
+  // 8-decimal display strings (fetchArrrBalances computes them once, via
+  // formatArrrAmount on the raw ATOMIC string) - do not re-run
+  // formatArrrAmount here, which expects atomic input and would reject an
+  // already-formatted decimal string like "1.40000000" (no decimal point
+  // allowed) back to null.
+  const arrrVerifiedDisplay = arrrVerifiedBalance;
+  const arrrTotalDisplay = arrrTotalBalance;
+  const arrrStatusIsBusy =
+    arrrStatusError != null && isArrrWalletBusyError(arrrStatusError);
+  const arrrStatusIsUnsupported =
+    arrrStatusError != null &&
+    isArrrSyncContractUnsupportedError(arrrStatusError);
+  const arrrBalanceIsBusy =
+    arrrBalanceError != null && isArrrWalletBusyError(arrrBalanceError);
+
+  const arrrRetryButtonSx = {
+    bgcolor: c.accent,
+    color: c.accentText,
+    '&:hover': { bgcolor: c.accentHover },
+    borderRadius: isClassic ? `${tokens.shape.radiusMd}px` : '50px',
+    px: 3,
+    mt: 1.5,
+  };
+
+  let arrrPanel: ReactNode = null;
+  if (isARRR) {
+    if (hasWalletSession && !arrrSession.active) {
+      arrrPanel = !address ? (
+        <Box sx={{ fontSize: '0.85rem' }}>
+          {t('arrr.session_address_unavailable')}
+        </Box>
+      ) : null;
+    } else if (arrrConsentDenied) {
+      arrrPanel = (
+        <Box data-testid="arrr-consent-denied" sx={{ textAlign: 'center' }}>
+          <Box
+            sx={{
+              fontWeight: tokens.typography.weightBold,
+              color: c.error,
+            }}
+          >
+            {t('arrr.custody_consent_denied')}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (arrrStatusIsBusy) {
+      arrrPanel = (
+        <Box data-testid="arrr-busy" sx={{ textAlign: 'center' }}>
+          <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+            {t('arrr.wallet_busy')}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (arrrStatusIsUnsupported) {
+      arrrPanel = (
+        <Box data-testid="arrr-sync-unsupported" sx={{ textAlign: 'center' }}>
+          <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+            {t('arrr.sync_contract_unsupported')}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (arrrStatusError && !arrrSnapshot) {
+      arrrPanel = (
+        <Box data-testid="arrr-status-error" sx={{ textAlign: 'center' }}>
+          <Box
+            sx={{ fontWeight: tokens.typography.weightBold, color: c.error }}
+          >
+            {arrrStatusError.message}
+          </Box>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else if (!arrrSnapshot && arrrStatusLoading) {
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-loading"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+            {t('arrr.state_loading')}
+          </Box>
+        </Box>
+      );
+    } else if (!arrrSnapshot) {
+      // Not loading, no error, no snapshot yet - shouldn't normally happen
+      // once arrrCapabilityGranted is true, but render the same loading
+      // affordance rather than nothing while the first poll settles.
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-loading"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+            {t('arrr.state_loading')}
+          </Box>
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'DISABLED') {
+      arrrPanel = (
+        <Box data-testid="arrr-state-disabled" sx={{ textAlign: 'center' }}>
+          <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+            {t('arrr.state_disabled')}
+          </Box>
+          <Box sx={{ mt: 0.75, fontSize: '0.78rem', color: c.textSecondary }}>
+            {arrrSnapshot.message ?? t('arrr.state_disabled_detail_fallback')}
+          </Box>
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'LOADING') {
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-loading"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <CircularProgress size={36} sx={{ color: c.accent }} />
+          <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+            {arrrSnapshot.message ?? t('arrr.state_loading')}
+          </Box>
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'SYNCHRONIZING') {
+      arrrPanel = (
+        <Box
+          data-testid="arrr-state-synchronizing"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <ArrrSyncProgress status={arrrStatus} />
+        </Box>
+      );
+    } else if (arrrSnapshot.state === 'DEGRADED') {
+      arrrPanel = (
+        <Box data-testid="arrr-state-degraded" sx={{ textAlign: 'center' }}>
+          <WarningAmberIcon sx={{ fontSize: 32, color: c.error, mb: 0.5 }} />
+          <Box
+            sx={{ fontWeight: tokens.typography.weightBold, color: c.error }}
+          >
+            {arrrSnapshot.lastError?.message ??
+              arrrSnapshot.message ??
+              t('arrr.state_degraded')}
+          </Box>
+          {arrrSnapshot.restartRequired && (
+            <Box sx={{ mt: 0.5, fontSize: '0.78rem', color: c.textSecondary }}>
+              {t('arrr.restart_required')}
+            </Box>
+          )}
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={refreshArrrStatus}
+            sx={arrrRetryButtonSx}
+          >
+            {t('action.retry')}
+          </Button>
+        </Box>
+      );
+    } else {
+      // READY
+      const showVerifying = arrrBalanceVerifying;
+      const mainDisplay = showVerifying
+        ? arrrTotalDisplay
+        : arrrVerifiedDisplay;
+      arrrPanel = (
+        <Box data-testid="arrr-state-ready">
+          {arrrBalanceLoading &&
+          arrrVerifiedDisplay == null &&
+          arrrTotalDisplay == null ? (
+            <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
+          ) : arrrBalanceIsBusy ? (
+            <Box data-testid="arrr-busy" sx={{ textAlign: 'center' }}>
+              <Box sx={{ fontWeight: tokens.typography.weightBold }}>
+                {t('arrr.wallet_busy')}
+              </Box>
+              <Button
+                variant="contained"
+                disableElevation
+                onClick={fetchArrrBalances}
+                sx={arrrRetryButtonSx}
+              >
+                {t('action.retry')}
+              </Button>
+            </Box>
+          ) : arrrBalanceError &&
+            arrrVerifiedDisplay == null &&
+            arrrTotalDisplay == null ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Tooltip title={arrrBalanceError.message} placement="top">
+                <Box sx={{ fontSize: '0.85rem', color: c.error }}>
+                  {t('balance_unavailable')}
+                </Box>
+              </Tooltip>
+              <IconButton
+                size="small"
+                onClick={fetchArrrBalances}
+                aria-label="retry balance"
+                sx={{ color: c.error }}
+              >
+                <RefreshIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Box>
+          ) : (
+            <>
+              <Typography
+                sx={{
+                  fontSize: { xs: '2rem', md: '3rem' },
+                  fontWeight: tokens.typography.weightBlack,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
+                  color: c.textPrimary,
+                  wordBreak: 'break-all',
+                }}
+              >
+                {mainDisplay ?? '—'}
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '1.1rem',
+                    fontWeight: tokens.typography.weightBold,
+                    ml: 1.5,
+                    color: c.textSecondary,
+                  }}
+                >
+                  {chain.ticker}
+                </Box>
+              </Typography>
+              <Box
+                sx={{
+                  mt: 1.5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 0.5,
+                }}
+              >
+                {showVerifying && (
+                  <Box sx={{ fontSize: '0.72rem', color: c.warning }}>
+                    {t('arrr.verifying_balance')}
+                  </Box>
+                )}
+                {!showVerifying &&
+                  arrrTotalDisplay != null &&
+                  arrrTotalDisplay !== arrrVerifiedDisplay && (
+                    <Box sx={{ fontSize: '0.78rem', color: c.textSecondary }}>
+                      {t('arrr.total_balance')}: {arrrTotalDisplay}{' '}
+                      {chain.ticker}
+                    </Box>
+                  )}
+                {mainDisplay != null && pricePerUnit != null && (
+                  <Box
+                    sx={{
+                      fontSize: '1.1rem',
+                      fontWeight: tokens.typography.weightBold,
+                      color: c.textPrimary,
+                    }}
+                  >
+                    {formatFiat(
+                      parseFloat(mainDisplay) * pricePerUnit,
+                      currency
+                    )}
+                  </Box>
+                )}
+                {arrrSnapshot.stale && (
+                  <Box sx={{ fontSize: '0.7rem', color: c.textSecondary }}>
+                    {t('arrr.stale_label', {
+                      time: epochToAgo(arrrSnapshot.observedAt),
+                    })}{' '}
+                    · {t('arrr.provisional_label')}
+                  </Box>
+                )}
+              </Box>
+            </>
+          )}
+        </Box>
+      );
+    }
+  }
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: isClassic ? c.frameBg : c.bg }}>
@@ -803,14 +1778,12 @@ export function CoinDetail({ chain }: Props) {
         >
           <ArrowBackIcon fontSize="small" />
         </IconButton>
-        {coinImageUrl && (
-          <Box
-            component="img"
-            src={coinImageUrl}
-            alt={chain.ticker}
-            sx={{ height: 24, width: 24, objectFit: 'contain' }}
-          />
-        )}
+        <CoinImage
+          url={coinImageUrl}
+          ticker={chain.ticker}
+          size={24}
+          placeholderSx={{ fontSize: '0.7rem' }}
+        />
         <Box
           sx={{
             fontWeight: tokens.typography.weightBold,
@@ -852,8 +1825,14 @@ export function CoinDetail({ chain }: Props) {
           </Tooltip>
         )}
         <Tooltip
-          title={!canSend ? 'Sending requires a local node' : ''}
-          disableHoverListener={canSend}
+          title={
+            isARRR
+              ? t('arrr.send_unavailable')
+              : !canSend
+                ? 'Sending requires a local node'
+                : ''
+          }
+          disableHoverListener={!isARRR && canSend}
         >
           <span>
             <Button
@@ -862,7 +1841,7 @@ export function CoinDetail({ chain }: Props) {
               endIcon={<SendIcon sx={{ fontSize: '1rem !important' }} />}
               onClick={openSend}
               disableElevation
-              disabled={(isARRR && !arrrSynced) || !canSend}
+              disabled={isARRR || !canSend}
               sx={{
                 bgcolor: c.accent,
                 color: c.accentText,
@@ -904,135 +1883,16 @@ export function CoinDetail({ chain }: Props) {
               lineHeight: 1.6,
             }}
           >
-            Wallet features are not available on a public node.
-            <br />
-            Connect to a local Qortium node to view balances and transactions.
-          </Box>
-        ) : isARRR && !arrrSynced ? (
-          /* ── ARRR initialization overlay ── */
-          <Box
-            sx={{
-              border: `${
-                isClassic
-                  ? tokens.shape.classicBorderWidth
-                  : tokens.shape.borderWidth
-              } solid ${isClassic ? c.border : c.borderLight}`,
-              borderRadius: `${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px`,
-              bgcolor: c.surface,
-              boxShadow: c.shadowCard,
-              p: { xs: 4, md: 6 },
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              gap: 3,
-            }}
-          >
-            {coinImageUrl ? (
-              <Box
-                component="img"
-                src={coinImageUrl}
-                alt="ARRR"
-                sx={{
-                  height: 56,
-                  width: 56,
-                  objectFit: 'contain',
-                  opacity: arrrSyncFailed ? 0.35 : 0.75,
-                }}
-              />
+            {isARRR ? (
+              (chain.homeWallet?.unavailableReason ??
+              t('arrr.unavailable_fallback'))
             ) : (
-              <Box
-                sx={{
-                  height: 56,
-                  width: 56,
-                  borderRadius: '50%',
-                  bgcolor: 'rgba(128,128,128,0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.2rem',
-                  fontWeight: tokens.typography.weightBold,
-                  color: 'rgba(128,128,128,0.5)',
-                  opacity: arrrSyncFailed ? 0.35 : 0.75,
-                }}
-              >
-                A
-              </Box>
-            )}
-            {arrrSyncing && (
-              <CircularProgress size={36} sx={{ color: c.accent }} />
-            )}
-            <Box>
-              <Box
-                sx={{
-                  fontSize: '0.95rem',
-                  fontWeight: tokens.typography.weightBold,
-                  color: arrrSyncFailed ? c.error : c.textPrimary,
-                  mb: 0.75,
-                }}
-              >
-                {arrrSyncStatus}
-              </Box>
-              {!arrrSyncFailed && (
-                <Box
-                  sx={{
-                    fontSize: '0.78rem',
-                    color: c.textSecondary,
-                    maxWidth: 380,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Pirate Chain uses a shielded blockchain that must sync before
-                  balances or transactions are available.
-                </Box>
-              )}
-            </Box>
-            {arrrSyncFailed && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  gap: 2,
-                  flexWrap: 'wrap',
-                  justifyContent: 'center',
-                }}
-              >
-                <Button
-                  variant="contained"
-                  onClick={syncArrr}
-                  disableElevation
-                  sx={{
-                    bgcolor: c.accent,
-                    color: c.accentText,
-                    '&:hover': { bgcolor: c.accentHover },
-                    borderRadius: isClassic
-                      ? `${tokens.shape.radiusMd}px`
-                      : '50px',
-                    px: 3,
-                  }}
-                >
-                  Retry
-                </Button>
-                {arrrServers.length > 0 && (
-                  <Button
-                    variant="outlined"
-                    onClick={() => setArrrServerOpen(true)}
-                    sx={{
-                      borderColor: c.accent,
-                      color: c.accent,
-                      '&:hover': {
-                        borderColor: c.accentHover,
-                        color: c.accentHover,
-                      },
-                      borderRadius: isClassic
-                        ? `${tokens.shape.radiusMd}px`
-                        : '50px',
-                      px: 3,
-                    }}
-                  >
-                    Change Server
-                  </Button>
-                )}
-              </Box>
+              <>
+                Wallet features are not available on a public node.
+                <br />
+                Connect to a local Qortium node to view balances and
+                transactions.
+              </>
             )}
           </Box>
         ) : (
@@ -1066,33 +1926,36 @@ export function CoinDetail({ chain }: Props) {
                   width: '100%',
                 }}
               >
-                {coinImageUrl ? (
-                  <Box
-                    component="img"
-                    src={coinImageUrl}
-                    alt={chain.ticker}
-                    sx={{ height: 56, width: 56, objectFit: 'contain', mb: 2 }}
-                  />
-                ) : (
-                  <Box
-                    sx={{
-                      height: 56,
-                      width: 56,
-                      borderRadius: '50%',
-                      bgcolor: 'rgba(128,128,128,0.15)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.2rem',
-                      fontWeight: tokens.typography.weightBold,
-                      color: 'rgba(128,128,128,0.5)',
-                      mb: 2,
-                    }}
-                  >
-                    {chain.ticker[0]}
-                  </Box>
-                )}
-                {loadingBalance ? (
+                <CoinImage
+                  url={coinImageUrl}
+                  ticker={chain.ticker}
+                  size={56}
+                  sx={{ mb: 2 }}
+                  placeholderSx={{
+                    bgcolor: 'rgba(128,128,128,0.15)',
+                    fontSize: '1.2rem',
+                    color: 'rgba(128,128,128,0.5)',
+                  }}
+                />
+                {isARRR ? (
+                  <>
+                    {arrrPanel}
+                    {hasWalletSession ? (
+                      <ArrrWalletSessionControls
+                        key={`${homeAccount}:${arrrControlRevision}`}
+                        session={arrrSession}
+                      />
+                    ) : (
+                      canControlArrrSync && (
+                        <ArrrSyncControls
+                          key={`${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
+                          status={arrrStatus}
+                          onChanged={refreshArrrStatus}
+                        />
+                      )
+                    )}
+                  </>
+                ) : loadingBalance ? (
                   <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
                 ) : (
                   <>
@@ -1154,6 +2017,39 @@ export function CoinDetail({ chain }: Props) {
                           ? formatFiat(pricePerUnit, currency)
                           : '-'}
                       </Box>
+                      {balanceError && (
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.75,
+                            mt: 0.5,
+                          }}
+                        >
+                          <Tooltip title={balanceError} placement="top">
+                            <Box
+                              sx={{
+                                fontSize: '0.75rem',
+                                color: c.error,
+                                maxWidth: 220,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {t('balance_unavailable')}
+                            </Box>
+                          </Tooltip>
+                          <IconButton
+                            size="small"
+                            onClick={fetchBalance}
+                            aria-label="retry balance"
+                            sx={{ color: c.error }}
+                          >
+                            <RefreshIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Box>
+                      )}
                     </Box>
                   </>
                 )}
@@ -1268,7 +2164,28 @@ export function CoinDetail({ chain }: Props) {
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
                   <CircularProgress size={28} sx={{ color: c.accent }} />
                 </Box>
-              ) : transactions.length === 0 ? (
+              ) : displayedTransactions.length === 0 && txError ? (
+                <Box
+                  sx={{
+                    py: 6,
+                    textAlign: 'center',
+                    color: c.error,
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  <Tooltip title={txError} placement="top">
+                    <Box component="span">{t('transactions_unavailable')}</Box>
+                  </Tooltip>
+                  <IconButton
+                    size="small"
+                    onClick={fetchTransactions}
+                    aria-label="retry transactions"
+                    sx={{ color: c.error, ml: 0.5 }}
+                  >
+                    <RefreshIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+              ) : displayedTransactions.length === 0 ? (
                 <Box
                   sx={{
                     py: 6,
@@ -1278,15 +2195,17 @@ export function CoinDetail({ chain }: Props) {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  No transactions yet
+                  {isARRR && !arrrReady
+                    ? t('arrr.transactions_pending')
+                    : 'No transactions yet'}
                 </Box>
               ) : (
-                transactions.map((row, i) => (
+                displayedTransactions.map((row, i) => (
                   <TransactionRow
                     key={i}
                     row={row}
                     index={i}
-                    isLastRow={i === transactions.length - 1}
+                    isLastRow={i === displayedTransactions.length - 1}
                     chain={chain}
                     userAddress={address}
                     expanded={expandedTx === i}
@@ -1376,11 +2295,45 @@ export function CoinDetail({ chain }: Props) {
                   />
                 )}
               </Box>
+            ) : sendResult === 'pending' ? (
+              <Box sx={{ textAlign: 'center', py: 3, color: c.warning }}>
+                <WarningAmberIcon sx={{ fontSize: 40, mb: 1 }} />
+                <Typography sx={{ fontWeight: tokens.typography.weightBold }}>
+                  {t('send_dialog.send_pending_title')}
+                </Typography>
+                <Typography sx={{ fontSize: '0.8rem', mt: 0.5 }}>
+                  {t('send_dialog.send_pending_hint')}
+                </Typography>
+                {sendErrorMessage && (
+                  <Typography
+                    sx={{ fontSize: '0.75rem', mt: 1, color: c.textSecondary }}
+                  >
+                    {sendErrorMessage}
+                  </Typography>
+                )}
+                {sendErrorIsCoreBug && (
+                  <Typography
+                    sx={{ fontSize: '0.75rem', mt: 1, color: c.warning }}
+                  >
+                    {t('send_dialog.core_spend_context_bug_hint')}
+                  </Typography>
+                )}
+              </Box>
             ) : sendResult === 'error' ? (
               <Box sx={{ textAlign: 'center', py: 3, color: c.error }}>
                 <Typography sx={{ fontWeight: tokens.typography.weightBold }}>
                   {t('send_dialog.send_failed')}
                 </Typography>
+                {sendErrorMessage && (
+                  <Typography sx={{ fontSize: '0.8rem', mt: 1 }}>
+                    {sendErrorMessage}
+                  </Typography>
+                )}
+                {sendErrorIsCoreBug && (
+                  <Typography sx={{ fontSize: '0.75rem', mt: 1 }}>
+                    {t('send_dialog.core_spend_context_bug_hint')}
+                  </Typography>
+                )}
               </Box>
             ) : (
               <>
@@ -1418,11 +2371,22 @@ export function CoinDetail({ chain }: Props) {
                     disabled={sending || (canUseForeignSendMax && sendMax)}
                     error={showAmountError}
                     helperText={
-                      showAmountError
-                        ? t('send_dialog.amount_invalid', {
-                            decimals: chain.decimalPlaces,
+                      belowMinimum
+                        ? t('send_dialog.amount_below_minimum', {
+                            min:
+                              minDust != null
+                                ? formatAtomicAmount(
+                                    minDust,
+                                    chain.decimalPlaces
+                                  )
+                                : '',
+                            coin: chain.ticker,
                           })
-                        : undefined
+                        : showAmountError
+                          ? t('send_dialog.amount_invalid', {
+                              decimals: chain.decimalPlaces,
+                            })
+                          : undefined
                     }
                   />
                   {chain.isNative && (
@@ -1432,7 +2396,7 @@ export function CoinDetail({ chain }: Props) {
                       disabled={sending || !balance}
                       onClick={() => {
                         const bal = parseFloat(balance ?? '0');
-                        const feeVal = parseFloat(nativeFee || '0');
+                        const feeVal = parseFloat(suggestedFee.fee || '0');
                         const factor = Math.pow(10, chain.decimalPlaces);
                         setAmount(
                           String(
@@ -1463,6 +2427,12 @@ export function CoinDetail({ chain }: Props) {
                     </Button>
                   )}
                 </Box>
+
+                {balanceExceeded && (
+                  <Typography variant="caption" sx={{ color: c.warning }}>
+                    {t('send_dialog.amount_exceeds_balance_with_fee')}
+                  </Typography>
+                )}
 
                 {canUseForeignSendMax && (
                   <FormControlLabel
@@ -1532,19 +2502,34 @@ export function CoinDetail({ chain }: Props) {
                 </Box>
 
                 {recipientMode === 'address' ? (
-                  <TextField
-                    label={t('send_dialog.recipient_address')}
-                    value={recipient}
-                    onChange={(e) => setRecipient(e.target.value.trim())}
-                    fullWidth
-                    disabled={sending}
-                    error={showRecipientError}
-                    helperText={
-                      showRecipientError
-                        ? t('send_dialog.recipient_invalid')
-                        : undefined
-                    }
-                  />
+                  <>
+                    <TextField
+                      label={t('send_dialog.recipient_address')}
+                      value={recipient}
+                      onChange={(e) => setRecipient(e.target.value.trim())}
+                      fullWidth
+                      disabled={sending}
+                      error={showRecipientError}
+                      helperText={
+                        recipientErrorMessage
+                          ? t(
+                              recipientErrorMessage.key,
+                              recipientErrorMessage.params
+                            )
+                          : showRecipientError
+                            ? t('send_dialog.recipient_invalid')
+                            : undefined
+                      }
+                    />
+                    {showDogeDgbLookAlikeNote && (
+                      <Typography
+                        variant="caption"
+                        sx={{ color: c.textSecondary }}
+                      >
+                        {t('send_dialog.doge_dgb_look_alike')}
+                      </Typography>
+                    )}
+                  </>
                 ) : (
                   <>
                     <TextField
@@ -1567,7 +2552,8 @@ export function CoinDetail({ chain }: Props) {
                       </Typography>
                     )}
                     {!resolvingRecipient &&
-                      resolution?.status === 'resolved' && (
+                      resolution?.status === 'resolved' &&
+                      !resolvedAddressInvalid && (
                         <Typography variant="caption" sx={{ color: c.success }}>
                           {t('send_dialog.resolved_to', {
                             name: resolution.name,
@@ -1576,6 +2562,13 @@ export function CoinDetail({ chain }: Props) {
                           })}
                         </Typography>
                       )}
+                    {!resolvingRecipient && resolvedAddressInvalid && (
+                      <Typography variant="caption" sx={{ color: c.error }}>
+                        {t('send_dialog.resolution_invalid_coin_address', {
+                          ticker: chain.ticker,
+                        })}
+                      </Typography>
+                    )}
                     {!resolvingRecipient &&
                       resolution &&
                       resolution.status !== 'resolved' && (
@@ -1600,11 +2593,15 @@ export function CoinDetail({ chain }: Props) {
                 {!chain.isNative && (
                   <TextField
                     label={sendFeeLabel}
-                    value={feeLoading ? 'Loading…' : sendFeeInputValue}
+                    value={
+                      suggestedFee.loading
+                        ? t('send_dialog.fee_loading')
+                        : sendFeeInputValue
+                    }
                     onChange={(e) => setSendFeeInputValue(e.target.value)}
                     fullWidth
-                    disabled={sending || feeLoading}
-                    type={feeLoading ? 'text' : 'number'}
+                    disabled={sending || suggestedFee.loading}
+                    type={suggestedFee.loading ? 'text' : 'number'}
                     inputProps={{ step: 'any', min: 0 }}
                     error={showFeeError}
                     helperText={
@@ -1612,7 +2609,7 @@ export function CoinDetail({ chain }: Props) {
                         ? t('send_dialog.fee_per_byte_invalid')
                         : chain.coinEnum === 'ARRR'
                           ? t('send_dialog.arrr_fixed_fee')
-                          : !feeLoading && !foreignFeePerByte
+                          : !suggestedFee.loading && suggestedFee.failed
                             ? t('send_dialog.fee_lookup_unavailable')
                             : undefined
                     }
@@ -1646,109 +2643,6 @@ export function CoinDetail({ chain }: Props) {
           </Box>
         </DialogContent>
       </Dialog>
-
-      {/* ── ARRR server selection dialog ── */}
-      {isARRR && arrrServers.length > 0 && (
-        <Dialog
-          open={arrrServerOpen}
-          onClose={() => setArrrServerOpen(false)}
-          maxWidth="sm"
-          fullWidth
-          PaperProps={{
-            sx: {
-              maxWidth: isClassic ? c.layoutMaxWidth : undefined,
-              border: `${
-                isClassic
-                  ? tokens.shape.classicBorderWidth
-                  : tokens.shape.borderWidth
-              } solid ${isClassic ? c.border : c.borderLight}`,
-              borderRadius: isClassic ? `${tokens.shape.radiusMd}px` : 0,
-              bgcolor: c.surface,
-              boxShadow: isClassic ? c.shadowModal : undefined,
-            },
-          }}
-        >
-          <DialogContent sx={{ p: 0 }}>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                px: 3,
-                py: 2,
-                borderBottom: `${
-                  isClassic
-                    ? tokens.shape.classicBorderWidth
-                    : tokens.shape.borderWidth
-                } solid ${isClassic ? c.border : c.borderLight}`,
-              }}
-            >
-              <Box
-                sx={{
-                  fontWeight: tokens.typography.weightBold,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  fontSize: '0.85rem',
-                  flexGrow: 1,
-                }}
-              >
-                Select Lightwallet Server
-              </Box>
-              <IconButton
-                size="small"
-                onClick={() => setArrrServerOpen(false)}
-                sx={{ borderRadius: 0 }}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-            {arrrServers.map((server, i) => (
-              <Box
-                key={i}
-                onClick={() => handleServerChange(server)}
-                sx={{
-                  px: 3,
-                  py: 1.75,
-                  borderBottom:
-                    i < arrrServers.length - 1
-                      ? `1px solid ${isClassic ? c.border : c.borderLight}`
-                      : 'none',
-                  cursor: 'pointer',
-                  '&:hover': {
-                    bgcolor: isClassic ? c.controlHover : c.borderLight,
-                  },
-                  transition: 'background-color 0.12s ease',
-                }}
-              >
-                <Box
-                  sx={{
-                    fontFamily: c.monoFontFamily,
-                    fontSize: '0.8rem',
-                    color: c.textPrimary,
-                  }}
-                >
-                  {server.hostName ??
-                    server.hostname ??
-                    server.host ??
-                    JSON.stringify(server)}
-                  {server.port ? `:${server.port}` : ''}
-                </Box>
-                {server.connectionType && (
-                  <Box
-                    sx={{
-                      fontSize: '0.65rem',
-                      color: c.textSecondary,
-                      mt: 0.25,
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    {String(server.connectionType)}
-                  </Box>
-                )}
-              </Box>
-            ))}
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* ── ElectrumX server selection dialog (non-ARRR foreign coins) ── */}
       {!chain.isNative && !isARRR && (

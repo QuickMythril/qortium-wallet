@@ -12,6 +12,13 @@ import { EMPTY_STRING, TIME_MINUTES_1 } from './common/constants';
 import { walletReadyAtom } from './state/global/system';
 import { useMarketPricesPoller } from './hooks/useMarketPricesPoller';
 import { usePaymentNotifications } from './hooks/usePaymentNotifications';
+import { isUnlockedResult } from './common/walletBridge';
+import {
+  invalidateCachedAccountUnlocked,
+  setCachedAccountUnlocked,
+} from './common/accountUnlockState';
+import { clearBalanceCache } from './common/balanceCache';
+import { clearPendingSends } from './common/pendingSends';
 
 export default function AppLayout() {
   useIframe();
@@ -31,8 +38,24 @@ export default function AppLayout() {
         (e.source === window.parent || e.source === window) &&
         typeof e.data === 'object' &&
         e.data !== null &&
-        (e.data as { action?: unknown }).action === 'SELECTED_ACCOUNT_CHANGED'
+        // Home's electron/qdn-views.ts fires this on both account switch
+        // and lock-state change, as action:'SELECTED_ACCOUNT_CHANGED';
+        // also accept type:'qortium:selected-account-changed' defensively
+        // in case a host sends only that field.
+        ((e.data as { action?: unknown }).action ===
+          'SELECTED_ACCOUNT_CHANGED' ||
+          (e.data as { type?: unknown }).type ===
+            'qortium:selected-account-changed')
       ) {
+        // The newly-selected account's lock state is unknown until the next
+        // GET_SELECTED_ACCOUNT / unlock check re-verifies it.
+        invalidateCachedAccountUnlocked();
+        // A different account's cached balances/errors and tracked pending
+        // sends must never be shown under the newly-selected account, even
+        // for the few minutes before their own freshness windows would
+        // have expired them (round 2 review finding 1).
+        clearBalanceCache();
+        clearPendingSends();
         authenticateUser().catch(() => {});
       }
     }
@@ -50,11 +73,16 @@ export default function AppLayout() {
         })) as {
           isUnlocked?: boolean;
         } | null;
-        if (!cancelled && !account?.isUnlocked) {
-          await qdnRequest({ action: 'UNLOCK_SELECTED_ACCOUNT' });
+        if (account?.isUnlocked === true) {
+          setCachedAccountUnlocked(true);
+        } else {
+          const result = await qdnRequest({
+            action: 'UNLOCK_SELECTED_ACCOUNT',
+          });
+          setCachedAccountUnlocked(isUnlockedResult(result));
         }
       } catch {
-        /* proceed regardless */
+        /* proceed regardless - leave the cache unknown so later sends re-check */
       }
       if (!cancelled) setWalletReady(true);
     }

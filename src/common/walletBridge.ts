@@ -5,15 +5,27 @@ export type QortSendAction = 'SEND_QORT' | 'SEND_COIN';
 type BridgeProtocol = 'qortalRequest' | 'qdnRequest';
 type BridgeRequest = (options: QdnRequestOptions) => Promise<any>;
 
+// qortalRequest is preferred over qdnRequest whenever both are injected
+// (e.g. a Qortium Home build loaded against a Qortal-native chain). Exported
+// so callers that need to know which bridge a native-chain call will
+// actually use - without making the call - can ask, rather than assuming
+// qdnRequest.
+export function qortBridgeProtocol(): BridgeProtocol | null {
+  if (typeof qortalRequest === 'function') return 'qortalRequest';
+  if (typeof qdnRequest === 'function') return 'qdnRequest';
+  return null;
+}
+
 function qortBridge(): {
   protocol: BridgeProtocol;
   request: BridgeRequest;
 } {
-  if (typeof qortalRequest === 'function') {
-    return { protocol: 'qortalRequest', request: qortalRequest };
+  const protocol = qortBridgeProtocol();
+  if (protocol === 'qortalRequest') {
+    return { protocol, request: qortalRequest };
   }
-  if (typeof qdnRequest === 'function') {
-    return { protocol: 'qdnRequest', request: qdnRequest };
+  if (protocol === 'qdnRequest') {
+    return { protocol, request: qdnRequest };
   }
   throw new Error('No Qortal wallet bridge is available.');
 }
