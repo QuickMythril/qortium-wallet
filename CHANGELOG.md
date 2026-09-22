@@ -2,7 +2,7 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.17] - 2026-09-22 (QuickMythril fork test build)
 
 ### Show ARRR sync progress and estimated time remaining
 
