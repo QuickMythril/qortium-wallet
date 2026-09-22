@@ -1,3 +1,6 @@
+import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
+import { useArrrWalletSession } from '../../hooks/useArrrWalletSession';
+import { ArrrWalletSessionControls } from './ArrrWalletSessionControls';
 import {
   ArrrSyncControls,
   ARRR_SYNC_CONTROL_CONTRACT,
@@ -406,7 +409,23 @@ export function CoinDetail({ chain }: Props) {
   // (host contract item 6).
   const arrrCapabilityGranted =
     isARRR && (canReceive || canReadBalance || canReadTransactions);
-  const arrrStatus = useArrrSyncStatus(arrrCapabilityGranted, homeAccount);
+  const hasWalletSession =
+    isARRR &&
+    chain.homeWallet?.walletSessionContract === ARRR_WALLET_SESSION_CONTRACT;
+  const arrrSession = useArrrWalletSession(
+    hasWalletSession && arrrCapabilityGranted,
+    homeAccount
+  );
+  const arrrStatus = useArrrSyncStatus(
+    arrrCapabilityGranted && (!hasWalletSession || arrrSession.active),
+    hasWalletSession
+      ? `${homeAccount}:${arrrSession.value?.revision ?? ''}`
+      : homeAccount
+  );
+  useEffect(() => {
+    if (hasWalletSession)
+      setAddress(arrrSession.value?.address ?? EMPTY_STRING);
+  }, [hasWalletSession, arrrSession.value?.address, homeAccount]);
   const {
     snapshot: arrrSnapshot,
     loading: arrrStatusLoading,
@@ -545,6 +564,7 @@ export function CoinDetail({ chain }: Props) {
   }, [chain, homeAccount, arrrSnapshot?.state, arrrSnapshot?.stale]);
 
   const fetchAddress = useCallback(async () => {
+    if (hasWalletSession) return;
     if (!chain.isNative && !canReceive) {
       setAddress(EMPTY_STRING);
       return;
@@ -557,7 +577,7 @@ export function CoinDetail({ chain }: Props) {
     } catch {
       /* silent */
     }
-  }, [canReceive, chain]);
+  }, [canReceive, chain, hasWalletSession]);
 
   const fetchBalance = useCallback(async () => {
     if (!chain.isNative && !canReadBalanceRef.current) {
@@ -1428,7 +1448,13 @@ export function CoinDetail({ chain }: Props) {
 
   let arrrPanel: ReactNode = null;
   if (isARRR) {
-    if (arrrConsentDenied) {
+    if (hasWalletSession && !arrrSession.active) {
+      arrrPanel = !address ? (
+        <Box sx={{ fontSize: '0.85rem' }}>
+          {t('arrr.session_address_unavailable')}
+        </Box>
+      ) : null;
+    } else if (arrrConsentDenied) {
       arrrPanel = (
         <Box data-testid="arrr-consent-denied" sx={{ textAlign: 'center' }}>
           <Box
@@ -1914,12 +1940,19 @@ export function CoinDetail({ chain }: Props) {
                 {isARRR ? (
                   <>
                     {arrrPanel}
-                    {canControlArrrSync && (
-                      <ArrrSyncControls
-                        key={`${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
-                        status={arrrStatus}
-                        onChanged={refreshArrrStatus}
+                    {hasWalletSession ? (
+                      <ArrrWalletSessionControls
+                        key={`${homeAccount}:${arrrControlRevision}`}
+                        session={arrrSession}
                       />
+                    ) : (
+                      canControlArrrSync && (
+                        <ArrrSyncControls
+                          key={`${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
+                          status={arrrStatus}
+                          onChanged={refreshArrrStatus}
+                        />
+                      )
                     )}
                   </>
                 ) : loadingBalance ? (

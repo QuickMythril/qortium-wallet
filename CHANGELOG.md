@@ -4,6 +4,13 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+### Keep ARRR accounts observable without switching them
+
+- Use the new Core/Home session contract to observe one active account per node. Inactive accounts show an explicit Switch to this account action; background status/address/balance reads cannot select them. Stop and switch invalidate other visible Wallet instances, with passive polling also observing external changes.
+- Show this account's previously verified address while stopped, and load it after activation without reopening the app. Keep stopped/inactive/recovery states visible in listings and detail views. Recovery explains the required Home/Core restart and offers Refresh status instead of a disabled Stop alone.
+- Bind activation to the last observed session revision, prevent duplicate requests and automatic retries, and discard late account/route responses. Requires the new Home and Core contract; older hosts keep their existing controls.
+
+
 ## [1.7.19] - 2026-09-22 (QuickMythril fork test build)
 
 ### Keep stopped ARRR wallets accessible

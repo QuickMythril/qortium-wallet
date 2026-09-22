@@ -36,6 +36,7 @@ interface CoinListRowProps {
   arrrStatus?: UseArrrSyncStatusResult;
   onRetryBalance?: (chain: ChainConfig) => void;
   canReceive: boolean;
+  cachedAddress?: string | null;
   canSend: boolean;
   loading: boolean;
   fiatDisplay?: string;
@@ -70,6 +71,7 @@ export function CoinListRow({
   arrrStatus,
   onRetryBalance,
   canReceive,
+  cachedAddress,
   canSend,
   loading,
   fiatDisplay,
@@ -111,8 +113,8 @@ export function CoinListRow({
     const revision = receiveRevision.current;
     setCopyState('loading');
     try {
-      let walletAddress = address;
-      if (!walletAddress) {
+      let walletAddress = cachedAddress !== undefined ? cachedAddress : address;
+      if (!walletAddress && cachedAddress === undefined) {
         const response = await requestWalletForChain(chain);
         if (revision !== receiveRevision.current || !canReceiveRef.current)
           return;

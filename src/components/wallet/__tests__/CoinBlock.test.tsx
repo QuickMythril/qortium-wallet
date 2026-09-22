@@ -101,3 +101,14 @@ describe('CoinBlock provisionalTotal (round 5 review finding 1)', () => {
     expect(screen.queryByText(/verifying/i)).not.toBeInTheDocument();
   });
 });
+
+it.each([null, 'zs-cached-own-address'])(
+  'uses passive receive metadata without a native read on hover (%s)',
+  (cachedAddress) => {
+    const request = vi.fn();
+    (globalThis as any).qdnRequest = request;
+    renderBlock({ cachedAddress });
+    fireEvent.mouseOver(screen.getByRole('img', { name: 'BTC' }));
+    expect(request).not.toHaveBeenCalled();
+  }
+);

@@ -1,3 +1,9 @@
+import { useTranslation } from 'react-i18next';
+import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
+import {
+  useArrrWalletSession,
+  hasArrrWalletSession,
+} from '../../hooks/useArrrWalletSession';
 import { hasArrrProgressHistory } from '../../common/arrrProgress';
 import {
   useArrrSyncStatus,
@@ -151,6 +157,7 @@ interface BlockProps {
   arrrStatus?: UseArrrSyncStatusResult;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
+  cachedAddress?: string | null;
   canSend: boolean;
   loading: boolean;
   tileSize: number;
@@ -169,6 +176,7 @@ export function CoinBlock({
   arrrStatus,
   onRetryBalance,
   canReceive,
+  cachedAddress,
   canSend,
   loading,
   tileSize,
@@ -180,7 +188,8 @@ export function CoinBlock({
   const uiStyle = useAtomValue(uiStyleAtom);
   const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
-  const [address, setAddress] = useState<string | null>(null);
+  const [fetchedAddress, setAddress] = useState<string | null>(null);
+  const address = cachedAddress !== undefined ? cachedAddress : fetchedAddress;
   const [copied, setCopied] = useState(false);
   const fetchedRef = useRef(false);
   const receiveRevision = useRef(0);
@@ -201,7 +210,7 @@ export function CoinBlock({
 
   const handleMouseEnter = () => {
     setHovered(true);
-    if (canReceive && !fetchedRef.current) {
+    if (cachedAddress === undefined && canReceive && !fetchedRef.current) {
       fetchedRef.current = true;
       const revision = receiveRevision.current;
       requestWalletForChain(chain)
@@ -561,6 +570,7 @@ function SortableCoinItem({
   arrrStatus,
   onRetryBalance,
   canReceive,
+  cachedAddress,
   canSend,
   loading,
   tileSize,
@@ -575,6 +585,7 @@ function SortableCoinItem({
   arrrStatus?: UseArrrSyncStatusResult;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
+  cachedAddress?: string | null;
   canSend: boolean;
   loading: boolean;
   tileSize: number;
@@ -610,6 +621,7 @@ function SortableCoinItem({
           provisionalTotal={provisionalTotal}
           arrrStatus={arrrStatus}
           onRetryBalance={onRetryBalance}
+          cachedAddress={cachedAddress}
           canReceive={canReceive}
           canSend={canSend}
           loading={loading}
@@ -629,6 +641,7 @@ function SortableCoinItem({
           provisionalTotal={provisionalTotal}
           arrrStatus={arrrStatus}
           onRetryBalance={onRetryBalance}
+          cachedAddress={cachedAddress}
           canReceive={canReceive}
           canSend={canSend}
           loading={loading}
@@ -704,6 +717,7 @@ function SortableAssetItem({
 }
 
 export function CoinGrid() {
+  const { t } = useTranslation();
   const { chains } = useSupportedChains();
   // Home's selected-account identity - keys the shared balance cache so an
   // account switch can never render a stale account's balances under the
@@ -744,8 +758,41 @@ export function CoinGrid() {
     foreignWalletAvailability(arrrChain, foreignActions ?? []).canReadBalance;
   // Listing a wallet must not initiate custody consent or start its scan.
   // Once the detail page has obtained status, continue observing on the list.
-  const arrrEnabled = arrrAvailable && hasArrrProgressHistory(account);
-  const arrrStatus = useArrrSyncStatus(arrrEnabled, account, true);
+  const hasWalletSession =
+    arrrChain?.homeWallet?.walletSessionContract ===
+    ARRR_WALLET_SESSION_CONTRACT;
+  const session = useArrrWalletSession(
+    arrrAvailable && hasWalletSession && hasArrrWalletSession(account),
+    account
+  );
+  const arrrEnabled =
+    arrrAvailable &&
+    (hasWalletSession ? session.active : hasArrrProgressHistory(account));
+  const rawArrrStatus = useArrrSyncStatus(
+    arrrEnabled,
+    hasWalletSession ? `${account}:${session.value?.revision ?? ''}` : account,
+    true
+  );
+  const sessionLabel =
+    session.error ??
+    (session.value?.lifecycle === 'DEGRADED'
+      ? t('arrr.session_restart')
+      : session.value && !session.value.enabled
+        ? t('arrr.session_stopped')
+        : session.value?.relation === 'OTHER'
+          ? t('arrr.session_other')
+          : session.value?.relation === 'NONE'
+            ? t('arrr.session_none')
+            : null);
+  const arrrStatus =
+    hasWalletSession && !session.active && sessionLabel
+      ? {
+          ...rawArrrStatus,
+          snapshot: null,
+          loading: false,
+          error: { message: sessionLabel },
+        }
+      : rawArrrStatus;
   const {
     assets,
     loading: assetsLoading,
@@ -1346,7 +1393,16 @@ export function CoinGrid() {
                           : undefined
                       }
                       onRetryBalance={retryBalance}
-                      canReceive={item.chain.isNative || foreign.canReceive}
+                      cachedAddress={
+                        item.chain.coinEnum === 'ARRR' && hasWalletSession
+                          ? (session.value?.address ?? null)
+                          : undefined
+                      }
+                      canReceive={
+                        item.chain.coinEnum === 'ARRR' && hasWalletSession
+                          ? foreign.canReceive && !!session.value?.address
+                          : item.chain.isNative || foreign.canReceive
+                      }
                       canSend={
                         item.chain.isNative ? canSendNative : foreign.canSend
                       }

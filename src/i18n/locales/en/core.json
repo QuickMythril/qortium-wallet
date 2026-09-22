@@ -82,7 +82,15 @@
     "control_scope": "Controls ARRR syncing on your node for all accounts and apps. Core keeps running.",
     "control_started": "ARRR controller started. Checking wallet sync status…",
     "control_stopped": "ARRR controller stopped.",
-    "control_unconfirmed": "The controller change was not confirmed. Check sync status before trying again."
+    "control_unconfirmed": "The controller change was not confirmed. Check sync status before trying again.",
+    "session_restart": "The ARRR native wallet needs recovery. Restart Qortium Core in Home, then return here. Other Core services can keep running until you restart.",
+    "session_stopped": "ARRR syncing is stopped on this node.",
+    "session_other": "This node is syncing a different ARRR account. This account is not syncing.",
+    "session_none": "Choose Start syncing to activate this ARRR account.",
+    "session_switch": "Switch to this account",
+    "session_refresh": "Refresh status",
+    "session_scope": "One active ARRR account per node. Switching stops the other account’s scan. Closing this tab does not stop syncing.",
+    "session_address_unavailable": "No verified address is available yet. Start syncing this account to load it."
   },
   "asset": {
     "chain_qortium": "Qortium",

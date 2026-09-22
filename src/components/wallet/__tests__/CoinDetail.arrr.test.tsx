@@ -164,6 +164,46 @@ describe('CoinDetail ARRR structured state rendering', () => {
     delete (globalThis as any).qdnRequest;
   });
 
+  it('shows the verified address while stopped and does not issue native wallet reads for another account', async () => {
+    const original = qdnRequestMock.getMockImplementation()!;
+    const address = 'zs' + 'a'.repeat(40);
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      if (opts.action === 'GET_ARRR_WALLET_SESSION')
+        return {
+          contract: 'qortium-arrr-wallet-session-v1',
+          revision: '11111111-1111-1111-1111-111111111111',
+          enabled: false,
+          relation: 'OTHER',
+          lifecycle: 'TERMINATED',
+          address,
+        };
+      if (opts.action === 'SHOW_ACTIONS')
+        return [
+          ...arrrActions,
+          'GET_ARRR_WALLET_SESSION',
+          'ACTIVATE_ARRR_WALLET',
+          'STOP_ARRR_SYNC',
+        ];
+      return original(opts);
+    });
+    renderDetail({
+      ...arrrChain,
+      homeWallet: {
+        ...arrrChain.homeWallet!,
+        walletSessionContract: 'qortium-arrr-wallet-session-v1',
+      },
+    });
+    await screen.findByText('ARRR syncing is stopped on this node.');
+    expect(await screen.findByText(address)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Switch to this account' })
+    ).toBeEnabled();
+    const actions = qdnRequestMock.mock.calls.map(([opts]) => opts.action);
+    expect(actions).not.toContain('GET_USER_WALLET');
+    expect(actions).not.toContain('GET_ARRR_SYNC_STATUS');
+    expect(actions).not.toContain('GET_WALLET_BALANCE');
+  });
+
   it('opens a stopped ARRR wallet from fresh discovery and offers Start syncing', async () => {
     sessionStorage.clear();
     syncStatusResponse = baseSnapshot({ state: 'DISABLED', ready: false });

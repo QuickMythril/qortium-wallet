@@ -32,6 +32,7 @@ export interface HomeWalletCapability {
   custodyContract?: string;
   syncStatus?: boolean;
   syncControlContract?: string;
+  walletSessionContract?: string;
   unavailableReason?: string;
 }
 

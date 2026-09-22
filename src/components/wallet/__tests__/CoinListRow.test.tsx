@@ -95,6 +95,18 @@ describe('CoinListRow', () => {
     writeTextMock.mockResolvedValue(undefined);
   });
 
+  it('copies a stopped ARRR account cached address without a native read', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
+    renderRow({ chain: arrrChain, cachedAddress: 'zs-cached-own-address' });
+    await user.click(screen.getByRole('button', { name: 'copy ARRR address' }));
+    expect(writeTextMock).toHaveBeenCalledWith('zs-cached-own-address');
+    expect(qdnRequest).not.toHaveBeenCalled();
+  });
+
   it('shows wallet identity, balances, network, and accessible actions', () => {
     renderRow();
 
