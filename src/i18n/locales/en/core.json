@@ -74,7 +74,15 @@
     "progress_chain_height": "Chain height: {{scanned}} of {{tip}}",
     "progress_open_wallet": "Open wallet to check sync",
     "progress_estimating_short": "Estimating…",
-    "progress_eta_short": "About {{duration}} left"
+    "progress_eta_short": "About {{duration}} left",
+    "control_start": "Start syncing",
+    "control_stop": "Stop syncing",
+    "control_check_stop": "Check stop completion",
+    "control_waiting": "Waiting for Home / Core…",
+    "control_scope": "Controls ARRR syncing on your node for all accounts and apps. Core keeps running.",
+    "control_started": "ARRR controller started. Checking wallet sync status…",
+    "control_stopped": "ARRR controller stopped.",
+    "control_unconfirmed": "The controller change was not confirmed. Check sync status before trying again."
   },
   "asset": {
     "chain_qortium": "Qortium",

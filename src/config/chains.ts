@@ -31,6 +31,7 @@ export interface HomeWalletCapability {
   // (locked account, Android, non-trusted route, old Home).
   custodyContract?: string;
   syncStatus?: boolean;
+  syncControlContract?: string;
   unavailableReason?: string;
 }
 

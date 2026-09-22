@@ -2,6 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [Unreleased]
+
+### Add Home-mediated ARRR sync controls
+
+- Show Stop syncing / Start syncing on the ARRR page only when desktop Home advertises the new controller-control contract and both actions. Home approves each node-wide operation separately; Core keeps running and saved startup settings are unchanged.
+- Wait for Home's confirmed controller result, refresh wallet status, prevent duplicate clicks, and ignore replies after account/route changes. Failed or uncertain stops offer Check stop completion rather than claiming success or immediately offering Start. Starting the controller does not claim wallet readiness. Older Home builds keep the existing read-only sync display.
+
 ## [1.7.17] - 2026-09-22 (QuickMythril fork test build)
 
 ### Show ARRR sync progress and estimated time remaining

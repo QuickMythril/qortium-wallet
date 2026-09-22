@@ -1,3 +1,7 @@
+import {
+  ArrrSyncControls,
+  ARRR_SYNC_CONTROL_CONTRACT,
+} from './ArrrSyncControls';
 import { ArrrSyncProgress } from './ArrrSyncProgress';
 import {
   useEffect,
@@ -341,6 +345,8 @@ export function CoinDetail({ chain }: Props) {
   const [canReadTransactions, setCanReadTransactions] = useState(
     chain.isNative
   );
+  const [arrrControlRevision, setArrrControlRevision] = useState(0);
+  const [canControlArrrSync, setCanControlArrrSync] = useState(false);
   const [canManageForeignServer, setCanManageForeignServer] = useState(false);
   const canManageForeignServerRef = useRef(false);
   const addressReadRevision = useRef(0);
@@ -644,6 +650,7 @@ export function CoinDetail({ chain }: Props) {
     }
 
     const resetForeignAvailability = () => {
+      setCanControlArrrSync(false);
       setCanReceive(false);
       setCanReadBalance(false);
       canReadBalanceRef.current = false;
@@ -676,6 +683,15 @@ export function CoinDetail({ chain }: Props) {
             chain,
             Array.isArray(actions) ? actions : []
           );
+          setCanControlArrrSync(
+            chain.coinEnum === 'ARRR' &&
+              availability.canReadBalance &&
+              chain.homeWallet?.syncControlContract ===
+                ARRR_SYNC_CONTROL_CONTRACT &&
+              Array.isArray(actions) &&
+              actions.includes('STOP_ARRR_SYNC') &&
+              actions.includes('START_ARRR_SYNC')
+          );
           setCanReceive(availability.canReceive);
           setCanReadBalance(availability.canReadBalance);
           canReadBalanceRef.current = availability.canReadBalance;
@@ -695,6 +711,7 @@ export function CoinDetail({ chain }: Props) {
         });
     };
     const handleBridgeChange = () => {
+      setArrrControlRevision((value) => value + 1);
       resetForeignAvailability();
       refreshForeignAvailability();
     };
@@ -1895,7 +1912,16 @@ export function CoinDetail({ chain }: Props) {
                   }}
                 />
                 {isARRR ? (
-                  arrrPanel
+                  <>
+                    {arrrPanel}
+                    {canControlArrrSync && (
+                      <ArrrSyncControls
+                        key={`${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
+                        status={arrrStatus}
+                        onChanged={refreshArrrStatus}
+                      />
+                    )}
+                  </>
                 ) : loadingBalance ? (
                   <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
                 ) : (

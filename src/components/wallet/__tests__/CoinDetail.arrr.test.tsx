@@ -161,6 +161,32 @@ describe('CoinDetail ARRR structured state rendering', () => {
     delete (globalThis as any).qdnRequest;
   });
 
+  it('offers controls only with the new contract and both Home actions', async () => {
+    syncStatusResponse = baseSnapshot({ state: 'SYNCHRONIZING', ready: false });
+    const original = qdnRequestMock.getMockImplementation()!;
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) =>
+      opts.action === 'SHOW_ACTIONS'
+        ? [...arrrActions, 'STOP_ARRR_SYNC', 'START_ARRR_SYNC']
+        : original(opts)
+    );
+    const old = renderDetail();
+    await screen.findByTestId('arrr-state-synchronizing');
+    expect(
+      screen.queryByRole('button', { name: 'Stop syncing' })
+    ).not.toBeInTheDocument();
+    old.unmount();
+    renderDetail({
+      ...arrrChain,
+      homeWallet: {
+        ...arrrChain.homeWallet!,
+        syncControlContract: 'qortium-home-arrr-sync-control-v1',
+      },
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Stop syncing' })
+    ).toBeInTheDocument();
+  });
+
   it('shows the receive address as soon as it resolves, independent of sync state', async () => {
     syncStatusResponse = baseSnapshot({ state: 'LOADING', ready: false });
     renderDetail();
