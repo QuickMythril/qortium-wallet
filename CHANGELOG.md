@@ -2,11 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## Unreleased
+## [1.7.21] - 2026-09-22 (QuickMythril fork test build)
+
+### Release Wallet 1.7.21
 
 ### Distinguish unknown ARRR transaction amounts from zero
 
-- Keep partial transaction rows visible with “Amount unavailable,” label estimated amounts and fees explicitly, and show pending confirmation and incomplete-detail notices. Known zero remains zero. Rows with unknown totals are not classified as sent or received in history filters. Requires compatible Core and Home adapters; no publication is included.
+- Keep partial transaction rows visible with “Amount unavailable,” label estimated amounts and fees explicitly, and show pending confirmation and incomplete-detail notices. Known zero remains zero. Rows with unknown totals are not classified as sent or received in history filters. Requires compatible Core and Home adapters.
 
 ## [1.7.20] - 2026-09-22 (QuickMythril fork test build)
 
