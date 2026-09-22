@@ -94,8 +94,10 @@ export function UnifiedHistory() {
   const stillLoading = loadingChains.length > 0;
 
   const filteredRows = allRows.filter((row) => {
-    if (filter === 'received') return (row.totalAmount ?? 0) > 0;
-    if (filter === 'sent') return (row.totalAmount ?? 0) <= 0;
+    if (filter === 'received')
+      return row.totalAmount != null && row.totalAmount > 0;
+    if (filter === 'sent')
+      return row.totalAmount != null && row.totalAmount <= 0;
     return true;
   });
 

@@ -13,8 +13,11 @@ import { CoinImage } from './CoinImage';
 
 export interface TxRow {
   txHash?: string;
-  totalAmount?: number;
-  feeAmount?: number;
+  totalAmount?: number | null;
+  totalAmountEstimate?: number | null;
+  feeAmountEstimate?: number | null;
+  metadataComplete?: boolean;
+  feeAmount?: number | null;
   timestamp?: number;
   sender?: string;
   recipient?: string;
@@ -58,13 +61,26 @@ export function TransactionRow({
   const isClassic = uiStyle === 'classic';
   const coinImageUrl = useCoinImageUrl(chain.ticker);
   const divisor = Math.pow(10, chain.decimalPlaces);
-  const isPositive = (row.totalAmount ?? 0) > 0;
+  const displayedAmount = row.totalAmount ?? row.totalAmountEstimate;
+  const amountUnknown = displayedAmount == null;
+  const amountEstimated =
+    row.totalAmount == null && row.totalAmountEstimate != null;
+  const isPositive = (displayedAmount ?? 0) > 0;
+  const amountColor = amountUnknown
+    ? c.textSecondary
+    : amountEstimated
+      ? c.warning
+      : isPositive
+        ? c.success
+        : c.error;
 
   const txAmount = () =>
-    (Number(row.totalAmount ?? 0) / divisor).toFixed(chain.decimalPlaces);
+    (Number(displayedAmount) / divisor).toFixed(chain.decimalPlaces);
 
   const txFee = () =>
-    (Number(row.feeAmount ?? 0) / divisor).toFixed(chain.decimalPlaces);
+    (Number(row.feeAmount ?? row.feeAmountEstimate) / divisor).toFixed(
+      chain.decimalPlaces
+    );
 
   const fmtAddr = (addr?: string) => {
     if (!addr) return '—';
@@ -76,6 +92,14 @@ export function TransactionRow({
     typeof v === 'string' && v ? v : undefined;
 
   const counterparty = (): string | undefined => {
+    if (amountUnknown) {
+      return (
+        str(row.recipient) ??
+        str(row.sender) ??
+        str(row.outputs?.find((o) => !o.addressInWallet)?.address) ??
+        str(row.inputs?.find((i) => !i.addressInWallet)?.address)
+      );
+    }
     if (isPositive) {
       if (str(row.sender)) return str(row.sender);
       return str(row.inputs?.find((i) => !i.addressInWallet)?.address);
@@ -150,7 +174,7 @@ export function TransactionRow({
             height: 8,
             borderRadius: '50%',
             flexShrink: 0,
-            bgcolor: isPositive ? c.success : c.error,
+            bgcolor: amountColor,
           }}
         />
 
@@ -158,13 +182,14 @@ export function TransactionRow({
           sx={{
             fontWeight: tokens.typography.weightBold,
             fontSize: '0.9rem',
-            color: isPositive ? c.success : c.error,
+            color: amountColor,
             minWidth: { xs: 90, sm: 140 },
             flexShrink: 0,
           }}
         >
-          {isPositive ? '+' : ''}
-          {txAmount()} {chain.ticker}
+          {amountUnknown
+            ? 'Amount unavailable'
+            : `${amountEstimated ? 'Estimated ' : ''}${isPositive ? '+' : ''}${txAmount()} ${chain.ticker}`}
         </Box>
 
         <Box
@@ -179,9 +204,11 @@ export function TransactionRow({
           }}
         >
           {cp
-            ? isPositive
-              ? `from ${fmtAddr(cp)}`
-              : `to ${fmtAddr(cp)}`
+            ? amountUnknown
+              ? fmtAddr(cp)
+              : isPositive
+                ? `from ${fmtAddr(cp)}`
+                : `to ${fmtAddr(cp)}`
             : '—'}
         </Box>
 
@@ -217,6 +244,12 @@ export function TransactionRow({
             gap: 1.25,
           }}
         >
+          {row.metadataComplete === false && (
+            <Box sx={{ color: c.textSecondary, fontSize: '0.75rem' }}>
+              Some transaction details are unavailable. Recovered recipients may
+              be incomplete.
+            </Box>
+          )}
           {/* Standard detail rows */}
           {[
             {
@@ -225,9 +258,17 @@ export function TransactionRow({
               mono: true,
               copyIdx: index,
             },
-            { label: isPositive ? 'From' : 'To', value: cp, mono: true },
             {
-              label: isPositive ? 'To' : 'From',
+              label: amountUnknown
+                ? 'Counterparty'
+                : isPositive
+                  ? 'From'
+                  : 'To',
+              value: cp,
+              mono: true,
+            },
+            {
+              label: amountUnknown ? 'Wallet' : isPositive ? 'To' : 'From',
               value: isPositive
                 ? userAddress
                 : (str(row.sender) ?? userAddress),
@@ -236,9 +277,11 @@ export function TransactionRow({
             {
               label: 'Fee',
               value:
-                row.feeAmount != null
-                  ? `${txFee()} ${chain.ticker}`
-                  : undefined,
+                row.feeAmount != null || row.feeAmountEstimate != null
+                  ? `${row.feeAmount == null ? 'Estimated ' : ''}${txFee()} ${chain.ticker}`
+                  : row.metadataComplete !== undefined
+                    ? 'Unavailable'
+                    : undefined,
             },
             {
               label: 'Date',
