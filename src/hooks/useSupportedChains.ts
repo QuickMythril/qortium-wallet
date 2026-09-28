@@ -10,6 +10,7 @@ import {
   HOME_WALLET_CONTRACT,
   legacyHome1WalletCapability,
 } from '../common/homeWalletCapabilities';
+import { isSelectedAccountChangedMessage } from '../common/accountChangedMessage';
 
 const SESSION_KEY = 'qortium_supported_chains_v2';
 const SESSION_STATUS_KEY = 'qortium_chain_status_v2';
@@ -173,10 +174,24 @@ export function useSupportedChains(): {
       setWalletAuthorityReady(false);
       discover();
     };
+    // Home's per-coin answer depends on the selected account's lock state
+    // (a locked account gets ARRR custody `available:false` and `send:false`
+    // elsewhere) and is recomputed on every call, but the unlock itself is
+    // not part of the bridge route revision, so qortiumBridgeStateChanged
+    // never fires for it. Home does post SELECTED_ACCOUNT_CHANGED on
+    // lock/unlock/switch (and once on page load), so rediscover on it.
+    // This is a soft refresh: the current capabilities stay in place until
+    // the fresh answer lands (no `pending` flash on the page-load copy), and
+    // the revision bump in discover() discards any in-flight stale answer.
+    const onAccountChanged = (event: MessageEvent<unknown>) => {
+      if (isSelectedAccountChangedMessage(event)) discover();
+    };
     window.addEventListener('qortiumBridgeStateChanged', refresh);
+    window.addEventListener('message', onAccountChanged);
     return () => {
       cancelled = true;
       window.removeEventListener('qortiumBridgeStateChanged', refresh);
+      window.removeEventListener('message', onAccountChanged);
     };
   }, []);
 

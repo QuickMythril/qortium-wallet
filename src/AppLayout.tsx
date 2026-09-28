@@ -19,6 +19,7 @@ import {
 } from './common/accountUnlockState';
 import { clearBalanceCache } from './common/balanceCache';
 import { clearPendingSends } from './common/pendingSends';
+import { isSelectedAccountChangedMessage } from './common/accountChangedMessage';
 
 export default function AppLayout() {
   useIframe();
@@ -34,19 +35,7 @@ export default function AppLayout() {
   // locks/unlocks one; re-authenticate so balances and names follow suit.
   useEffect(() => {
     function onMessage(e: MessageEvent<unknown>) {
-      if (
-        (e.source === window.parent || e.source === window) &&
-        typeof e.data === 'object' &&
-        e.data !== null &&
-        // Home's electron/qdn-views.ts fires this on both account switch
-        // and lock-state change, as action:'SELECTED_ACCOUNT_CHANGED';
-        // also accept type:'qortium:selected-account-changed' defensively
-        // in case a host sends only that field.
-        ((e.data as { action?: unknown }).action ===
-          'SELECTED_ACCOUNT_CHANGED' ||
-          (e.data as { type?: unknown }).type ===
-            'qortium:selected-account-changed')
-      ) {
+      if (isSelectedAccountChangedMessage(e)) {
         // The newly-selected account's lock state is unknown until the next
         // GET_SELECTED_ACCOUNT / unlock check re-verifies it.
         invalidateCachedAccountUnlocked();

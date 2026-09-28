@@ -17,6 +17,7 @@ import {
   registerPaymentNotifications,
 } from '../notifications/paymentNotificationRegistration';
 import { foreignWalletAvailability } from '../common/homeWalletCapabilities';
+import { isSelectedAccountChangedMessage } from '../common/accountChangedMessage';
 
 // Registers background payment notifications (own QORT address + foreign coin
 // xpubs) with Home's notification bridge. ARRR is excluded here - the Core watcher
@@ -90,13 +91,7 @@ export function usePaymentNotifications() {
 
   useEffect(() => {
     const handleAccountChange = (event: MessageEvent<unknown>) => {
-      if (
-        (event.source === window.parent || event.source === window) &&
-        typeof event.data === 'object' &&
-        event.data !== null &&
-        (event.data as { action?: unknown }).action ===
-          'SELECTED_ACCOUNT_CHANGED'
-      ) {
+      if (isSelectedAccountChangedMessage(event)) {
         disabledCleanupAttempted.current = false;
         setAccountRevision((value) => value + 1);
       }

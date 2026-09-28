@@ -244,6 +244,81 @@ describe('CoinDetail ARRR structured state rendering', () => {
     sessionStorage.clear();
   });
 
+  it('flips the locked-account panel to custody on SELECTED_ACCOUNT_CHANGED without a reload', async () => {
+    sessionStorage.clear();
+    let unlocked = false;
+    const lockedReason = 'Unlock the selected account to use the ARRR wallet.';
+    const original = qdnRequestMock.getMockImplementation()!;
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      if (opts.action === 'GET_CROSSCHAIN_BLOCKCHAINS')
+        return [
+          {
+            currencyCode: 'ARRR',
+            walletEnabled: true,
+            decimalPlaces: 8,
+            homeWallet: unlocked
+              ? arrrChain.homeWallet
+              : {
+                  ...arrrChain.homeWallet,
+                  read: false,
+                  receive: false,
+                  readMode: 'NONE',
+                  receiveMode: 'NONE',
+                  unavailableReason: lockedReason,
+                },
+          },
+        ];
+      return original(opts);
+    });
+    function DiscoveredDetail() {
+      const { chains } = useSupportedChains();
+      const chain = chains.find((c) => c.route === 'pirate-chain');
+      return chain ? <CoinDetail chain={chain} /> : null;
+    }
+    render(
+      <MemoryRouter initialEntries={['/pirate-chain']}>
+        <ThemeProviderWrapper>
+          <DiscoveredDetail />
+        </ThemeProviderWrapper>
+      </MemoryRouter>
+    );
+    expect(await screen.findByText(lockedReason)).toBeInTheDocument();
+    const callsWhileLocked = qdnRequestMock.mock.calls.map(
+      ([opts]) => opts.action
+    );
+    expect(callsWhileLocked).not.toContain('GET_ARRR_SYNC_STATUS');
+    expect(callsWhileLocked).not.toContain('GET_USER_WALLET');
+
+    // Home posts this once the unlock prompt succeeds; the app's own
+    // UNLOCK_SELECTED_ACCOUNT call has not even returned yet.
+    unlocked = true;
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            action: 'SELECTED_ACCOUNT_CHANGED',
+            requestedHandler: 'ACCOUNT',
+            type: 'qortium:selected-account-changed',
+          },
+          source: window,
+        })
+      );
+    });
+    expect(await screen.findByTestId('arrr-state-ready')).toBeInTheDocument();
+    expect(screen.queryByText(lockedReason)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('zs1qtestarrraddress0000000000000000')
+    ).toBeInTheDocument();
+    // The sync-status and address reads follow the rediscovered chain on
+    // their own; no reload and no extra listener in those hooks needed.
+    expect(
+      qdnRequestMock.mock.calls.filter(
+        ([opts]) => opts.action === 'GET_ARRR_SYNC_STATUS'
+      ).length
+    ).toBeGreaterThan(0);
+    sessionStorage.clear();
+  });
+
   it('offers controls only with the new contract and both Home actions', async () => {
     syncStatusResponse = baseSnapshot({ state: 'SYNCHRONIZING', ready: false });
     const original = qdnRequestMock.getMockImplementation()!;
