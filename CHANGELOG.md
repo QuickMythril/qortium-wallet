@@ -2,7 +2,9 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.23] - 2026-09-28 (QuickMythril fork test build)
+
+### Release Wallet 1.7.23
 
 ### Keep an ARRR account switch from reading as a failure
 
