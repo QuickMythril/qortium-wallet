@@ -28,6 +28,8 @@
     "wallet_busy": "ה-Core שלך עסוק בארנק ARRR אחר",
     "sync_contract_unsupported": "עדכן את Qortium Core כדי לראות יתרות ARRR",
     "state_loading": "מתחבר ל-Pirate Chain…",
+    "state_switching": "עובר לחשבון זה…",
+    "state_switching_stalled": "ארנק ה-ARRR של חשבון זה עדיין מופעל ב-Core שלך. נסו שוב כדי לבדוק.",
     "state_disabled": "התמיכה ב-ARRR מושבתת",
     "state_disabled_detail_fallback": "בקש ממפעיל הצומת שלך להפעיל משמורת ARRR.",
     "state_synchronizing": "מסנכרן את Pirate Chain…",
@@ -40,7 +42,8 @@
     "total_balance": "סה״כ כולל לא מאושר/לא מאומת",
     "stale_label": "עודכן לאחרונה {{ time }}",
     "provisional_label": "זמני",
-    "transactions_pending": "עסקאות יהיו זמינות לאחר הסנכרון"
+    "transactions_pending": "עסקאות יהיו זמינות לאחר הסנכרון",
+    "session_switch_busy": "Core עדיין עוצר את הסריקה של החשבון האחר — רעננו את המצב בעוד רגע."
   },
   "asset": {
     "chain_qortium": "Qortium",

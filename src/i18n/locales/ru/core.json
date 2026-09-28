@@ -28,6 +28,8 @@
     "wallet_busy": "Ваш Core занят другим кошельком ARRR",
     "sync_contract_unsupported": "Обновите Qortium Core, чтобы увидеть баланс ARRR",
     "state_loading": "Подключение к Pirate Chain…",
+    "state_switching": "Переключение на этот аккаунт…",
+    "state_switching_stalled": "Кошелёк ARRR этого аккаунта всё ещё запускается в вашем Core. Повторите попытку, чтобы проверить.",
     "state_disabled": "Поддержка ARRR отключена",
     "state_disabled_detail_fallback": "Попросите оператора узла включить хранение ARRR.",
     "state_synchronizing": "Синхронизация Pirate Chain…",
@@ -40,7 +42,8 @@
     "total_balance": "итого, включая неподтверждённое/непроверенное",
     "stale_label": "последнее обновление {{ time }}",
     "provisional_label": "предварительно",
-    "transactions_pending": "Транзакции будут доступны после синхронизации"
+    "transactions_pending": "Транзакции будут доступны после синхронизации",
+    "session_switch_busy": "Core всё ещё останавливает сканирование другого аккаунта — обновите статус через мгновение."
   },
   "asset": {
     "chain_qortium": "Qortium",

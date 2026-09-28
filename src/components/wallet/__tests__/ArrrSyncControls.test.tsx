@@ -26,6 +26,8 @@ function status(state = 'SYNCHRONIZING'): UseArrrSyncStatusResult {
     loading: false,
     error: null,
     consentDenied: false,
+    switching: false,
+    switchingStalled: false,
     refresh: vi.fn(),
     progress: { percent: 10, remainingSeconds: 500, stalled: false },
   };

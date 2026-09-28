@@ -10,7 +10,14 @@ export function ArrrSyncProgress({
   compact?: boolean;
 }) {
   const { t, i18n } = useTranslation();
-  const { snapshot, progress, error, consentDenied } = status;
+  const {
+    snapshot,
+    progress,
+    error,
+    consentDenied,
+    switching,
+    switchingStalled,
+  } = status;
   const number = (value: number) => value.toLocaleString(i18n.resolvedLanguage);
   const { percent, remainingSeconds, stalled } = progress;
   const syncing = snapshot?.state === 'SYNCHRONIZING';
@@ -21,6 +28,8 @@ export function ArrrSyncProgress({
       ? t('arrr.progress_open_wallet')
       : t('arrr.state_loading');
   if (consentDenied) label = t('arrr.custody_consent_denied');
+  else if (switchingStalled) label = t('arrr.state_switching_stalled');
+  else if (switching) label = t('arrr.state_switching');
   else if (error) label = error.message;
   else if (snapshot?.stale) label = t('arrr.progress_outdated');
   else if (snapshot?.restartRequired) label = t('arrr.restart_required');
@@ -53,9 +62,13 @@ export function ArrrSyncProgress({
   }
   const active =
     !error &&
+    !switchingStalled &&
     !snapshot?.stale &&
     !snapshot?.restartRequired &&
-    (syncing || (!snapshot && status.loading) || snapshot?.state === 'LOADING');
+    (switching ||
+      syncing ||
+      (!snapshot && status.loading) ||
+      snapshot?.state === 'LOADING');
   return (
     <Box
       sx={{

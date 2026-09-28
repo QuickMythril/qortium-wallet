@@ -28,6 +28,8 @@
     "wallet_busy": "A Core-od egy másik ARRR tárcával van elfoglalva",
     "sync_contract_unsupported": "Frissítsd a Qortium Core-ot az ARRR egyenlegek megtekintéséhez",
     "state_loading": "Kapcsolódás a Pirate Chainhez…",
+    "state_switching": "Váltás erre a fiókra…",
+    "state_switching_stalled": "Ennek a fióknak az ARRR-tárcája még indul a Core-on. Próbáld újra az ellenőrzéshez.",
     "state_disabled": "Az ARRR támogatás le van tiltva",
     "state_disabled_detail_fallback": "Kérd meg a csomópont üzemeltetőjét, hogy engedélyezze az ARRR őrzést.",
     "state_synchronizing": "Pirate Chain szinkronizálása…",
@@ -40,7 +42,8 @@
     "total_balance": "összesen (megerősítetlen/nem ellenőrzött is)",
     "stale_label": "utoljára frissítve {{ time }}",
     "provisional_label": "ideiglenes",
-    "transactions_pending": "A tranzakciók szinkronizálás után lesznek elérhetők"
+    "transactions_pending": "A tranzakciók szinkronizálás után lesznek elérhetők",
+    "session_switch_busy": "A Core még leállítja a másik fiók beolvasását — frissítsd az állapotot egy pillanat múlva."
   },
   "asset": {
     "chain_qortium": "Qortium",

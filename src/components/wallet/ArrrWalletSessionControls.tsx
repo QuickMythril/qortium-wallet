@@ -6,7 +6,10 @@ import {
   notifyArrrWalletSessionChanged,
   type useArrrWalletSession,
 } from '../../hooks/useArrrWalletSession';
-import { describeBridgeError } from '../../common/bridgeErrors';
+import {
+  describeBridgeError,
+  isArrrWalletBusyError,
+} from '../../common/bridgeErrors';
 
 export function ArrrWalletSessionControls({
   session,
@@ -16,6 +19,10 @@ export function ArrrWalletSessionControls({
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Activation answered ARRR_WALLET_BUSY: Core has not finished stopping
+  // the other account's scan yet. A neutral note (not the cross-wallet
+  // busy wording) - the user refreshes status; nothing auto-retries.
+  const [activationBusy, setActivationBusy] = useState(false);
   const inFlight = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
@@ -32,6 +39,7 @@ export function ArrrWalletSessionControls({
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    setActivationBusy(false);
     try {
       if (stop) {
         const result = await qdnRequest({
@@ -63,7 +71,15 @@ export function ArrrWalletSessionControls({
           throw new Error(t('arrr.control_unconfirmed'));
       }
     } catch (cause) {
-      if (mounted.current) setError(describeBridgeError(cause).message);
+      if (mounted.current) {
+        const decoded = describeBridgeError(cause);
+        if (!stop && isArrrWalletBusyError(decoded)) {
+          setActivationBusy(true);
+          setError(t('arrr.session_switch_busy'));
+        } else {
+          setError(decoded.message);
+        }
+      }
     } finally {
       inFlight.current = false;
       notifyArrrWalletSessionChanged();
@@ -115,7 +131,15 @@ export function ArrrWalletSessionControls({
       </Button>
       <Box sx={{ mt: 1, fontSize: '0.75rem' }}>{t('arrr.session_scope')}</Box>
       {(session.error || error) && (
-        <Alert severity="warning" sx={{ mt: 1 }}>
+        <Alert
+          severity={!session.error && activationBusy ? 'info' : 'warning'}
+          data-testid={
+            !session.error && activationBusy
+              ? 'arrr-activation-busy'
+              : undefined
+          }
+          sx={{ mt: 1 }}
+        >
           {session.error || error}
         </Alert>
       )}

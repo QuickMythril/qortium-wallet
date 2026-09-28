@@ -28,6 +28,8 @@
     "wallet_busy": "您的 Core 正忙於處理另一個 ARRR 錢包",
     "sync_contract_unsupported": "請更新 Qortium Core 以查看 ARRR 餘額",
     "state_loading": "正在連線至 Pirate Chain…",
+    "state_switching": "正在切換到此帳戶…",
+    "state_switching_stalled": "此帳戶的 ARRR 錢包仍在您的 Core 上啟動中。請重試以再次檢查。",
     "state_disabled": "ARRR 支援已停用",
     "state_disabled_detail_fallback": "請聯繫節點營運者啟用 ARRR 託管。",
     "state_synchronizing": "正在同步 Pirate Chain…",
@@ -40,7 +42,8 @@
     "total_balance": "總額(含未確認/未驗證)",
     "stale_label": "最後更新時間 {{ time }}",
     "provisional_label": "臨時",
-    "transactions_pending": "同步完成後即可查看交易紀錄"
+    "transactions_pending": "同步完成後即可查看交易紀錄",
+    "session_switch_busy": "Core 仍在停止另一個帳戶的掃描 — 請稍後重新整理狀態。"
   },
   "asset": {
     "chain_qortium": "Qortium",

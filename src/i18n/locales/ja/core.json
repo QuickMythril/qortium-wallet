@@ -28,6 +28,8 @@
     "wallet_busy": "Coreは別のARRRウォレットで使用中です",
     "sync_contract_unsupported": "ARRR残高を表示するにはQortium Coreを更新してください",
     "state_loading": "Pirate Chainに接続中…",
+    "state_switching": "このアカウントに切り替え中…",
+    "state_switching_stalled": "このアカウントの ARRR ウォレットは Core でまだ起動中です。再試行して確認してください。",
     "state_disabled": "ARRRサポートは無効です",
     "state_disabled_detail_fallback": "ノード運営者にARRRカストディの有効化を依頼してください。",
     "state_synchronizing": "Pirate Chainを同期中…",
@@ -40,7 +42,8 @@
     "total_balance": "未確認/未検証を含む合計",
     "stale_label": "最終更新 {{ time }}",
     "provisional_label": "暫定",
-    "transactions_pending": "同期後にトランザクションが利用可能になります"
+    "transactions_pending": "同期後にトランザクションが利用可能になります",
+    "session_switch_busy": "Core はまだ別のアカウントのスキャンを停止中です — しばらくしてから状態を更新してください。"
   },
   "asset": {
     "chain_qortium": "Qortium",

@@ -90,6 +90,9 @@ export function isCoreSpendContextBugError(
 // of qortium-home's HOME_V2_BRIDGE_COMPATIBILITY.md). Every ARRR custody
 // rejection carries one of these as `code`, plus a human `message`.
 export const ARRR_WALLET_BUSY_CODE = 'ARRR_WALLET_BUSY';
+// Home's rejection when Core reports this account is not (or no longer) the
+// node's active ARRR wallet - after a switch it proves a stale session view.
+export const ARRR_WALLET_NOT_ACTIVE_CODE = 'ARRR_WALLET_NOT_ACTIVE';
 export const ARRR_SYNC_CONTRACT_UNSUPPORTED_CODE =
   'ARRR_SYNC_CONTRACT_UNSUPPORTED';
 export const ARRR_VERIFIED_BALANCE_UNAVAILABLE_CODE =

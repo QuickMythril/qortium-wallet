@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   ARRR_BUSY_MAX_ATTEMPTS,
   ARRR_BUSY_RETRY_DELAY_MS,
+  ARRR_OWNER_BUSY_CEILING_MS,
   ARRR_POLL_ACTIVE_MS,
   ARRR_POLL_SETTLED_MS,
   arrrPollDelayMs,
@@ -215,6 +216,66 @@ describe('requestWithArrrBusyRetry', () => {
     const request = vi.fn().mockRejectedValue(otherError);
     await expect(requestWithArrrBusyRetry(request)).rejects.toEqual(otherError);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  // Owner-reported 2026-09-27: right after an account switch Core answers
+  // the NEW owner's own reads with ARRR_WALLET_BUSY until its first
+  // synchronize pass re-binds the status cache. With the session already
+  // proving ownership that is a "starting" condition, not a cross-wallet
+  // conflict - so the attempt cap gives way to a generous time ceiling.
+  describe('ownerConfirmed (owner-side busy is "starting", not a conflict)', () => {
+    const busyError = { code: 'ARRR_WALLET_BUSY', message: 'busy' };
+
+    it('keeps retrying past the 6-attempt cap while the owner-confirmed read stays busy', async () => {
+      const request = vi.fn();
+      for (let i = 0; i < ARRR_BUSY_MAX_ATTEMPTS + 4; i++)
+        request.mockRejectedValueOnce(busyError);
+      request.mockResolvedValueOnce('ok');
+      const onBusyAttempt = vi.fn();
+
+      const promise = requestWithArrrBusyRetry(request, {
+        ownerConfirmed: true,
+        onBusyAttempt,
+      });
+      for (let i = 0; i < ARRR_BUSY_MAX_ATTEMPTS + 4; i++) {
+        await vi.advanceTimersByTimeAsync(ARRR_BUSY_RETRY_DELAY_MS);
+      }
+      await expect(promise).resolves.toBe('ok');
+      expect(request).toHaveBeenCalledTimes(ARRR_BUSY_MAX_ATTEMPTS + 5);
+      expect(onBusyAttempt).toHaveBeenCalledTimes(ARRR_BUSY_MAX_ATTEMPTS + 4);
+    });
+
+    it('rethrows the busy error only once the owner ceiling (about 3 minutes) has passed', async () => {
+      const request = vi.fn().mockRejectedValue(busyError);
+      const promise = requestWithArrrBusyRetry(request, {
+        ownerConfirmed: true,
+      });
+      const assertion = expect(promise).rejects.toEqual(busyError);
+      await vi.advanceTimersByTimeAsync(ARRR_OWNER_BUSY_CEILING_MS / 2);
+      const callsAtHalfway = request.mock.calls.length;
+      expect(callsAtHalfway).toBeGreaterThan(ARRR_BUSY_MAX_ATTEMPTS);
+      await vi.advanceTimersByTimeAsync(
+        ARRR_OWNER_BUSY_CEILING_MS / 2 + ARRR_BUSY_RETRY_DELAY_MS
+      );
+      await assertion;
+      expect(request.mock.calls.length).toBeGreaterThan(callsAtHalfway);
+      // Nothing keeps firing once the ceiling rejected.
+      const callsAfterCeiling = request.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(ARRR_BUSY_RETRY_DELAY_MS * 3);
+      expect(request.mock.calls.length).toBe(callsAfterCeiling);
+    });
+
+    it('still rethrows a non-busy error immediately when owner-confirmed', async () => {
+      const otherError = {
+        code: 'ARRR_WALLET_NOT_ACTIVE',
+        message: 'not active',
+      };
+      const request = vi.fn().mockRejectedValue(otherError);
+      await expect(
+        requestWithArrrBusyRetry(request, { ownerConfirmed: true })
+      ).rejects.toEqual(otherError);
+      expect(request).toHaveBeenCalledTimes(1);
+    });
   });
 
   // Codex round 5 review finding 4: a busy-retry delay is otherwise

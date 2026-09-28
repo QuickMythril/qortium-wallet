@@ -2,12 +2,20 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## Unreleased
+## [Unreleased]
+
+### Keep an ARRR account switch from reading as a failure
+
+- Treat an ARRR_WALLET_BUSY read as a neutral “Switching to this account…” state whenever the session contract already reports this account as the wallet’s owner: Core is still starting the wallet after a switch, so the sync-status, balance, list and progress views keep polling without the six-attempt cap and never show the cross-wallet busy wording. After about three minutes without a non-busy status they show a neutral “still starting” note with Retry.
+- Drop a stale “not the active ARRR wallet” or generic read error the moment a session change is broadcast (or Core reports the account is no longer active), and re-read the session instead of leaving red text until the next poll.
+- When activation itself answers busy because Core has not finished stopping the other account’s scan, show a neutral note to refresh status in a moment instead of the busy warning. No automatic retries or duplicate activations are introduced.
 
 ### Re-check Home wallet capabilities after the account unlocks
 
 - Starting the Wallet inside Qortium Home 2 with the account locked left the ARRR wallet "unavailable" (main page and the ARRR page) and every other coin's Send disabled until a manual refresh. Home answers `GET_CROSSCHAIN_BLOCKCHAINS` from the current lock state but the unlock is not a bridge-route change, so `qortiumBridgeStateChanged` never fired and discovery was never repeated. Chain discovery now also re-runs on Home's `SELECTED_ACCOUNT_CHANGED` message (posted on lock, unlock, account switch, and page load) as a soft refresh: the current capabilities stay on screen until the fresh answer lands, so the page-load copy of the message does not flash a pending state, and a slower in-flight locked answer is discarded. The ARRR sync-status and wallet-session reads already follow the rediscovered chain, so they need no change. Cost: one extra `GET_CROSSCHAIN_BLOCKCHAINS` per hook instance per account/lock event; the message carries no lock state, so it cannot be skipped.
 - The `SELECTED_ACCOUNT_CHANGED` message check that `AppLayout` and `usePaymentNotifications` each had inline now lives in `src/common/accountChangedMessage.ts` and is shared with chain discovery.
+
+## [1.7.22] - 2026-09-22 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.22
 

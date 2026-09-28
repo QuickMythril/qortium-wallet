@@ -47,6 +47,8 @@
     "wallet_busy": "Your Core is busy with another ARRR wallet",
     "sync_contract_unsupported": "Update Qortium Core to see ARRR balances",
     "state_loading": "Connecting to Pirate Chain…",
+    "state_switching": "Switching to this account…",
+    "state_switching_stalled": "This account's ARRR wallet is still starting on your Core. Retry to check again.",
     "state_disabled": "ARRR support is disabled",
     "state_disabled_detail_fallback": "Ask your node operator to enable ARRR custody.",
     "state_synchronizing": "Synchronizing Pirate Chain…",
@@ -88,6 +90,7 @@
     "session_other": "This node is syncing a different ARRR account. This account is not syncing.",
     "session_none": "Choose Start syncing to activate this ARRR account.",
     "session_switch": "Switch to this account",
+    "session_switch_busy": "Core is still stopping the other account's scan — refresh status in a moment.",
     "session_refresh": "Refresh status",
     "session_scope": "One active ARRR account per node. Switching stops the other account’s scan. Closing this tab does not stop syncing.",
     "session_address_unavailable": "No verified address is available yet. Start syncing this account to load it."

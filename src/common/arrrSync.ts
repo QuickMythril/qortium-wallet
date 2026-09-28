@@ -5,7 +5,12 @@
 // and retrying a read that's rejected because another account's ARRR
 // wallet is currently active on the trusted Core.
 
-import { TIME_MINUTES_3, TIME_SECONDS_10, TIME_SECONDS_15 } from './constants';
+import {
+  TIME_MINUTES_3,
+  TIME_SECONDS_5,
+  TIME_SECONDS_10,
+  TIME_SECONDS_15,
+} from './constants';
 import {
   ARRR_READ_CANCELLED_CODE,
   describeBridgeError,
@@ -172,6 +177,18 @@ export function arrrPollDelayMs(state: ArrrSyncState): number {
 
 export const ARRR_BUSY_MAX_ATTEMPTS = 6;
 export const ARRR_BUSY_RETRY_DELAY_MS = TIME_SECONDS_10;
+// When the session contract already proves THIS account owns the node's
+// ARRR wallet (relation === 'SELF'), an ARRR_WALLET_BUSY read is Core still
+// re-binding its status cache to the new owner right after a switch - a
+// "starting" condition, not a cross-wallet conflict - so it keeps retrying
+// without the attempt cap, up to this generous ceiling, after which the UI
+// shows a neutral "still starting" state with a manual retry.
+export const ARRR_OWNER_BUSY_CEILING_MS = TIME_MINUTES_3;
+// How long a sync-status poller waits after an ARRR session-change
+// broadcast before re-reading on its own - one session-poll interval, so
+// the session hook (which re-reads immediately on the same broadcast)
+// normally settles first and restarts polling under the new revision.
+export const ARRR_SESSION_SETTLE_MS = TIME_SECONDS_5;
 
 /** Thrown by requestWithArrrBusyRetry when `shouldAbort` fires - a cancelled ARRR read, never a real Core rejection. */
 export interface ArrrReadCancelledError {
@@ -196,6 +213,14 @@ function arrrReadCancelledError(): ArrrReadCancelledError {
  * "automatic retry after 10s (max 6) then a manual retry"). Any other
  * error, or a non-busy rejection, rethrows immediately without waiting.
  *
+ * `ownerConfirmed` replaces the attempt cap with a time ceiling
+ * (`maxBusyMs`, default ARRR_OWNER_BUSY_CEILING_MS): the session contract
+ * has already proven this account is the wallet's owner, so a busy
+ * rejection can only be Core still starting/re-binding the wallet after a
+ * switch (owner-reported 2026-09-27: the switch succeeded, but the
+ * cross-wallet "busy" flash read like a failure). The busy error is still
+ * rethrown once the ceiling passes so the caller can offer a manual retry.
+ *
  * `shouldAbort`, when given, is checked before the first attempt and again
  * immediately after every busy-retry delay - a delay is otherwise
  * uncancellable (a bare setTimeout keeps counting down and would still
@@ -211,12 +236,17 @@ export async function requestWithArrrBusyRetry<T>(
     delayMs?: number;
     onBusyAttempt?: (attempt: number) => void;
     shouldAbort?: () => boolean;
+    ownerConfirmed?: boolean;
+    maxBusyMs?: number;
   } = {}
 ): Promise<T> {
   const maxAttempts = options.maxAttempts ?? ARRR_BUSY_MAX_ATTEMPTS;
   const delayMs = options.delayMs ?? ARRR_BUSY_RETRY_DELAY_MS;
   const shouldAbort = options.shouldAbort;
+  const ownerConfirmed = options.ownerConfirmed === true;
+  const maxBusyMs = options.maxBusyMs ?? ARRR_OWNER_BUSY_CEILING_MS;
   let attempt = 0;
+  let firstBusyAt: number | null = null;
   for (;;) {
     if (shouldAbort?.()) throw arrrReadCancelledError();
     try {
@@ -224,9 +254,13 @@ export async function requestWithArrrBusyRetry<T>(
     } catch (err) {
       attempt++;
       const decoded = describeBridgeError(err);
-      if (!isArrrWalletBusyError(decoded) || attempt >= maxAttempts) {
-        throw err;
-      }
+      if (!isArrrWalletBusyError(decoded)) throw err;
+      const now = Date.now();
+      firstBusyAt ??= now;
+      const exhausted = ownerConfirmed
+        ? now - firstBusyAt >= maxBusyMs
+        : attempt >= maxAttempts;
+      if (exhausted) throw err;
       options.onBusyAttempt?.(attempt);
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       if (shouldAbort?.()) throw arrrReadCancelledError();

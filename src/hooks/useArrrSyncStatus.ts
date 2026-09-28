@@ -9,6 +9,7 @@ import {
 } from '../common/arrrProgress';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ARRR_SESSION_SETTLE_MS,
   arrrPollDelayMs,
   parseArrrSyncSnapshot,
   requestWithArrrBusyRetry,
@@ -16,8 +17,10 @@ import {
 } from '../common/arrrSync';
 import {
   ARRR_READ_CANCELLED_CODE,
+  ARRR_WALLET_NOT_ACTIVE_CODE,
   describeBridgeError,
   isArrrCustodyConsentDeniedError,
+  isArrrWalletBusyError,
   type DecodedBridgeError,
 } from '../common/bridgeErrors';
 
@@ -28,6 +31,20 @@ export interface UseArrrSyncStatusResult {
   error: DecodedBridgeError | null;
   /** True once a GET_ARRR_SYNC_STATUS read was rejected because the user denied the distinct `account.arrr-custody.read` consent prompt. */
   consentDenied: boolean;
+  /**
+   * True while an owner-confirmed read (session relation SELF) is being
+   * answered with ARRR_WALLET_BUSY - Core is still starting/re-binding this
+   * account's wallet after a switch. A neutral "switching" condition, never
+   * surfaced as `error`.
+   */
+  switching: boolean;
+  /**
+   * True once an owner-confirmed busy loop passed ARRR_OWNER_BUSY_CEILING_MS
+   * without a single non-busy status - the UI shows a neutral "still
+   * starting" note with a manual retry (`refresh`), never the cross-wallet
+   * busy wording.
+   */
+  switchingStalled: boolean;
   /** Manual retry - also used after the busy auto-retry budget (6 x 10s) is exhausted. */
   refresh: () => void;
 }
@@ -40,17 +57,27 @@ export interface UseArrrSyncStatusResult {
  * immediate poll), and reset (fresh snapshot, fresh revision) whenever
  * `enabled` or `resetKey` changes, which cancels anything in flight for the
  * previous account/route/consent state.
+ *
+ * `ownerConfirmed` is true when the session contract reports this account
+ * as the wallet's owner (relation === 'SELF'). It turns ARRR_WALLET_BUSY
+ * from a cross-wallet conflict into a neutral `switching` condition (Core
+ * is still re-binding the wallet to its new owner right after a switch)
+ * and treats ARRR_WALLET_NOT_ACTIVE as proof that the session view is
+ * stale - the session is re-read instead of the error being shown.
  */
 export function useArrrSyncStatus(
   enabled: boolean,
   resetKey: unknown,
-  observeOnly = false
+  observeOnly = false,
+  ownerConfirmed = false
 ): UseArrrSyncStatusResult {
   const [snapshot, setSnapshot] = useState<ArrrSyncSnapshot | null>(null);
   const [snapshotKey, setSnapshotKey] = useState<unknown>(resetKey);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<DecodedBridgeError | null>(null);
   const [consentDenied, setConsentDenied] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [switchingStalled, setSwitchingStalled] = useState(false);
 
   const historyRef = useRef<ArrrProgressHistory | null>(null);
   const receivedAtRef = useRef(0);
@@ -58,6 +85,8 @@ export function useArrrSyncStatus(
   keyRef.current = resetKey;
   const observeOnlyRef = useRef(observeOnly);
   observeOnlyRef.current = observeOnly;
+  const ownerConfirmedRef = useRef(ownerConfirmed);
+  ownerConfirmedRef.current = ownerConfirmed;
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!enabled || snapshot?.state !== 'SYNCHRONIZING') return;
@@ -114,10 +143,21 @@ export function useArrrSyncStatus(
         !enabledRef.current ||
         !isMountedRef.current ||
         (typeof document !== 'undefined' && document.hidden);
+      const owner = ownerConfirmedRef.current;
       try {
         const raw = await requestWithArrrBusyRetry(
           () => qdnRequest({ action: 'GET_ARRR_SYNC_STATUS', coin: 'ARRR' }),
-          { shouldAbort }
+          {
+            shouldAbort,
+            ownerConfirmed: owner,
+            // Owner-confirmed busy: keep the panel neutral ("switching")
+            // for as long as Core keeps answering busy - never an error.
+            onBusyAttempt: owner
+              ? () => {
+                  if (!shouldAbort()) setSwitching(true);
+                }
+              : undefined,
+          }
         );
         if (shouldAbort()) return;
         const parsed = parseArrrSyncSnapshot(raw);
@@ -140,6 +180,8 @@ export function useArrrSyncStatus(
         setSnapshot(parsed);
         setError(null);
         setConsentDenied(false);
+        setSwitching(false);
+        setSwitchingStalled(false);
         setLoading(false);
         scheduleNext(revision, arrrPollDelayMs(parsed.state));
       } catch (err) {
@@ -150,6 +192,29 @@ export function useArrrSyncStatus(
           // revision/isMounted cases already returned above) - not a real
           // error, and not surfaced; the visibilitychange listener below
           // resumes with a fresh poll once visible again.
+          return;
+        }
+        if (owner && isArrrWalletBusyError(decoded)) {
+          // The owner-confirmed busy loop ran past its ceiling without a
+          // single non-busy status. Still not a cross-wallet conflict
+          // (relation === SELF proves no other wallet is involved) - show
+          // the neutral "still starting" state and wait for a manual retry.
+          setSwitching(false);
+          setSwitchingStalled(true);
+          setLoading(false);
+          return;
+        }
+        if (owner && decoded.code === ARRR_WALLET_NOT_ACTIVE_CODE) {
+          // Core says this account no longer owns the wallet while the
+          // session hook still reports SELF - the session view is stale
+          // (another instance switched accounts and its broadcast hasn't
+          // landed here yet). Never show the stale-owner error: re-read the
+          // session (the same-window event every session hook listens to)
+          // and stay neutral until it settles.
+          setSwitching(false);
+          setSwitchingStalled(false);
+          setLoading(true);
+          window.dispatchEvent(new Event('arrrWalletSessionChanged'));
           return;
         }
         setLoading(false);
@@ -171,6 +236,8 @@ export function useArrrSyncStatus(
     setLoading(true);
     setError(null);
     setConsentDenied(false);
+    setSwitching(false);
+    setSwitchingStalled(false);
     void pollRef.current(revision);
   }, [clearTimer]);
 
@@ -184,6 +251,8 @@ export function useArrrSyncStatus(
     setSnapshot(null);
     setError(null);
     setConsentDenied(false);
+    setSwitching(false);
+    setSwitchingStalled(false);
 
     if (!enabled) {
       setLoading(false);
@@ -225,6 +294,8 @@ export function useArrrSyncStatus(
       setSnapshot(null);
       setError(null);
       setConsentDenied(false);
+      setSwitching(false);
+      setSwitchingStalled(false);
       setLoading(enabledRef.current);
       if (enabledRef.current && !observeOnlyRef.current)
         void pollRef.current(revision);
@@ -235,6 +306,44 @@ export function useArrrSyncStatus(
         'qortiumBridgeStateChanged',
         handleBridgeChange
       );
+  }, [clearTimer]);
+
+  useEffect(() => {
+    // An ARRR account switch (ACTIVATE/STOP from this or another visible
+    // Wallet instance) invalidates whatever this instance last learned:
+    // a stale ARRR_WALLET_NOT_ACTIVE / generic read error from before the
+    // switch must not keep showing as red text until the next poll. Drop
+    // it immediately and go neutral; the session hook re-reads on the same
+    // broadcast and flips `enabled`/`resetKey` (which restarts polling), and
+    // the short re-poll below covers the case where this instance's session
+    // is unchanged. Consent state is untouched - a declined prompt is never
+    // reopened by a broadcast.
+    const handleSessionChange = () => {
+      const revision = ++revisionRef.current;
+      clearTimer();
+      setError(null);
+      setSwitching(false);
+      setSwitchingStalled(false);
+      setLoading(enabledRef.current);
+      if (enabledRef.current) {
+        timeoutRef.current = setTimeout(() => {
+          void pollRef.current(revision);
+        }, ARRR_SESSION_SETTLE_MS);
+      }
+    };
+    const channel =
+      typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel('arrr-wallet-session')
+        : null;
+    if (channel) channel.onmessage = handleSessionChange;
+    window.addEventListener('arrrWalletSessionChanged', handleSessionChange);
+    return () => {
+      channel?.close();
+      window.removeEventListener(
+        'arrrWalletSessionChanged',
+        handleSessionChange
+      );
+    };
   }, [clearTimer]);
 
   const currentSnapshot = enabled && snapshotKey === resetKey ? snapshot : null;
@@ -250,6 +359,8 @@ export function useArrrSyncStatus(
     loading,
     error: snapshotKey === resetKey ? error : null,
     consentDenied: snapshotKey === resetKey && consentDenied,
+    switching: enabled && switching,
+    switchingStalled: enabled && switchingStalled,
     refresh,
   };
 }
