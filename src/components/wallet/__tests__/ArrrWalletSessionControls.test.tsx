@@ -42,6 +42,41 @@ describe('explicit ARRR account activation', () => {
       expectedRevision: value.revision,
     });
   });
+  it('shows a neutral note (not the cross-wallet busy warning) when activation answers ARRR_WALLET_BUSY, without auto-retrying', async () => {
+    const request = vi.fn(async () => {
+      throw {
+        code: 'ARRR_WALLET_BUSY',
+        message:
+          'Your Core is busy with another ARRR wallet; try again shortly.',
+        retryable: true,
+      };
+    });
+    (globalThis as any).qdnRequest = request;
+    const refresh = vi.fn();
+    render(
+      <ArrrWalletSessionControls
+        session={{ value, active: false, error: null, refresh }}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Switch to this account' })
+    );
+    const note = await screen.findByTestId('arrr-activation-busy');
+    expect(note).toHaveTextContent(
+      "Core is still stopping the other account's scan — refresh status in a moment."
+    );
+    expect(note.className).toMatch(/MuiAlert-(standard|outlined|filled)Info/);
+    expect(
+      screen.queryByText(/busy with another ARRR wallet/)
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Switch to this account' })
+      ).toBeEnabled()
+    );
+    expect(request).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
   it('retains an actionable refresh and recovery explanation for degraded Core', () => {
     const refresh = vi.fn();
     render(

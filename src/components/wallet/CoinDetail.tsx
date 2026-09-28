@@ -416,11 +416,20 @@ export function CoinDetail({ chain }: Props) {
     hasWalletSession && arrrCapabilityGranted,
     homeAccount
   );
+  // The session contract proving THIS account owns the node's ARRR wallet.
+  // While true, a busy read is Core still starting the wallet after a
+  // switch (neutral "switching"), never a cross-wallet conflict.
+  const arrrOwnerConfirmed =
+    hasWalletSession && arrrSession.value?.relation === 'SELF';
+  const arrrOwnerConfirmedRef = useRef(arrrOwnerConfirmed);
+  arrrOwnerConfirmedRef.current = arrrOwnerConfirmed;
   const arrrStatus = useArrrSyncStatus(
     arrrCapabilityGranted && (!hasWalletSession || arrrSession.active),
     hasWalletSession
       ? `${homeAccount}:${arrrSession.value?.revision ?? ''}`
-      : homeAccount
+      : homeAccount,
+    false,
+    arrrOwnerConfirmed
   );
   useEffect(() => {
     if (hasWalletSession)
@@ -431,6 +440,8 @@ export function CoinDetail({ chain }: Props) {
     loading: arrrStatusLoading,
     error: arrrStatusError,
     consentDenied: arrrConsentDenied,
+    switching: arrrSwitching,
+    switchingStalled: arrrSwitchingStalled,
     refresh: refreshArrrStatus,
   } = arrrStatus;
   const arrrReady = arrrSnapshot?.ready === true;
@@ -483,7 +494,7 @@ export function CoinDetail({ chain }: Props) {
     try {
       const verifiedRaw = await requestWithArrrBusyRetry(
         () => qdnRequest({ action: 'GET_WALLET_BALANCE', coin: 'ARRR' }),
-        { shouldAbort }
+        { shouldAbort, ownerConfirmed: arrrOwnerConfirmedRef.current }
       );
       if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
         return;
@@ -1446,6 +1457,40 @@ export function CoinDetail({ chain }: Props) {
     mt: 1.5,
   };
 
+  // Neutral owner-side panels: the session already proves this account
+  // owns the wallet, so a busy read is Core starting/switching, and the
+  // cross-wallet `arrr-busy` wording must never appear here.
+  const arrrSwitchingPanel = (
+    <Box
+      data-testid="arrr-state-switching"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+      }}
+    >
+      <CircularProgress size={36} sx={{ color: c.accent }} />
+      <Box sx={{ mt: 1.5, color: c.textSecondary }}>
+        {t('arrr.state_switching')}
+      </Box>
+    </Box>
+  );
+  const arrrSwitchingStalledPanel = (onRetry: () => void) => (
+    <Box data-testid="arrr-switching-stalled" sx={{ textAlign: 'center' }}>
+      <Box sx={{ color: c.textSecondary }}>
+        {t('arrr.state_switching_stalled')}
+      </Box>
+      <Button
+        variant="contained"
+        disableElevation
+        onClick={onRetry}
+        sx={arrrRetryButtonSx}
+      >
+        {t('action.retry')}
+      </Button>
+    </Box>
+  );
+
   let arrrPanel: ReactNode = null;
   if (isARRR) {
     if (hasWalletSession && !arrrSession.active) {
@@ -1475,8 +1520,12 @@ export function CoinDetail({ chain }: Props) {
           </Button>
         </Box>
       );
+    } else if (arrrSwitchingStalled) {
+      arrrPanel = arrrSwitchingStalledPanel(refreshArrrStatus);
     } else if (arrrStatusIsBusy) {
-      arrrPanel = (
+      arrrPanel = arrrOwnerConfirmed ? (
+        arrrSwitchingPanel
+      ) : (
         <Box data-testid="arrr-busy" sx={{ textAlign: 'center' }}>
           <Box sx={{ fontWeight: tokens.typography.weightBold }}>
             {t('arrr.wallet_busy')}
@@ -1525,6 +1574,8 @@ export function CoinDetail({ chain }: Props) {
           </Button>
         </Box>
       );
+    } else if (!arrrSnapshot && arrrSwitching) {
+      arrrPanel = arrrSwitchingPanel;
     } else if (!arrrSnapshot && arrrStatusLoading) {
       arrrPanel = (
         <Box
@@ -1638,6 +1689,8 @@ export function CoinDetail({ chain }: Props) {
           arrrVerifiedDisplay == null &&
           arrrTotalDisplay == null ? (
             <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
+          ) : arrrBalanceIsBusy && arrrOwnerConfirmed ? (
+            arrrSwitchingStalledPanel(fetchArrrBalances)
           ) : arrrBalanceIsBusy ? (
             <Box data-testid="arrr-busy" sx={{ textAlign: 'center' }}>
               <Box sx={{ fontWeight: tokens.typography.weightBold }}>

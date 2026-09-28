@@ -456,6 +456,8 @@ export function CoinBlock({
           {arrrStatus &&
           (!arrrStatus.snapshot?.ready ||
             arrrStatus.error ||
+            arrrStatus.switching ||
+            arrrStatus.switchingStalled ||
             (balance == null && provisionalTotal == null && !balanceError)) ? (
             <ArrrSyncProgress status={arrrStatus} compact />
           ) : loading ? (
@@ -771,7 +773,8 @@ export function CoinGrid() {
   const rawArrrStatus = useArrrSyncStatus(
     arrrEnabled,
     hasWalletSession ? `${account}:${session.value?.revision ?? ''}` : account,
-    true
+    true,
+    hasWalletSession && session.value?.relation === 'SELF'
   );
   const sessionLabel =
     session.error ??

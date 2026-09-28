@@ -28,6 +28,8 @@
     "wallet_busy": "Coresi on varattu toisella ARRR-lompakolla",
     "sync_contract_unsupported": "Päivitä Qortium Core nähdäksesi ARRR-saldot",
     "state_loading": "Yhdistetään Pirate Chainiin…",
+    "state_switching": "Vaihdetaan tähän tiliin…",
+    "state_switching_stalled": "Tämän tilin ARRR-lompakko käynnistyy yhä Coressasi. Yritä uudelleen tarkistaaksesi.",
     "state_disabled": "ARRR-tuki on poistettu käytöstä",
     "state_disabled_detail_fallback": "Pyydä solmun ylläpitäjää ottamaan ARRR-säilytys käyttöön.",
     "state_synchronizing": "Synkronoidaan Pirate Chainia…",
@@ -40,7 +42,8 @@
     "total_balance": "yhteensä (sis. vahvistamattoman/varmistamattoman)",
     "stale_label": "päivitetty viimeksi {{ time }}",
     "provisional_label": "alustava",
-    "transactions_pending": "Tapahtumat saatavilla synkronoinnin jälkeen"
+    "transactions_pending": "Tapahtumat saatavilla synkronoinnin jälkeen",
+    "session_switch_busy": "Core pysäyttää vielä toisen tilin skannausta — päivitä tila hetken kuluttua."
   },
   "asset": {
     "chain_qortium": "Qortium",

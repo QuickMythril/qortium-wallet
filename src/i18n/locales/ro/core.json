@@ -28,6 +28,8 @@
     "wallet_busy": "Core-ul tău este ocupat cu un alt portofel ARRR",
     "sync_contract_unsupported": "Actualizează Qortium Core pentru a vedea soldurile ARRR",
     "state_loading": "Se conectează la Pirate Chain…",
+    "state_switching": "Se trece la acest cont…",
+    "state_switching_stalled": "Portofelul ARRR al acestui cont încă pornește pe Core-ul tău. Reîncearcă pentru a verifica.",
     "state_disabled": "Suportul ARRR este dezactivat",
     "state_disabled_detail_fallback": "Cere operatorului nodului tău să activeze custodia ARRR.",
     "state_synchronizing": "Se sincronizează Pirate Chain…",
@@ -40,7 +42,8 @@
     "total_balance": "total incl. neconfirmat/neverificat",
     "stale_label": "ultima actualizare {{ time }}",
     "provisional_label": "provizoriu",
-    "transactions_pending": "Tranzacțiile vor fi disponibile după sincronizare"
+    "transactions_pending": "Tranzacțiile vor fi disponibile după sincronizare",
+    "session_switch_busy": "Core încă oprește scanarea celuilalt cont — reîmprospătează starea în câteva momente."
   },
   "asset": {
     "chain_qortium": "Qortium",

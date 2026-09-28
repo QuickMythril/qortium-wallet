@@ -12,7 +12,12 @@ import {
   ARRR_CUSTODY_CONTRACT,
   HOME_WALLET_CONTRACT,
 } from '../../../common/homeWalletCapabilities';
-import { ARRR_BUSY_RETRY_DELAY_MS } from '../../../common/arrrSync';
+import {
+  ARRR_BUSY_MAX_ATTEMPTS,
+  ARRR_BUSY_RETRY_DELAY_MS,
+  ARRR_OWNER_BUSY_CEILING_MS,
+} from '../../../common/arrrSync';
+import { notifyArrrWalletSessionChanged } from '../../../hooks/useArrrWalletSession';
 import {
   __resetBalanceCacheForTests,
   getCachedBalance,
@@ -633,5 +638,204 @@ describe('CoinDetail ARRR busy retry', () => {
       screen.getByText('Your Core is busy with another ARRR wallet')
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+});
+
+// Owner-reported 2026-09-27: switching from ARRR account A to B showed
+// "Your Core is busy with another ARRR wallet" (perceived as a failure)
+// before B started syncing. With the session contract reporting SELF the
+// page must stay neutral: never `arrr-busy`, never red error text.
+describe('CoinDetail ARRR account switch (session relation SELF)', () => {
+  let qdnRequestMock: ReturnType<
+    typeof vi.fn<(opts: Record<string, unknown>) => Promise<unknown>>
+  >;
+  let session: Record<string, unknown>;
+  let syncStatus: () => unknown;
+  const sessionChain: ChainConfig = {
+    ...arrrChain,
+    homeWallet: {
+      ...arrrChain.homeWallet!,
+      walletSessionContract: 'qortium-arrr-wallet-session-v1',
+    },
+  };
+  const selfSession = (revision: string) => ({
+    contract: 'qortium-arrr-wallet-session-v1',
+    revision,
+    enabled: true,
+    relation: 'SELF',
+    lifecycle: 'RUNNING',
+    address: 'zs' + 'b'.repeat(40),
+  });
+  const busyError = {
+    code: 'ARRR_WALLET_BUSY',
+    message: 'Your Core is busy with another ARRR wallet; try again shortly.',
+    retryable: true,
+  };
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+    currentAccount = 'qort-user-address';
+    getDefaultStore().set(walletReadyAtom, true);
+    vi.useFakeTimers();
+    session = selfSession('22222222-2222-2222-2222-222222222222');
+    syncStatus = () => {
+      throw busyError;
+    };
+    qdnRequestMock = vi.fn(async (opts: Record<string, unknown>) => {
+      switch (opts.action) {
+        case 'SHOW_ACTIONS':
+          return [
+            ...arrrActions,
+            'GET_ARRR_WALLET_SESSION',
+            'ACTIVATE_ARRR_WALLET',
+            'STOP_ARRR_SYNC',
+          ];
+        case 'GET_ARRR_WALLET_SESSION':
+          return session;
+        case 'GET_ARRR_SYNC_STATUS':
+          return syncStatus();
+        case 'GET_WALLET_BALANCE':
+          return '140000000';
+        case 'GET_USER_WALLET_TRANSACTIONS':
+          return [];
+        default:
+          return null;
+      }
+    });
+    (globalThis as any).qdnRequest = qdnRequestMock;
+  });
+
+  afterEach(() => {
+    getDefaultStore().set(walletReadyAtom, false);
+    delete (globalThis as any).qdnRequest;
+    vi.useRealTimers();
+  });
+
+  const tick = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  it('shows the neutral switching state instead of arrr-busy while the owner-confirmed read stays busy, then syncs', async () => {
+    renderDetail(sessionChain);
+    await tick(0);
+    // Past the old 6 x 10s cross-wallet budget: still neutral.
+    for (let i = 0; i < ARRR_BUSY_MAX_ATTEMPTS + 2; i++)
+      await tick(ARRR_BUSY_RETRY_DELAY_MS);
+    expect(screen.getByTestId('arrr-state-switching')).toBeInTheDocument();
+    expect(screen.getByText('Switching to this account…')).toBeInTheDocument();
+    expect(screen.queryByTestId('arrr-busy')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('arrr-status-error')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/busy with another ARRR wallet/)
+    ).not.toBeInTheDocument();
+
+    syncStatus = () => baseSnapshot({ state: 'SYNCHRONIZING', ready: false });
+    await tick(ARRR_BUSY_RETRY_DELAY_MS);
+    expect(screen.getByTestId('arrr-state-synchronizing')).toBeInTheDocument();
+    expect(screen.queryByTestId('arrr-busy')).not.toBeInTheDocument();
+  });
+
+  it('offers a neutral "still starting" retry after the ceiling, never the cross-wallet wording', async () => {
+    renderDetail(sessionChain);
+    await tick(0);
+    await tick(ARRR_OWNER_BUSY_CEILING_MS + ARRR_BUSY_RETRY_DELAY_MS);
+    const stalled = screen.getByTestId('arrr-switching-stalled');
+    expect(stalled).toHaveTextContent(
+      "This account's ARRR wallet is still starting on your Core."
+    );
+    expect(screen.queryByTestId('arrr-busy')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/busy with another ARRR wallet/)
+    ).not.toBeInTheDocument();
+
+    syncStatus = () => baseSnapshot({ state: 'READY', ready: true });
+    await act(async () => {
+      screen.getByRole('button', { name: /retry/i }).click();
+    });
+    await tick(0);
+    expect(screen.getByTestId('arrr-state-ready')).toBeInTheDocument();
+  });
+
+  it('drops a stale read error the moment the session-change broadcast arrives, and never shows NOT_ACTIVE red text while SELF', async () => {
+    // A generic read failure first: the red arrr-status-error branch.
+    syncStatus = () => {
+      throw new Error('Core connection dropped');
+    };
+    renderDetail(sessionChain);
+    await tick(0);
+    expect(screen.getByTestId('arrr-status-error')).toHaveTextContent(
+      'Core connection dropped'
+    );
+
+    // Another instance switched accounts: Core now answers NOT_ACTIVE for
+    // this one and the session flips to OTHER on the next read.
+    syncStatus = () => {
+      throw {
+        code: 'ARRR_WALLET_NOT_ACTIVE',
+        message:
+          'This account is not the active ARRR wallet on your Core. Switch accounts explicitly to sync it.',
+      };
+    };
+    session = {
+      ...selfSession('33333333-3333-3333-3333-333333333333'),
+      relation: 'OTHER',
+    };
+    act(() => notifyArrrWalletSessionChanged());
+    // Synchronously gone - no red text survives the switch.
+    expect(screen.queryByTestId('arrr-status-error')).not.toBeInTheDocument();
+    await tick(0);
+    expect(screen.queryByTestId('arrr-status-error')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/not the active ARRR wallet/)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This node is syncing a different ARRR account. This account is not syncing.'
+      )
+    ).toBeInTheDocument();
+    for (let i = 0; i < 4; i++) await tick(5000);
+    expect(
+      screen.queryByText(/not the active ARRR wallet/)
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('arrr-status-error')).not.toBeInTheDocument();
+  });
+
+  it('re-reads the session instead of showing NOT_ACTIVE when Core says so while the session still reports SELF', async () => {
+    let sessionReads = 0;
+    const original = qdnRequestMock.getMockImplementation()!;
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      if (opts.action === 'GET_ARRR_WALLET_SESSION') {
+        sessionReads++;
+        // Stale SELF once, then the truth.
+        return sessionReads >= 2
+          ? {
+              ...selfSession('44444444-4444-4444-4444-444444444444'),
+              relation: 'OTHER',
+            }
+          : session;
+      }
+      return original(opts);
+    });
+    syncStatus = () => {
+      throw {
+        code: 'ARRR_WALLET_NOT_ACTIVE',
+        message: 'This account is not the active ARRR wallet on your Core.',
+      };
+    };
+    renderDetail(sessionChain);
+    await tick(0);
+    expect(screen.queryByTestId('arrr-status-error')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/not the active ARRR wallet/)
+    ).not.toBeInTheDocument();
+    await tick(0);
+    expect(
+      screen.getByText(
+        'This node is syncing a different ARRR account. This account is not syncing.'
+      )
+    ).toBeInTheDocument();
+    expect(sessionReads).toBeGreaterThanOrEqual(2);
   });
 });

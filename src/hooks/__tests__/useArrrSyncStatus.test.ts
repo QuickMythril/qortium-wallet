@@ -2,10 +2,14 @@ import { clearArrrProgressHistory } from '../../common/arrrProgress';
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useArrrSyncStatus } from '../useArrrSyncStatus';
+import { notifyArrrWalletSessionChanged } from '../useArrrWalletSession';
 import {
+  ARRR_BUSY_MAX_ATTEMPTS,
   ARRR_BUSY_RETRY_DELAY_MS,
+  ARRR_OWNER_BUSY_CEILING_MS,
   ARRR_POLL_ACTIVE_MS,
   ARRR_POLL_SETTLED_MS,
+  ARRR_SESSION_SETTLE_MS,
 } from '../../common/arrrSync';
 
 // @testing-library/react's `waitFor` polls with real setTimeout internally,
@@ -301,6 +305,164 @@ describe('useArrrSyncStatus', () => {
     expect(result.current.snapshot).toBeNull();
     await flush();
     expect(result.current.snapshot).not.toBeNull();
+  });
+
+  // Owner-reported 2026-09-27: switching ARRR account A -> B flashed "Your
+  // Core is busy with another ARRR wallet" although the switch succeeded.
+  // With the session contract already reporting relation SELF, a busy
+  // read is Core still starting this account's wallet - a neutral
+  // "switching" condition, never an error and never the cross-wallet cap.
+  describe('owner-confirmed busy (account switch)', () => {
+    const busyError = { code: 'ARRR_WALLET_BUSY', message: 'busy' };
+
+    it('reports switching (no error) past the 6-attempt cap and settles on the first non-busy status', async () => {
+      qdnRequestMock.mockRejectedValue(busyError);
+      const { result } = renderHook(() =>
+        useArrrSyncStatus(true, 'acct-b:rev-2', false, true)
+      );
+      await flush();
+      // The very first busy reply already flags the neutral condition.
+      expect(result.current.switching).toBe(true);
+      expect(result.current.loading).toBe(true);
+      expect(result.current.error).toBeNull();
+
+      for (let i = 0; i < ARRR_BUSY_MAX_ATTEMPTS + 2; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ARRR_BUSY_RETRY_DELAY_MS);
+        });
+      }
+      expect(qdnRequestMock.mock.calls.length).toBeGreaterThan(
+        ARRR_BUSY_MAX_ATTEMPTS
+      );
+      expect(result.current.switching).toBe(true);
+      expect(result.current.switchingStalled).toBe(false);
+      expect(result.current.error).toBeNull();
+      expect(result.current.consentDenied).toBe(false);
+
+      qdnRequestMock.mockResolvedValue(syncingSnapshot);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ARRR_BUSY_RETRY_DELAY_MS);
+      });
+      expect(result.current.snapshot?.state).toBe('SYNCHRONIZING');
+      expect(result.current.switching).toBe(false);
+      expect(result.current.error).toBeNull();
+    });
+
+    it('goes to a neutral stalled state (no error, no auto-poll) after the ceiling, and refresh() re-polls', async () => {
+      qdnRequestMock.mockRejectedValue(busyError);
+      const { result } = renderHook(() =>
+        useArrrSyncStatus(true, 'acct-b:rev-2', false, true)
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(
+          ARRR_OWNER_BUSY_CEILING_MS + ARRR_BUSY_RETRY_DELAY_MS
+        );
+      });
+      expect(result.current.switchingStalled).toBe(true);
+      expect(result.current.switching).toBe(false);
+      expect(result.current.loading).toBe(false);
+      expect(result.current.error).toBeNull();
+
+      const callsAtStall = qdnRequestMock.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ARRR_POLL_SETTLED_MS);
+      });
+      expect(qdnRequestMock.mock.calls.length).toBe(callsAtStall);
+
+      qdnRequestMock.mockResolvedValue(readySnapshot);
+      act(() => {
+        result.current.refresh();
+      });
+      await flush();
+      expect(result.current.switchingStalled).toBe(false);
+      expect(result.current.snapshot?.state).toBe('READY');
+    });
+
+    it('keeps the cross-wallet busy error (attempt cap) when the owner is NOT confirmed', async () => {
+      qdnRequestMock.mockRejectedValue(busyError);
+      const { result } = renderHook(() =>
+        useArrrSyncStatus(true, 'acct-a', false, false)
+      );
+      for (let i = 0; i < ARRR_BUSY_MAX_ATTEMPTS; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ARRR_BUSY_RETRY_DELAY_MS);
+        });
+      }
+      await flush();
+      expect(result.current.error?.code).toBe('ARRR_WALLET_BUSY');
+      expect(result.current.switching).toBe(false);
+      expect(result.current.switchingStalled).toBe(false);
+    });
+
+    it('never surfaces ARRR_WALLET_NOT_ACTIVE while owner-confirmed - it re-reads the session instead', async () => {
+      const notActive = {
+        code: 'ARRR_WALLET_NOT_ACTIVE',
+        message: 'This account is not the active ARRR wallet on your Core.',
+      };
+      qdnRequestMock.mockRejectedValue(notActive);
+      const sessionChanged = vi.fn();
+      window.addEventListener('arrrWalletSessionChanged', sessionChanged);
+      const { result } = renderHook(() =>
+        useArrrSyncStatus(true, 'acct-a:rev-1', false, true)
+      );
+      await flush();
+      expect(result.current.error).toBeNull();
+      expect(result.current.loading).toBe(true);
+      expect(sessionChanged).toHaveBeenCalledTimes(1);
+      window.removeEventListener('arrrWalletSessionChanged', sessionChanged);
+    });
+  });
+
+  // A previous owner's instance (another visible Wallet tab, or the grid)
+  // may have a stale read error from before the switch; the switch
+  // broadcast must clear it immediately rather than leave red text until
+  // that instance's next poll.
+  describe('stale error after an ARRR session change', () => {
+    it('clears a read error on the broadcast in every mounted instance, then re-polls after the settle delay', async () => {
+      qdnRequestMock.mockRejectedValue({
+        code: 'ARRR_WALLET_NOT_ACTIVE',
+        message: 'This account is not the active ARRR wallet on your Core.',
+      });
+      // Instance A = the old owner's page, not owner-confirmed any more
+      // (its session already flipped) but still holding the stale error;
+      // instance B = a second view of the same account (the list row).
+      const a = renderHook(() => useArrrSyncStatus(true, 'acct-a:rev-1'));
+      const b = renderHook(() => useArrrSyncStatus(true, 'acct-a:rev-1', true));
+      await flush();
+      expect(a.result.current.error?.code).toBe('ARRR_WALLET_NOT_ACTIVE');
+      expect(b.result.current.error?.code).toBe('ARRR_WALLET_NOT_ACTIVE');
+      const callsBefore = qdnRequestMock.mock.calls.length;
+
+      act(() => notifyArrrWalletSessionChanged());
+      expect(a.result.current.error).toBeNull();
+      expect(b.result.current.error).toBeNull();
+      expect(a.result.current.loading).toBe(true);
+      expect(b.result.current.loading).toBe(true);
+      // No immediate re-read of the stale key - the session hook settles
+      // first; the fallback re-poll fires after one session interval.
+      await flush();
+      expect(qdnRequestMock.mock.calls.length).toBe(callsBefore);
+      qdnRequestMock.mockResolvedValue(readySnapshot);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ARRR_SESSION_SETTLE_MS);
+      });
+      expect(qdnRequestMock.mock.calls.length).toBe(callsBefore + 2);
+      expect(a.result.current.snapshot?.state).toBe('READY');
+      expect(b.result.current.snapshot?.state).toBe('READY');
+      a.unmount();
+      b.unmount();
+    });
+
+    it('does not reopen a declined custody prompt on the broadcast', async () => {
+      qdnRequestMock.mockRejectedValue({
+        message: 'Account access was denied.',
+      });
+      const { result } = renderHook(() => useArrrSyncStatus(true, 'acct-a'));
+      await flush();
+      expect(result.current.consentDenied).toBe(true);
+      act(() => notifyArrrWalletSessionChanged());
+      expect(result.current.consentDenied).toBe(true);
+    });
   });
 
   // Codex round 5 review finding 4: a busy-retry loop already in flight
