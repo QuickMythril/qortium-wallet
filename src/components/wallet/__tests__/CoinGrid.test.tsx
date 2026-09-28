@@ -89,13 +89,26 @@ const { chainsFixture, accountState, assetsFixture } = vi.hoisted(() => {
   return { chainsFixture, accountState, assetsFixture };
 });
 
-vi.mock('../../../hooks/useSupportedChains', () => ({
-  useSupportedChains: () => ({
-    chains: chainsFixture,
-    status: 'live',
-    walletAuthorityReady: true,
-  }),
+// `real: true` routes the mock through the actual discovery hook for the
+// cases that exercise rediscovery itself (set before render, per test).
+const { supportedChainsMode } = vi.hoisted(() => ({
+  supportedChainsMode: { real: false },
 }));
+
+vi.mock('../../../hooks/useSupportedChains', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../hooks/useSupportedChains')>();
+  return {
+    useSupportedChains: () =>
+      supportedChainsMode.real
+        ? actual.useSupportedChains()
+        : {
+            chains: chainsFixture,
+            status: 'live',
+            walletAuthorityReady: true,
+          },
+  };
+});
 
 // Overrides src/test/setup.ts's partial qapp-core mock (that one has no
 // useAuth) - CoinGrid now reads the selected account from it to key the
@@ -191,6 +204,8 @@ describe('CoinGrid shared balance cache (round 2, item B)', () => {
 
   afterEach(() => {
     cleanup();
+    supportedChainsMode.real = false;
+    sessionStorage.clear();
     chainsFixture.length = 2;
     clearArrrProgressHistory();
     getDefaultStore().set(walletReadyAtom, false);
@@ -284,6 +299,98 @@ describe('CoinGrid shared balance cache (round 2, item B)', () => {
       ).toHaveLength(0);
     }
   );
+
+  it('shows the ARRR row status after SELECTED_ACCOUNT_CHANGED unlocks custody, without a reload', async () => {
+    supportedChainsMode.real = true;
+    getDefaultStore().set(viewModeAtom, 'grid');
+    sessionStorage.clear();
+    let unlocked = false;
+    const custody = {
+      contract: 'qortium-home-wallet-v1',
+      implemented: true,
+      protocol: 'qdnRequest',
+      read: true,
+      readMode: 'TRUSTED_CORE_CUSTODY',
+      receive: true,
+      receiveMode: 'TRUSTED_CORE_CUSTODY',
+      requiresUnlockedAccount: true,
+      send: false,
+      sendMode: 'NONE',
+      serverManagement: false,
+      serverManagementMode: 'NONE',
+      custodyContract: 'qortium-home-arrr-custody-v1',
+      syncStatus: true,
+    };
+    qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
+      if (opts.action === 'GET_CROSSCHAIN_BLOCKCHAINS')
+        return [
+          {
+            currencyCode: 'ARRR',
+            walletEnabled: true,
+            decimalPlaces: 8,
+            activeNetwork: 'MAIN',
+            supportsHtlc: false,
+            supportsLocalChainTrades: false,
+            homeWallet: unlocked
+              ? custody
+              : {
+                  ...custody,
+                  read: false,
+                  receive: false,
+                  readMode: 'NONE',
+                  receiveMode: 'NONE',
+                  unavailableReason: 'Unlock the selected account.',
+                },
+          },
+        ];
+      if (opts.action === 'SHOW_ACTIONS')
+        return [
+          'GET_USER_WALLET',
+          'GET_WALLET_BALANCE',
+          'GET_USER_WALLET_TRANSACTIONS',
+          'GET_ARRR_SYNC_STATUS',
+        ];
+      return null;
+    });
+    renderGrid();
+    await waitFor(() =>
+      expect(
+        qdnRequestMock.mock.calls.some(
+          ([opts]) => opts.action === 'GET_CROSSCHAIN_BLOCKCHAINS'
+        )
+      ).toBe(true)
+    );
+    // The grid tile shows the ticker (the name only on hover).
+    await waitFor(() => expect(screen.getByText('ARRR')).toBeInTheDocument());
+    // Locked: the row is inert - no sync-status affordance and no reads.
+    expect(
+      screen.queryByText('Open wallet to check sync')
+    ).not.toBeInTheDocument();
+
+    unlocked = true;
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            action: 'SELECTED_ACCOUNT_CHANGED',
+            requestedHandler: 'ACCOUNT',
+            type: 'qortium:selected-account-changed',
+          },
+          source: window,
+        })
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByText('Open wallet to check sync')).toBeInTheDocument()
+    );
+    expect(
+      balanceCalls(qdnRequestMock, 'GET_CROSSCHAIN_BLOCKCHAINS')
+    ).toHaveLength(2);
+    // Listing still never starts a scan on its own.
+    expect(balanceCalls(qdnRequestMock, 'GET_ARRR_SYNC_STATUS')).toHaveLength(
+      0
+    );
+  });
 
   it('fetches every coin once on first mount', async () => {
     renderGrid();

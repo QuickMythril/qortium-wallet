@@ -2,7 +2,12 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [1.7.22] - 2026-09-22 (QuickMythril fork test build)
+## Unreleased
+
+### Re-check Home wallet capabilities after the account unlocks
+
+- Starting the Wallet inside Qortium Home 2 with the account locked left the ARRR wallet "unavailable" (main page and the ARRR page) and every other coin's Send disabled until a manual refresh. Home answers `GET_CROSSCHAIN_BLOCKCHAINS` from the current lock state but the unlock is not a bridge-route change, so `qortiumBridgeStateChanged` never fired and discovery was never repeated. Chain discovery now also re-runs on Home's `SELECTED_ACCOUNT_CHANGED` message (posted on lock, unlock, account switch, and page load) as a soft refresh: the current capabilities stay on screen until the fresh answer lands, so the page-load copy of the message does not flash a pending state, and a slower in-flight locked answer is discarded. The ARRR sync-status and wallet-session reads already follow the rediscovered chain, so they need no change. Cost: one extra `GET_CROSSCHAIN_BLOCKCHAINS` per hook instance per account/lock event; the message carries no lock state, so it cannot be skipped.
+- The `SELECTED_ACCOUNT_CHANGED` message check that `AppLayout` and `usePaymentNotifications` each had inline now lives in `src/common/accountChangedMessage.ts` and is shared with chain discovery.
 
 ### Release Wallet 1.7.22
 
@@ -23,7 +28,6 @@ All notable changes to Qortium Wallet will be documented in this file.
 - Use the new Core/Home session contract to observe one active account per node. Inactive accounts show an explicit Switch to this account action; background status/address/balance reads cannot select them. Stop and switch invalidate other visible Wallet instances, with passive polling also observing external changes.
 - Show this account's previously verified address while stopped, and load it after activation without reopening the app. Keep stopped/inactive/recovery states visible in listings and detail views. Recovery explains the required Home/Core restart and offers Refresh status instead of a disabled Stop alone.
 - Bind activation to the last observed session revision, prevent duplicate requests and automatic retries, and discard late account/route responses. Requires the new Home and Core contract; older hosts keep their existing controls.
-
 
 ## [1.7.19] - 2026-09-22 (QuickMythril fork test build)
 

@@ -1,7 +1,50 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useSupportedChains } from '../useSupportedChains';
-import { HOME_WALLET_CONTRACT } from '../../common/homeWalletCapabilities';
+import {
+  ARRR_CUSTODY_CONTRACT,
+  HOME_WALLET_CONTRACT,
+} from '../../common/homeWalletCapabilities';
+
+// The exact message Home posts (electron/qdn-views.ts) on page load, account
+// switch, and lock/unlock of the selected account.
+const selectedAccountChanged = () =>
+  new MessageEvent('message', {
+    data: {
+      action: 'SELECTED_ACCOUNT_CHANGED',
+      requestedHandler: 'ACCOUNT',
+      type: 'qortium:selected-account-changed',
+    },
+    source: window,
+  });
+
+const arrrCustodyCapability = {
+  contract: HOME_WALLET_CONTRACT,
+  implemented: true,
+  protocol: 'qdnRequest',
+  read: true,
+  readMode: 'TRUSTED_CORE_CUSTODY',
+  receive: true,
+  receiveMode: 'TRUSTED_CORE_CUSTODY',
+  requiresUnlockedAccount: true,
+  send: false,
+  sendMode: 'NONE',
+  serverManagement: false,
+  serverManagementMode: 'NONE',
+  custodyContract: ARRR_CUSTODY_CONTRACT,
+  syncStatus: true,
+};
+
+// Home's answer while the selected account is locked: same contract, no
+// read/receive path, and a reason for the detail page's unavailable panel.
+const arrrLockedCapability = {
+  ...arrrCustodyCapability,
+  read: false,
+  readMode: 'NONE',
+  receive: false,
+  receiveMode: 'NONE',
+  unavailableReason: 'Unlock the selected account to use the ARRR wallet.',
+};
 
 describe('useSupportedChains bridge availability', () => {
   beforeEach(() => {
@@ -306,5 +349,129 @@ describe('useSupportedChains bridge availability', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(result.current.chains.map((chain) => chain.key)).toEqual(['QORT']);
+  });
+
+  it('rediscovers on SELECTED_ACCOUNT_CHANGED so a locked ARRR answer flips to custody without a pending flash', async () => {
+    let unlocked = false;
+    const request = vi.fn(async () => [
+      {
+        currencyCode: 'ARRR',
+        walletEnabled: true,
+        decimalPlaces: 8,
+        activeNetwork: 'MAIN',
+        supportsHtlc: false,
+        supportsLocalChainTrades: false,
+        homeWallet: unlocked ? arrrCustodyCapability : arrrLockedCapability,
+      },
+      {
+        currencyCode: 'BTC',
+        walletEnabled: true,
+        decimalPlaces: 8,
+        activeNetwork: 'MAIN',
+        supportsHtlc: true,
+        supportsLocalChainTrades: true,
+        homeWallet: {
+          contract: HOME_WALLET_CONTRACT,
+          implemented: true,
+          protocol: 'qdnRequest',
+          read: true,
+          readMode: 'PUBLIC_NODE',
+          receive: true,
+          receiveMode: 'HOME_LOCAL',
+          requiresUnlockedAccount: true,
+          send: unlocked,
+          sendMode: unlocked ? 'HOME_SIGNED_PUBLIC_NODE' : 'NONE',
+          serverManagement: true,
+          serverManagementMode: 'HOME_LOCAL',
+        },
+      },
+    ]);
+    (globalThis as any).qdnRequest = request;
+
+    const observed: Array<{ status: string; arrr: unknown }> = [];
+    const { result } = renderHook(() => {
+      const value = useSupportedChains();
+      observed.push({
+        status: value.status,
+        arrr: value.chains.find((c) => c.key === 'ARRR')?.homeWallet,
+      });
+      return value;
+    });
+    await waitFor(() => expect(result.current.status).toBe('live'));
+    const arrr = () => result.current.chains.find((c) => c.key === 'ARRR');
+    const btc = () => result.current.chains.find((c) => c.key === 'BTC');
+    expect(arrr()?.homeWallet).toEqual(arrrLockedCapability);
+    expect(btc()?.homeWallet?.send).toBe(false);
+    const observedBeforeUnlock = observed.length;
+
+    unlocked = true;
+    window.dispatchEvent(selectedAccountChanged());
+    await waitFor(() =>
+      expect(arrr()?.homeWallet).toEqual(arrrCustodyCapability)
+    );
+    expect(btc()?.homeWallet?.send).toBe(true);
+    expect(result.current.status).toBe('live');
+    expect(result.current.walletAuthorityReady).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    // Soft refresh: nothing between the locked answer and the custody answer
+    // ever showed `pending` or dropped the chain's capability.
+    for (const render of observed.slice(observedBeforeUnlock)) {
+      expect(render.status).toBe('live');
+      expect(render.arrr).toBeDefined();
+    }
+  });
+
+  it('does not rediscover for account messages from another source or with another action', async () => {
+    const request = vi.fn(async () => []);
+    (globalThis as any).qdnRequest = request;
+    const { result } = renderHook(() => useSupportedChains());
+    await waitFor(() => expect(result.current.status).toBe('live'));
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { action: 'SELECTED_ACCOUNT_CHANGED' },
+        source: null,
+      })
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { action: 'UI_STYLE_CHANGED', requestedHandler: 'UI' },
+        source: window,
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards an in-flight locked answer that resolves after the unlock rediscovery', async () => {
+    const resolvers: Array<(value: unknown) => void> = [];
+    (globalThis as any).qdnRequest = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+    const row = (homeWallet: unknown) => ({
+      currencyCode: 'ARRR',
+      walletEnabled: true,
+      decimalPlaces: 8,
+      activeNetwork: 'MAIN',
+      supportsHtlc: false,
+      supportsLocalChainTrades: false,
+      homeWallet,
+    });
+
+    const { result } = renderHook(() => useSupportedChains());
+    await waitFor(() => expect(resolvers).toHaveLength(1));
+    window.dispatchEvent(selectedAccountChanged());
+    await waitFor(() => expect(resolvers).toHaveLength(2));
+
+    resolvers[1]([row(arrrCustodyCapability)]);
+    await waitFor(() => expect(result.current.status).toBe('live'));
+    resolvers[0]([row(arrrLockedCapability)]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      result.current.chains.find((c) => c.key === 'ARRR')?.homeWallet
+    ).toEqual(arrrCustodyCapability);
   });
 });
