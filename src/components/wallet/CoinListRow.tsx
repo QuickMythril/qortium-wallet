@@ -380,7 +380,7 @@ export function CoinListRow({
         </Tooltip>
         <Tooltip
           title={
-            chain.coinEnum === 'ARRR'
+            chain.coinEnum === 'ARRR' && !canSend
               ? 'Sending ARRR is not available yet'
               : canSend
                 ? 'Send'

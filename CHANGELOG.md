@@ -4,6 +4,10 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [1.7.24] - 2026-09-29 (QuickMythril fork test build)
 
+### Label enabled ARRR send actions correctly
+
+- Show Send on enabled ARRR list and tile actions; reserve the unavailable tooltip for hosts without send support.
+
 ### Release Wallet 1.7.24
 
 ### Add ARRR sends with fixed fees and recovery status
