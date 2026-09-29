@@ -4,6 +4,10 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## Unreleased
 
+### Add ARRR sends with fixed fees and recovery status
+
+- Offer the ARRR send form only with Home's exact durable-send contract. Show the fixed 0.0001 ARRR fee before Home approval, and keep pending, broadcast and unresolved outcomes distinct. Check an existing send even while the native wallet is not ready; never automatically resend. A new payment acknowledges the retained result of the previous one.
+
 ### Cancel wallet copy feedback when its row closes
 
 - Cancel delayed copy feedback and discard unfinished receive reads when a wallet row unmounts, so leaving the page cannot update a closed view.
