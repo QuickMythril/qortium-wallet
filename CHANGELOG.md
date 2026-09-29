@@ -2,7 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.23] - 2026-09-29 (QuickMythril fork test build)
+
+### Release Wallet 1.7.23
+
+### Preserve ready ARRR data when returning to the Wallet tab
+
+- Recheck ownership on tab return without clearing an unchanged session. Keep the normal three-minute READY refresh schedule across short tab visits, so balance and transaction history stay visible instead of reloading every time. Expired data, real account/session changes and node changes still refresh. Returning to the tab does not reopen declined custody prompts.
 
 ### Keep an ARRR account switch from reading as a failure
 

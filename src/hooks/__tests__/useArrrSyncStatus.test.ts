@@ -206,6 +206,38 @@ describe('useArrrSyncStatus', () => {
     expect(qdnRequestMock).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves fresh READY data on short tab returns without delaying the normal refresh', async () => {
+    qdnRequestMock.mockResolvedValue(readySnapshot);
+    const { result } = renderHook(() => useArrrSyncStatus(true, 'acct-a'));
+    await flush();
+    setDocumentHidden(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    setDocumentHidden(false);
+    await flush();
+    expect(result.current.snapshot?.ready).toBe(true);
+    expect(qdnRequestMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ARRR_POLL_SETTLED_MS - 1000);
+    });
+    expect(qdnRequestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes expired READY data on returning from a long hidden period', async () => {
+    qdnRequestMock.mockResolvedValue(readySnapshot);
+    renderHook(() => useArrrSyncStatus(true, 'acct-a'));
+    await flush();
+    setDocumentHidden(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ARRR_POLL_SETTLED_MS + 1000);
+    });
+    expect(qdnRequestMock).toHaveBeenCalledTimes(1);
+    setDocumentHidden(false);
+    await flush();
+    expect(qdnRequestMock).toHaveBeenCalledTimes(2);
+  });
+
   it('retries GET_ARRR_SYNC_STATUS on ARRR_WALLET_BUSY before giving up to the surfaced error', async () => {
     const busyError = { code: 'ARRR_WALLET_BUSY', message: 'busy' };
     qdnRequestMock
@@ -234,6 +266,9 @@ describe('useArrrSyncStatus', () => {
     await flush();
 
     expect(result.current.consentDenied).toBe(true);
+    act(() => notifyArrrWalletSessionChanged());
+    setDocumentHidden(true);
+    setDocumentHidden(false);
     const callsAfterDenial = qdnRequestMock.mock.calls.length;
 
     await act(async () => {
@@ -241,6 +276,7 @@ describe('useArrrSyncStatus', () => {
     });
     // No auto-retry after a consent denial - the count must not grow.
     expect(qdnRequestMock.mock.calls.length).toBe(callsAfterDenial);
+    expect(result.current.loading).toBe(false);
   });
 
   it('also treats a PERMISSION_DENIED code as denial', async () => {

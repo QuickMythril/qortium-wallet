@@ -717,6 +717,32 @@ describe('CoinDetail ARRR account switch (session relation SELF)', () => {
     });
   };
 
+  it('keeps balance and history loaded when returning to the same READY session', async () => {
+    syncStatus = () => baseSnapshot({ state: 'READY', ready: true });
+    renderDetail(sessionChain);
+    await tick(0);
+    expect(screen.getByTestId('arrr-state-ready')).toBeInTheDocument();
+    const calls = (action: string) =>
+      qdnRequestMock.mock.calls.filter(([opts]) => opts.action === action)
+        .length;
+    const balances = calls('GET_WALLET_BALANCE');
+    const history = calls('GET_USER_WALLET_TRANSACTIONS');
+    const sessions = calls('GET_ARRR_WALLET_SESSION');
+    expect(balances).toBeGreaterThan(0);
+    expect(history).toBeGreaterThan(0);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await tick(1000);
+    hidden.mockReturnValue(false);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await tick(0);
+    expect(calls('GET_ARRR_WALLET_SESSION')).toBeGreaterThan(sessions);
+    expect(calls('GET_WALLET_BALANCE')).toBe(balances);
+    expect(calls('GET_USER_WALLET_TRANSACTIONS')).toBe(history);
+    expect(screen.getByTestId('arrr-state-ready')).toBeInTheDocument();
+    hidden.mockRestore();
+  });
+
   it('shows the neutral switching state instead of arrr-busy while the owner-confirmed read stays busy, then syncs', async () => {
     renderDetail(sessionChain);
     await tick(0);

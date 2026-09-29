@@ -59,11 +59,21 @@ export function useArrrWalletSession(enabled: boolean, account: unknown) {
     };
     const invalidate = () => {
       clearTimeout(timer);
+      if (blocked) {
+        setState((previous) => ({ ...previous, value: null }));
+        return;
+      }
       setState({ account, value: null, error: null });
       refresh();
     };
     const visibility = () => {
-      if (!document.hidden) invalidate();
+      // A tab return needs an ownership check, not a loss of the last
+      // confirmed session. A changed reply still disables reads immediately;
+      // an unchanged reply must not reset balances/history to loading.
+      if (!document.hidden && !blocked) {
+        clearTimeout(timer);
+        refresh();
+      }
     };
     const channel =
       typeof BroadcastChannel !== 'undefined'
