@@ -2,6 +2,12 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## Unreleased
+
+### Cancel wallet copy feedback when its row closes
+
+- Cancel delayed copy feedback and discard unfinished receive reads when a wallet row unmounts, so leaving the page cannot update a closed view.
+
 ## [1.7.23] - 2026-09-29 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.23
