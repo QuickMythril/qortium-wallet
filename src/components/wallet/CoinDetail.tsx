@@ -862,7 +862,11 @@ export function CoinDetail({ chain }: Props) {
           isMountedRef.current &&
           revision === transactionReadRevision.current
         )
-          setTransactions(chain.coinEnum === 'ARRR' ? [...txs].reverse() : txs);
+          setTransactions(
+            chain.coinEnum === 'ARRR'
+              ? [...txs].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+              : txs
+          );
       }
     } catch (err) {
       if (
@@ -2000,7 +2004,8 @@ export function CoinDetail({ chain }: Props) {
                     {arrrPanel}
                     {canSend && (
                       <ArrrSendPanel
-                        key={`${homeAccount}:${arrrControlRevision}`}
+                        key={`send:${homeAccount}:${arrrControlRevision}`}
+                        transactions={transactions}
                         enabled={walletReady}
                         ready={
                           arrrSnapshot?.ready === true &&
@@ -2014,13 +2019,13 @@ export function CoinDetail({ chain }: Props) {
                     )}
                     {hasWalletSession ? (
                       <ArrrWalletSessionControls
-                        key={`${homeAccount}:${arrrControlRevision}`}
+                        key={`session:${homeAccount}:${arrrControlRevision}`}
                         session={arrrSession}
                       />
                     ) : (
                       canControlArrrSync && (
                         <ArrrSyncControls
-                          key={`${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
+                          key={`sync:${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
                           status={arrrStatus}
                           onChanged={refreshArrrStatus}
                         />

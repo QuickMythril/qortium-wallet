@@ -717,6 +717,114 @@ describe('CoinDetail ARRR account switch (session relation SELF)', () => {
     });
   };
 
+  it.each([
+    [1, 2, 3],
+    [3, 2, 1],
+    [2, 3, 1],
+  ])(
+    'orders history newest first regardless of source order %j',
+    async (...order) => {
+      syncStatus = () => baseSnapshot({ state: 'READY', ready: true });
+      const original = qdnRequestMock.getMockImplementation()!;
+      const rows = order.map((n) => ({
+        txHash: String(n),
+        timestamp: n * 1000000,
+        totalAmount: n * 100000000,
+        pending: false,
+      }));
+      qdnRequestMock.mockImplementation(async (opts) =>
+        opts.action === 'GET_USER_WALLET_TRANSACTIONS' ? rows : original(opts)
+      );
+      renderDetail(sessionChain);
+      await tick(0);
+      const amounts = screen
+        .getAllByText(/^\+[123]\.00000000 ARRR$/)
+        .map((node) => node.textContent);
+      expect(amounts).toEqual([
+        '+3.00000000 ARRR',
+        '+2.00000000 ARRR',
+        '+1.00000000 ARRR',
+      ]);
+      expect(rows.map((row) => row.txHash)).toEqual(order.map(String));
+    }
+  );
+
+  it('keeps one send panel through repeated account and bridge changes', async () => {
+    syncStatus = () => baseSnapshot({ state: 'READY', ready: true });
+    const chain: ChainConfig = {
+      ...sessionChain,
+      homeWallet: {
+        ...sessionChain.homeWallet!,
+        send: true,
+        sendMode: 'TRUSTED_CORE_CUSTODY',
+        sendContract: 'qortium-home-arrr-send-v2',
+      },
+    };
+    const original = qdnRequestMock.getMockImplementation()!;
+    qdnRequestMock.mockImplementation(async (opts) => {
+      if (opts.action === 'SHOW_ACTIONS')
+        return [
+          ...((await original(opts)) as string[]),
+          'SEND_COIN',
+          'GET_ARRR_SEND_READINESS',
+          'GET_ARRR_SEND_OPERATION',
+        ];
+      if (opts.action === 'GET_ARRR_SEND_READINESS')
+        return {
+          sendProtocolVersion: 2,
+          sendAllowed: true,
+          operation: {
+            sendProtocolVersion: 2,
+            operationId: currentAccount,
+            state: 'BROADCAST',
+            txid: (currentAccount === 'account-b' ? 'bb' : 'aa').repeat(32),
+          },
+        };
+      return original(opts);
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const view = renderDetail(chain);
+    await tick(0);
+    for (const account of [
+      'account-b',
+      'qort-user-address',
+      'account-b',
+      'qort-user-address',
+    ]) {
+      currentAccount = account;
+      view.rerender(
+        <MemoryRouter>
+          <ThemeProviderWrapper>
+            <CoinDetail chain={chain} />
+          </ThemeProviderWrapper>
+        </MemoryRouter>
+      );
+      await tick(0);
+      act(() => window.dispatchEvent(new Event('qortiumBridgeStateChanged')));
+      await tick(0);
+      expect(screen.getAllByRole('button', { name: 'Send ARRR' })).toHaveLength(
+        1
+      );
+      expect(
+        screen.getAllByRole('button', { name: 'Check send status' })
+      ).toHaveLength(1);
+      expect(
+        screen.getAllByText(/Broadcast; awaiting confirmation/)
+      ).toHaveLength(1);
+      expect(
+        screen.getByText(
+          new RegExp((account === 'account-b' ? 'bb' : 'aa').repeat(32))
+        )
+      ).toBeInTheDocument();
+    }
+    expect(
+      errors.mock.calls.filter((args) =>
+        args.some((arg) => String(arg).includes('same key'))
+      )
+    ).toEqual([]);
+    errors.mockRestore();
+  });
+
   it('keeps balance and history loaded when returning to the same READY session', async () => {
     syncStatus = () => baseSnapshot({ state: 'READY', ready: true });
     renderDetail(sessionChain);

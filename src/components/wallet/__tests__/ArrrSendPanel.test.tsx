@@ -39,6 +39,51 @@ describe('ARRR durable send view', () => {
       screen.getByRole('button', { name: 'Review in Home' })
     ).toBeDisabled();
   });
+  it('updates broadcast confirmation only from explicit matching confirmed history', async () => {
+    const txid = 'ab'.repeat(32);
+    const bridge = vi.fn(async () => ({
+      sendProtocolVersion: 2,
+      sendAllowed: true,
+      operation: {
+        sendProtocolVersion: 2,
+        operationId: 'receipt',
+        state: 'BROADCAST',
+        txid,
+      },
+    }));
+    vi.stubGlobal('qdnRequest', bridge);
+    const onBroadcast = vi.fn();
+    const view = render(<ArrrSendPanel enabled onBroadcast={onBroadcast} />);
+    await screen.findByText(/Broadcast; awaiting confirmation/);
+    for (const transactions of [
+      [{ txHash: txid, pending: true }],
+      [{ txHash: txid }],
+      [{ txHash: 'cd'.repeat(32), pending: false }],
+    ]) {
+      view.rerender(
+        <ArrrSendPanel
+          enabled
+          onBroadcast={onBroadcast}
+          transactions={transactions}
+        />
+      );
+      expect(
+        screen.getByText(/Broadcast; awaiting confirmation/)
+      ).toBeInTheDocument();
+    }
+    view.rerender(
+      <ArrrSendPanel
+        enabled
+        onBroadcast={onBroadcast}
+        transactions={[{ txHash: txid, pending: false }]}
+      />
+    );
+    expect(
+      screen.getByText(`Confirmed. Transaction: ${txid}`)
+    ).toBeInTheDocument();
+    expect(onBroadcast).toHaveBeenCalledTimes(1);
+    expect(bridge).toHaveBeenCalledTimes(1);
+  });
   it('unresolved operation blocks send and never triggers another payment', async () => {
     const bridge = vi.fn(async () => ({
       sendProtocolVersion: 2,

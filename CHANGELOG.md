@@ -2,6 +2,14 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.25] - 2026-09-29 (QuickMythril fork test build)
+
+### Fix ARRR history ordering and send status after account switches
+
+- Sort ARRR history newest first by timestamp.
+- Show Confirmed when the broadcast transaction has explicit confirmed history.
+- Give send and session controls distinct identities so switching accounts cannot leave duplicate controls.
+
 ## [1.7.24] - 2026-09-29 (QuickMythril fork test build)
 
 ### Label enabled ARRR send actions correctly

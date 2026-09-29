@@ -10,6 +10,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import type { TxRow } from './TransactionRow';
 import { decimalToAtomic } from '../../utils/walletSend';
 
 type Operation = {
@@ -45,10 +46,12 @@ export function ArrrSendPanel({
   enabled,
   ready = true,
   onBroadcast,
+  transactions = [],
 }: {
   enabled: boolean;
   ready?: boolean;
   onBroadcast: () => void;
+  transactions?: readonly TxRow[];
 }) {
   const [open, setOpen] = useState(false);
   const [recipient, setRecipient] = useState('');
@@ -160,6 +163,13 @@ export function ArrrSendPanel({
       if (mounted.current) setBusy(false);
     }
   };
+  // A broadcast receipt proves submission, not confirmation. Only explicit
+  // confirmed history for the same transaction can upgrade the display.
+  const confirmed =
+    operation?.state === 'BROADCAST' &&
+    transactions.some(
+      (row) => row.txHash === operation.txid && row.pending === false
+    );
   return (
     <Box sx={{ mt: 2, width: '100%', maxWidth: 600 }}>
       {operation && (
@@ -174,7 +184,7 @@ export function ArrrSendPanel({
           sx={{ overflowWrap: 'anywhere', mb: 1 }}
         >
           {operation.state === 'BROADCAST'
-            ? `Broadcast; awaiting confirmation. Transaction: ${operation.txid}`
+            ? `${confirmed ? 'Confirmed' : 'Broadcast; awaiting confirmation'}. Transaction: ${operation.txid}`
             : operation.state === 'FAILED'
               ? 'This operation failed before the payment was sent. Check readiness before starting a new payment.'
               : operation.state === 'UNRESOLVED'
