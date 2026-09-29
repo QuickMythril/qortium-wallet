@@ -53,8 +53,8 @@ export interface UseArrrSyncStatusResult {
  * Polls GET_ARRR_SYNC_STATUS per the round-5 host contract cadence:
  * immediately once `enabled`, then every 15s while LOADING/SYNCHRONIZING/
  * DEGRADED, every 3 min once READY/DISABLED - paused entirely while the
- * document is hidden (a hidden-tab visibilitychange resumes it with an
- * immediate poll), and reset (fresh snapshot, fresh revision) whenever
+ * document is hidden (tab return resumes READY at its original deadline
+ * and refreshes other states immediately), and reset (fresh snapshot, fresh revision) whenever
  * `enabled` or `resetKey` changes, which cancels anything in flight for the
  * previous account/route/consent state.
  *
@@ -79,6 +79,13 @@ export function useArrrSyncStatus(
   const [switching, setSwitching] = useState(false);
   const [switchingStalled, setSwitchingStalled] = useState(false);
 
+  const visibleStateRef = useRef({
+    snapshot,
+    snapshotKey,
+    error,
+    consentDenied,
+  });
+  visibleStateRef.current = { snapshot, snapshotKey, error, consentDenied };
   const historyRef = useRef<ArrrProgressHistory | null>(null);
   const receivedAtRef = useRef(0);
   const keyRef = useRef(resetKey);
@@ -130,7 +137,7 @@ export function useArrrSyncStatus(
       if (!enabledRef.current) return;
       if (typeof document !== 'undefined' && document.hidden) {
         // Paused while hidden - the visibilitychange listener below resumes
-        // this exact revision with an immediate poll once visible again.
+        // the normal cadence, or polls immediately when freshness requires it.
         return;
       }
       // Checked before the first attempt and again after every busy-retry
@@ -275,14 +282,31 @@ export function useArrrSyncStatus(
     if (typeof document === 'undefined') return;
     const handleVisibility = () => {
       if (document.hidden || !enabledRef.current) return;
+      const current = visibleStateRef.current;
+      if (current.consentDenied) return;
       const revision = ++revisionRef.current;
       clearTimer();
-      void pollRef.current(revision);
+      // Keep READY's normal cadence across short tab visits. The session
+      // hook separately checks ownership on every return; a changed session
+      // resets this hook through resetKey/enabled. Resuming a fresh READY
+      // snapshot must not trigger expensive balance/history reads again.
+      const remaining =
+        receivedAtRef.current + arrrPollDelayMs('READY') - Date.now();
+      if (
+        current.snapshotKey === keyRef.current &&
+        current.snapshot?.ready &&
+        !current.error &&
+        remaining > 0
+      ) {
+        scheduleNext(revision, remaining);
+      } else {
+        void pollRef.current(revision);
+      }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () =>
       document.removeEventListener('visibilitychange', handleVisibility);
-  }, [clearTimer]);
+  }, [clearTimer, scheduleNext]);
 
   useEffect(() => {
     const handleBridgeChange = () => {
@@ -324,8 +348,8 @@ export function useArrrSyncStatus(
       setError(null);
       setSwitching(false);
       setSwitchingStalled(false);
-      setLoading(enabledRef.current);
-      if (enabledRef.current) {
+      setLoading(enabledRef.current && !visibleStateRef.current.consentDenied);
+      if (enabledRef.current && !visibleStateRef.current.consentDenied) {
         timeoutRef.current = setTimeout(() => {
           void pollRef.current(revision);
         }, ARRR_SESSION_SETTLE_MS);

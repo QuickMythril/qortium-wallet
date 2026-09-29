@@ -36,6 +36,43 @@ describe('passive ARRR session observation', () => {
       )
     ).toBe(true);
   });
+  it('keeps the confirmed session while checking ownership on a tab return', async () => {
+    let resolve: (value: unknown) => void = () => {};
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(snapshot('SELF'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          })
+      );
+    (globalThis as any).qdnRequest = request;
+    const { result } = renderHook(() => useArrrWalletSession(true, 'a'));
+    await waitFor(() => expect(result.current.active).toBe(true));
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(result.current.active).toBe(true);
+    await act(async () => resolve(snapshot('OTHER')));
+    expect(result.current.active).toBe(false);
+    expect(result.current.value?.relation).toBe('OTHER');
+  });
+
+  it('does not reopen declined custody on a tab return', async () => {
+    const request = vi.fn().mockRejectedValue({
+      code: 'PERMISSION_DENIED',
+      message: 'Account access was denied.',
+    });
+    (globalThis as any).qdnRequest = request;
+    const { result } = renderHook(() => useArrrWalletSession(true, 'a'));
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    act(() => notifyArrrWalletSessionChanged());
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('does not display an old account response after an account switch', async () => {
     const resolve: Array<(value: unknown) => void> = [];
     (globalThis as any).qdnRequest = vi.fn(
