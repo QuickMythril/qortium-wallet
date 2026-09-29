@@ -2,7 +2,9 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## Unreleased
+## [1.7.24] - 2026-09-29 (QuickMythril fork test build)
+
+### Release Wallet 1.7.24
 
 ### Add ARRR sends with fixed fees and recovery status
 
