@@ -6,7 +6,7 @@ export type HomeWalletMode =
   // ARRR-only (round 5): a desktop, admin-trusted Core holds the wallet's
   // spending key and keeps a synced copy on the user's behalf. Distinct
   // from TRUSTED_CORE (which still signs from Home) - never valid for any
-  // other coin, and never valid with send:true. See
+  // other coin. Sending requires its separate v2 send contract. See
   // homeWalletCapabilities.ts's coin-aware gate.
   | 'TRUSTED_CORE_CUSTODY'
   | 'NONE';
@@ -19,6 +19,7 @@ export interface HomeWalletCapability {
   receive: boolean;
   requiresUnlockedAccount: boolean;
   send: boolean;
+  sendContract?: string;
   serverManagement: boolean;
   readMode: HomeWalletMode;
   receiveMode: HomeWalletMode;

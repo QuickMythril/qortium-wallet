@@ -89,6 +89,11 @@ export function CoinListRow({
   const canReceiveRef = useRef(canReceive);
   const previousCanReceive = useRef(canReceive);
   const receiveRevision = useRef(0);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    receiveRevision.current++;
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+  }, []);
   canReceiveRef.current = canReceive;
   if (previousCanReceive.current !== canReceive) {
     previousCanReceive.current = canReceive;
@@ -131,7 +136,8 @@ export function CoinListRow({
       if (revision !== receiveRevision.current || !canReceiveRef.current)
         return;
       setCopyState('done');
-      setTimeout(() => setCopyState('idle'), 2000);
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = setTimeout(() => setCopyState('idle'), 2000);
     } catch {
       if (revision === receiveRevision.current) setCopyState('idle');
     }
@@ -374,7 +380,7 @@ export function CoinListRow({
         </Tooltip>
         <Tooltip
           title={
-            chain.coinEnum === 'ARRR'
+            chain.coinEnum === 'ARRR' && !canSend
               ? 'Sending ARRR is not available yet'
               : canSend
                 ? 'Send'

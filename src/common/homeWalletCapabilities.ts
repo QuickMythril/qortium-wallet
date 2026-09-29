@@ -10,6 +10,7 @@ export const HOME_1_WALLET_READ_CONTRACT = 'qortium-home-1.x-wallet-read-v1';
 // qortium-home's HOME_V2_BRIDGE_COMPATIBILITY.md. A capability advertising
 // TRUSTED_CORE_CUSTODY for any other coin, or with a different/missing
 // `custodyContract`, is rejected by arrrCustodyWalletAvailability below.
+export const ARRR_SEND_CONTRACT = 'qortium-home-arrr-send-v2';
 export const ARRR_CUSTODY_CONTRACT = 'qortium-home-arrr-custody-v1';
 
 // The legacy marker is Wallet-local provenance, not a wire contract. Only the
@@ -107,7 +108,7 @@ export function legacyHome1WalletCapability(
 // refuses it for every other coin via hasConsistentModes() - this function
 // is the ONLY path that can ever grant it, and only for ARRR, and only
 // alongside the exact custody contract, structured-sync support, and a
-// hard send:false/sendMode:NONE requirement.
+// separate v2 send contract and status actions.
 function arrrCustodyWalletAvailability(
   capability: HomeWalletCapability | undefined,
   advertisedActions: readonly string[]
@@ -124,11 +125,13 @@ function arrrCustodyWalletAvailability(
     capability.receiveMode !== 'TRUSTED_CORE_CUSTODY' ||
     capability.read !== true ||
     capability.receive !== true ||
-    // ARRR send is never granted in this tranche - reject custody outright
-    // if the host ever advertises send:true alongside it (host contract:
-    // "custody with send true" must be rejected).
-    capability.send !== false ||
-    capability.sendMode !== 'NONE'
+    // A host can offer custody sends only with the exact durable-operation contract.
+    !(
+      (capability.send === false && capability.sendMode === 'NONE') ||
+      (capability.send === true &&
+        capability.sendMode === 'TRUSTED_CORE_CUSTODY' &&
+        capability.sendContract === ARRR_SEND_CONTRACT)
+    )
   ) {
     return unavailable;
   }
@@ -144,7 +147,11 @@ function arrrCustodyWalletAvailability(
     canReadBalance: actions.has('GET_WALLET_BALANCE'),
     canReadTransactions: actions.has('GET_USER_WALLET_TRANSACTIONS'),
     canReceive: actions.has('GET_USER_WALLET'),
-    canSend: false,
+    canSend:
+      capability.send === true &&
+      actions.has('SEND_COIN') &&
+      actions.has('GET_ARRR_SEND_READINESS') &&
+      actions.has('GET_ARRR_SEND_OPERATION'),
   });
 }
 

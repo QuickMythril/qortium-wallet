@@ -1,3 +1,4 @@
+import { ArrrSendPanel } from './ArrrSendPanel';
 import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
 import { useArrrWalletSession } from '../../hooks/useArrrWalletSession';
 import { ArrrWalletSessionControls } from './ArrrWalletSessionControls';
@@ -1877,40 +1878,44 @@ export function CoinDetail({ chain }: Props) {
             </IconButton>
           </Tooltip>
         )}
-        <Tooltip
-          title={
-            isARRR
-              ? t('arrr.send_unavailable')
-              : !canSend
-                ? 'Sending requires a local node'
-                : ''
-          }
-          disableHoverListener={!isARRR && canSend}
-        >
-          <span>
-            <Button
-              variant="contained"
-              size="small"
-              endIcon={<SendIcon sx={{ fontSize: '1rem !important' }} />}
-              onClick={openSend}
-              disableElevation
-              disabled={isARRR || !canSend}
-              sx={{
-                bgcolor: c.accent,
-                color: c.accentText,
-                '&:hover': { bgcolor: c.accentHover },
-                '&.Mui-disabled': { opacity: 0.4 },
-                borderRadius: isClassic ? `${tokens.shape.radiusMd}px` : '50px',
-                px: 2.5,
-                letterSpacing: isClassic ? 0 : '0.06em',
-                fontWeight: tokens.typography.weightBold,
-                fontSize: '0.75rem',
-              }}
-            >
-              Send
-            </Button>
-          </span>
-        </Tooltip>
+        {!(isARRR && canSend) && (
+          <Tooltip
+            title={
+              isARRR
+                ? t('arrr.send_unavailable')
+                : !canSend
+                  ? 'Sending requires a local node'
+                  : ''
+            }
+            disableHoverListener={!isARRR && canSend}
+          >
+            <span>
+              <Button
+                variant="contained"
+                size="small"
+                endIcon={<SendIcon sx={{ fontSize: '1rem !important' }} />}
+                onClick={openSend}
+                disableElevation
+                disabled={isARRR || !canSend}
+                sx={{
+                  bgcolor: c.accent,
+                  color: c.accentText,
+                  '&:hover': { bgcolor: c.accentHover },
+                  '&.Mui-disabled': { opacity: 0.4 },
+                  borderRadius: isClassic
+                    ? `${tokens.shape.radiusMd}px`
+                    : '50px',
+                  px: 2.5,
+                  letterSpacing: isClassic ? 0 : '0.06em',
+                  fontWeight: tokens.typography.weightBold,
+                  fontSize: '0.75rem',
+                }}
+              >
+                Send
+              </Button>
+            </span>
+          </Tooltip>
+        )}
       </Box>
 
       <Box
@@ -1993,6 +1998,20 @@ export function CoinDetail({ chain }: Props) {
                 {isARRR ? (
                   <>
                     {arrrPanel}
+                    {canSend && (
+                      <ArrrSendPanel
+                        key={`${homeAccount}:${arrrControlRevision}`}
+                        enabled={walletReady}
+                        ready={
+                          arrrSnapshot?.ready === true &&
+                          (!hasWalletSession || arrrSession.active)
+                        }
+                        onBroadcast={() => {
+                          void fetchBalance();
+                          void fetchTransactions();
+                        }}
+                      />
+                    )}
                     {hasWalletSession ? (
                       <ArrrWalletSessionControls
                         key={`${homeAccount}:${arrrControlRevision}`}
