@@ -2,6 +2,14 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [1.7.26] - 2026-10-02 (QuickMythril fork test build)
+
+### Make ARRR send readiness and confirmed receipts easier to use
+
+- Allow confirmed receipt banners to be dismissed across reloads without deleting Home's durable send record.
+- Check readiness when opening Send and when the wallet becomes ready, preserving approval and unknown-outcome safeguards.
+- Avoid redundant balance/history reads when restoring an old receipt; retry temporary read congestion quietly and show loading during session/status backlog.
+
 ## [1.7.25] - 2026-09-29 (QuickMythril fork test build)
 
 ### Fix ARRR history ordering and send status after account switches

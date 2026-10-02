@@ -165,6 +165,20 @@ describe('formatArrrAmount (round 5 review finding 2 - atomic, string-only preci
 });
 
 describe('requestWithArrrBusyRetry', () => {
+  it('quietly retries temporary app read backlog without reporting an account switch', async () => {
+    vi.useFakeTimers();
+    const onBusyAttempt = vi.fn();
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce({ code: 'ARRR_READ_BACKLOG' })
+      .mockResolvedValue('ready');
+    const promise = requestWithArrrBusyRetry(request, { onBusyAttempt });
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(promise).resolves.toBe('ready');
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(onBusyAttempt).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
   });

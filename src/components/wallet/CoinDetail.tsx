@@ -2006,6 +2006,7 @@ export function CoinDetail({ chain }: Props) {
                       <ArrrSendPanel
                         key={`send:${homeAccount}:${arrrControlRevision}`}
                         transactions={transactions}
+                        receiptScope={homeAccount ?? undefined}
                         enabled={walletReady}
                         ready={
                           arrrSnapshot?.ready === true &&

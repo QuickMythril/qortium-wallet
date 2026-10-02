@@ -1,4 +1,9 @@
-import { describeBridgeError } from '../../common/bridgeErrors';
+import { requestWithArrrBusyRetry } from '../../common/arrrSync';
+import {
+  describeBridgeError,
+  ARRR_READ_CANCELLED_CODE,
+  isArrrCustodyConsentDeniedError,
+} from '../../common/bridgeErrors';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -47,11 +52,13 @@ export function ArrrSendPanel({
   ready = true,
   onBroadcast,
   transactions = [],
+  receiptScope,
 }: {
   enabled: boolean;
   ready?: boolean;
   onBroadcast: () => void;
   transactions?: readonly TxRow[];
+  receiptScope?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [recipient, setRecipient] = useState('');
@@ -61,9 +68,21 @@ export function ArrrSendPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [operation, setOperation] = useState<Operation | null>(null);
+  const dismissalKey = receiptScope
+    ? `arrr-dismissed-receipt:${receiptScope}`
+    : null;
+  const [dismissed, setDismissed] = useState<string | null>(() => {
+    try {
+      return dismissalKey ? localStorage.getItem(dismissalKey) : null;
+    } catch {
+      return null;
+    }
+  });
   const mounted = useRef(true);
   const inFlight = useRef(false);
+  const consentDenied = useRef(false);
   const reported = useRef<string | null>(null);
+  const submittedOperation = useRef<string | null>(null);
   const onBroadcastRef = useRef(onBroadcast);
   onBroadcastRef.current = onBroadcast;
   useEffect(() => {
@@ -72,57 +91,75 @@ export function ArrrSendPanel({
       mounted.current = false;
     };
   }, []);
-  const accept = useCallback((next: Operation) => {
+  const accept = useCallback((next: Operation, notify = true) => {
     if (!mounted.current) return;
     setOperation(next);
     setAllowed(false);
-    if (next.state === 'BROADCAST' && reported.current !== next.operationId) {
+    if (
+      notify &&
+      next.state === 'BROADCAST' &&
+      reported.current !== next.operationId
+    ) {
       reported.current = next.operationId;
       onBroadcastRef.current();
     }
   }, []);
-  const check = useCallback(async () => {
-    if (!enabled || inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    try {
-      const result = (await qdnRequest({
-        action: 'GET_ARRR_SEND_READINESS',
-        coin: 'ARRR',
-      })) as Record<string, unknown>;
-      if (!mounted.current) return;
-      if (result.sendProtocolVersion !== 2)
-        throw new Error('ARRR send requires an updated Home and Core.');
-      setError(null);
-      if (result.operation) accept(operationFrom(result.operation));
-      setAllowed(result.sendAllowed === true);
-    } catch {
-      if (mounted.current) {
-        setAllowed(false);
-        setError(
-          'Send status is unavailable. Check again before sending; do not repeat a payment whose outcome is unknown.'
-        );
+  const check = useCallback(
+    async (automatic = false) => {
+      if (!enabled || inFlight.current || (automatic && consentDenied.current))
+        return;
+      inFlight.current = true;
+      setBusy(true);
+      try {
+        const result = (await requestWithArrrBusyRetry(
+          () => qdnRequest({ action: 'GET_ARRR_SEND_READINESS', coin: 'ARRR' }),
+          { shouldAbort: () => !mounted.current || document.hidden }
+        )) as Record<string, unknown>;
+        if (!mounted.current) return;
+        if (result.sendProtocolVersion !== 2)
+          throw new Error('ARRR send requires an updated Home and Core.');
+        consentDenied.current = false;
+        setError(null);
+        if (result.operation) {
+          const next = operationFrom(result.operation);
+          accept(next, next.operationId === submittedOperation.current);
+        } else setOperation(null);
+        setAllowed(result.sendAllowed === true);
+      } catch (cause) {
+        if (mounted.current) {
+          if (describeBridgeError(cause).code === ARRR_READ_CANCELLED_CODE)
+            return;
+          consentDenied.current = isArrrCustodyConsentDeniedError(
+            describeBridgeError(cause)
+          );
+          setAllowed(false);
+          setError(
+            'Send status is unavailable. Check again before sending; do not repeat a payment whose outcome is unknown.'
+          );
+        }
+      } finally {
+        inFlight.current = false;
+        if (mounted.current) setBusy(false);
       }
-    } finally {
-      inFlight.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }, [enabled, accept]);
+    },
+    [enabled, accept]
+  );
   useEffect(() => {
     setAllowed(false);
-    if (enabled) void check();
-  }, [enabled, check]);
+    if (enabled) void check(true);
+  }, [enabled, ready, check]);
   useEffect(() => {
     if (
+      !enabled ||
       !operation ||
       !['ACCEPTED', 'NATIVE_STARTED', 'UNRESOLVED'].includes(operation.state)
     )
       return;
     const timer = setInterval(() => {
-      if (!document.hidden) void check();
+      if (!document.hidden) void check(true);
     }, 5000);
     return () => clearInterval(timer);
-  }, [operation, check]);
+  }, [enabled, operation, check]);
   let valid = false;
   try {
     valid =
@@ -149,7 +186,9 @@ export function ArrrSendPanel({
           : {}),
         ...(memo ? { memo } : {}),
       });
-      accept(operationFrom(result));
+      const next = operationFrom(result);
+      submittedOperation.current = next.operationId;
+      accept(next);
       if (mounted.current) setOpen(false);
     } catch (error) {
       if (mounted.current)
@@ -170,10 +209,26 @@ export function ArrrSendPanel({
     transactions.some(
       (row) => row.txHash === operation.txid && row.pending === false
     );
+  const blocked =
+    operation != null &&
+    ['ACCEPTED', 'NATIVE_STARTED', 'UNRESOLVED'].includes(operation.state);
+  const receiptHidden =
+    operation?.state === 'BROADCAST' && dismissed === operation.operationId;
+  const dismiss = () => {
+    if (!confirmed || !operation) return;
+    setDismissed(operation.operationId);
+    try {
+      if (dismissalKey)
+        localStorage.setItem(dismissalKey, operation.operationId);
+    } catch {
+      /* Session-only dismissal when storage is unavailable. */
+    }
+  };
   return (
     <Box sx={{ mt: 2, width: '100%', maxWidth: 600 }}>
-      {operation && (
+      {operation && !receiptHidden && (
         <Alert
+          onClose={confirmed ? dismiss : undefined}
           severity={
             operation.state === 'BROADCAST'
               ? 'success'
@@ -199,12 +254,14 @@ export function ArrrSendPanel({
       )}
       <Button
         variant="contained"
-        disabled={!enabled || !ready || !allowed || busy}
+        disabled={!enabled || !ready || blocked || busy}
         onClick={() => {
           setRecipient('');
           setAmount('');
           setMemo('');
+          setAllowed(false);
           setOpen(true);
+          void check();
         }}
       >
         Send ARRR
@@ -252,7 +309,18 @@ export function ArrrSendPanel({
             onChange={(e) => setMemo(e.target.value)}
             helperText={`${new TextEncoder().encode(memo).length}/512 UTF-8 bytes`}
           />
+          {busy && (
+            <Typography role="status">Checking wallet readiness…</Typography>
+          )}
+          {!busy && !allowed && !error && (
+            <Alert severity="info">
+              The wallet is not ready to send yet. Check send status to refresh.
+            </Alert>
+          )}
           {error && <Alert severity="warning">{error}</Alert>}
+          {!busy && !allowed && (
+            <Button onClick={() => void check()}>Refresh readiness</Button>
+          )}
           <Button disabled={busy} onClick={() => setOpen(false)}>
             Cancel
           </Button>

@@ -17,6 +17,32 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('passive ARRR session observation', () => {
+  it('treats a full read queue as loading and automatically recovers', async () => {
+    vi.useFakeTimers();
+    try {
+      const request = vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: 'ARRR_READ_BACKLOG',
+          message:
+            'Too many ARRR wallet reads are waiting for this app; wait for one to finish.',
+        })
+        .mockResolvedValue(snapshot('SELF'));
+      (globalThis as any).qdnRequest = request;
+      const { result } = renderHook(() => useArrrWalletSession(true, 'a'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.error).toBeNull();
+      expect(result.current.active).toBe(false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(result.current.active).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('never activates another account and refreshes both mounted instances after stop', async () => {
     let enabled = true;
     const request = vi.fn(async () => snapshot('OTHER', enabled));
