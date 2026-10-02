@@ -5,6 +5,7 @@ import {
 } from '../common/arrrWalletSession';
 import {
   describeBridgeError,
+  ARRR_READ_BACKLOG_CODE,
   isArrrCustodyConsentDeniedError,
 } from '../common/bridgeErrors';
 
@@ -48,8 +49,14 @@ export function useArrrWalletSession(enabled: boolean, account: unknown) {
         const decoded = describeBridgeError(error);
         setState((previous) => ({
           account,
-          value: previous.account === account ? previous.value : null,
-          error: decoded.message,
+          value:
+            decoded.code === ARRR_READ_BACKLOG_CODE
+              ? null
+              : previous.account === account
+                ? previous.value
+                : null,
+          error:
+            decoded.code === ARRR_READ_BACKLOG_CODE ? null : decoded.message,
         }));
         // A declined custody prompt must never be reopened by a timer.
         if (isArrrCustodyConsentDeniedError(decoded)) blocked = true;

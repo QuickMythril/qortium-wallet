@@ -13,6 +13,7 @@ import {
 } from './constants';
 import {
   ARRR_READ_CANCELLED_CODE,
+  ARRR_READ_BACKLOG_CODE,
   describeBridgeError,
   isArrrWalletBusyError,
 } from './bridgeErrors';
@@ -254,15 +255,19 @@ export async function requestWithArrrBusyRetry<T>(
     } catch (err) {
       attempt++;
       const decoded = describeBridgeError(err);
-      if (!isArrrWalletBusyError(decoded)) throw err;
+      const backlog = decoded.code === ARRR_READ_BACKLOG_CODE;
+      if (!backlog && !isArrrWalletBusyError(decoded)) throw err;
       const now = Date.now();
       firstBusyAt ??= now;
-      const exhausted = ownerConfirmed
-        ? now - firstBusyAt >= maxBusyMs
-        : attempt >= maxAttempts;
+      const exhausted =
+        ownerConfirmed && !backlog
+          ? now - firstBusyAt >= maxBusyMs
+          : attempt >= maxAttempts;
       if (exhausted) throw err;
-      options.onBusyAttempt?.(attempt);
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      if (!backlog) options.onBusyAttempt?.(attempt);
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, backlog ? Math.min(delayMs, 2000) : delayMs)
+      );
       if (shouldAbort?.()) throw arrrReadCancelledError();
     }
   }

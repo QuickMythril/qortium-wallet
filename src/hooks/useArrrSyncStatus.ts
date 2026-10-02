@@ -17,6 +17,7 @@ import {
 } from '../common/arrrSync';
 import {
   ARRR_READ_CANCELLED_CODE,
+  ARRR_READ_BACKLOG_CODE,
   ARRR_WALLET_NOT_ACTIVE_CODE,
   describeBridgeError,
   isArrrCustodyConsentDeniedError,
@@ -199,6 +200,12 @@ export function useArrrSyncStatus(
           // revision/isMounted cases already returned above) - not a real
           // error, and not surfaced; the visibilitychange listener below
           // resumes with a fresh poll once visible again.
+          return;
+        }
+        if (decoded.code === ARRR_READ_BACKLOG_CODE) {
+          setError(null);
+          setLoading(true);
+          scheduleNext(revision, arrrPollDelayMs('LOADING'));
           return;
         }
         if (owner && isArrrWalletBusyError(decoded)) {
