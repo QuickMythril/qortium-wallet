@@ -159,6 +159,8 @@ export function foreignWalletAvailability(
   chain: Pick<ChainConfig, 'homeWallet' | 'isNative' | 'coinEnum'>,
   advertisedActions: readonly string[]
 ): ForeignWalletAvailability {
+  // XMR uses only its dedicated custody adapter, never bitcoiny or legacy actions.
+  if (chain.coinEnum === 'XMR') return unavailable;
   if (!chain.isNative && chain.coinEnum === 'ARRR') {
     return arrrCustodyWalletAvailability(chain.homeWallet, advertisedActions);
   }
