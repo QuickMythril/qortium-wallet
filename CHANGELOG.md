@@ -4,6 +4,10 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## Unreleased
 
+### Normalize wallet rows and regression tests for CI
+
+- Normalize wallet row formatting and related regression tests to the repository's formatting rules.
+
 ### Add XMR receive, scan progress and transaction history
 
 - Add an XMR screen only when Home advertises its dedicated local custody contract.
