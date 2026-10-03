@@ -2,6 +2,14 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## Unreleased
+
+### Keep Monero syncing visible with progress and automatic recovery
+
+- Recover from stale or temporarily unavailable wallet snapshots without a reload, retaining only the selected account's last-known balance display.
+- Show block progress, a rolling syncing estimate, and waiting states in the wallet detail and compact list/grid views. Reuse Pirate's progress arithmetic while retaining Monero's own read and spending rules.
+- Reset estimates on account/session changes, rescans and long pauses; repeated polls cannot make old progress appear fresh. Passive updates stop when approval expires or the account locks.
+
 ## [1.7.28] - 2026-10-03 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.28 for XMR send testing

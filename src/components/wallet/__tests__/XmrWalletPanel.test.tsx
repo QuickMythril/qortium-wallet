@@ -1,3 +1,5 @@
+import i18n from '../../../i18n/i18n';
+import { clearXmrProgress } from '../../../common/xmrProgress';
 import { StrictMode } from 'react';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import {
@@ -71,6 +73,8 @@ const view = () => (
 );
 const bridge = vi.fn();
 beforeEach(() => {
+  clearXmrProgress();
+  void i18n.changeLanguage('en');
   account = 'account-A';
   vi.stubGlobal('qdnRequest', bridge);
   bridge.mockReset();
@@ -335,7 +339,9 @@ describe('XMR receive and history', () => {
   it('labels an old synced snapshot stale when Core no longer considers it current', async () => {
     bridge.mockResolvedValue({ ...snapshot(), state: 'STALE' });
     render(view());
-    await screen.findByText('Wallet status: stale');
+    await screen.findByText(
+      'Updating balances and history. The scan continues automatically.'
+    );
     expect(
       screen.queryByText('Synced', { exact: true })
     ).not.toBeInTheDocument();
@@ -343,4 +349,168 @@ describe('XMR receive and history', () => {
       screen.getByText(/last recorded wallet snapshot/)
     ).toBeInTheDocument();
   });
+});
+
+describe('XMR passive scan recovery', () => {
+  it('recovers SCANNING → STALE → UNAVAILABLE → SCANNING without reload, retaining only scoped display', async () => {
+    vi.useFakeTimers();
+    const at = Date.now();
+    const scanning = {
+      ...snapshot(),
+      state: 'SCANNING',
+      updatedAt: at,
+      wallet: { ...snapshot().wallet, synced: false },
+      progress: {
+        scanId: '11111111-1111-4111-8111-111111111111',
+        startHeight: 0,
+        height: 30,
+        targetHeight: 100,
+        updatedAt: at,
+      },
+    };
+    bridge
+      .mockResolvedValueOnce(scanning)
+      .mockResolvedValueOnce({ ...scanning, state: 'STALE', wallet: null })
+      .mockResolvedValueOnce({
+        ...scanning,
+        state: 'UNAVAILABLE',
+        wallet: null,
+        progress: null,
+      })
+      .mockResolvedValue({
+        ...scanning,
+        progress: { ...scanning.progress, height: 60, updatedAt: at + 25000 },
+      });
+    render(view());
+    await act(async () => {});
+    expect(screen.getByText(/Syncing.*30/)).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(
+      screen.getByText(/last recorded wallet snapshot/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Balance: 9007.199254740993 XMR')
+    ).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByText(/Retrying automatically/)).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(screen.getByText(/Syncing.*60/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/last recorded wallet snapshot/)
+    ).not.toBeInTheDocument();
+    expect(bridge).toHaveBeenCalledTimes(4);
+    expect(
+      bridge.mock.calls
+        .slice(1)
+        .every(([r]) => r.passive === true && r.action === 'GET_XMR_WALLET')
+    ).toBe(true);
+  });
+  it('stops passive recovery when custody approval expires and never refreshes stale ETA by polling', async () => {
+    vi.useFakeTimers();
+    bridge
+      .mockResolvedValueOnce({ ...snapshot(), state: 'STALE', wallet: null })
+      .mockRejectedValue({ code: 'XMR_READ_APPROVAL_REQUIRED' });
+    render(view());
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(
+      screen.getByText(/Automatic updates are paused/)
+    ).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120000);
+    });
+    expect(bridge).toHaveBeenCalledTimes(2);
+  });
+});
+
+it('keeps a pending send preparation alive across a queued wallet poll and stale balances', async () => {
+  vi.useFakeTimers();
+  let prepared!: (v: unknown) => void;
+  let walletRead!: (v: unknown) => void;
+  let reads = 0;
+  let sendView: unknown;
+  const sendContract = 'qortium-home-xmr-send-v1';
+  const none = {
+    contract: sendContract,
+    handle: null,
+    state: 'NONE',
+    walletHeld: false,
+  };
+  sendView = none;
+  bridge.mockImplementation(({ action }) =>
+    action === 'GET_XMR_WALLET'
+      ? ++reads === 1
+        ? Promise.resolve({ ...snapshot(), updatedAt: Date.now() })
+        : new Promise((resolve) => {
+            walletRead = resolve;
+          })
+      : action === 'PREPARE_XMR_SEND'
+        ? new Promise((resolve) => {
+            prepared = resolve;
+          })
+        : Promise.resolve(sendView)
+  );
+  render(
+    <MemoryRouter>
+      <XmrWalletPanel
+        chain={{
+          ...chain,
+          homeWallet: {
+            ...chain.homeWallet!,
+            send: true,
+            sendMode: 'TRUSTED_CORE_CUSTODY',
+            sendContract,
+          },
+        }}
+      />
+    </MemoryRouter>
+  );
+  await act(async () => {});
+  fireEvent.click(screen.getByText('Send XMR'));
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Recipient XMR address'), {
+    target: { value: address },
+  });
+  fireEvent.change(screen.getByLabelText('Amount (XMR)'), {
+    target: { value: '0.01' },
+  });
+  fireEvent.click(screen.getByText('Review network fee'));
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(35000);
+  });
+  expect(
+    bridge.mock.calls.filter(([r]) => r.action === 'GET_XMR_WALLET')
+  ).toHaveLength(2);
+  await act(async () => {
+    sendView = {
+      contract: sendContract,
+      handle: '11111111-1111-1111-1111-111111111111',
+      state: 'PREPARED',
+      recipient: address,
+      amountAtomic: '10000000000',
+      feeAtomic: '10000000',
+      expiresAt: Date.now() + 120000,
+      walletHeld: true,
+      canCancelPreparation: true,
+    };
+    prepared(sendView);
+  });
+  expect(
+    screen.getByText('Network fee: 0.000010000000 XMR')
+  ).toBeInTheDocument();
+  expect(screen.getByText('Approve and send')).toBeDisabled();
+  expect(screen.getByText('Refresh send status')).toBeEnabled();
+  await act(async () => {
+    walletRead({ ...snapshot(), updatedAt: Date.now() });
+  });
+  expect(screen.getByText('Approve and send')).toBeEnabled();
 });
