@@ -2,7 +2,11 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## Unreleased
+## [1.7.27] - 2026-10-03 (QuickMythril fork test build)
+
+### Release Wallet 1.7.27 for XMR read testing
+
+- Publish the merged XMR receive and balance interface for local Home/Core testing.
 
 ### Normalize wallet rows and regression tests for CI
 
