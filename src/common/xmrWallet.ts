@@ -8,9 +8,18 @@ export type XmrTx = {
   outgoingAtomic: string | null;
   feeAtomic: string | null;
 };
+export type XmrScanProgress = {
+  scanId: string;
+  startHeight: number;
+  height: number;
+  targetHeight: number;
+  updatedAt: number;
+};
 export type XmrSnapshot = {
   contract: typeof XMR_CONTRACT;
   state: string;
+  updatedAt: number | null;
+  progress: XmrScanProgress | null;
   wallet: null | {
     address: string;
     height: number;
@@ -90,8 +99,41 @@ export function parseXmrSnapshot(v: unknown): XmrSnapshot {
     !states.has(String(v.state))
   )
     throw Error('Invalid XMR contract');
-  if (v.wallet === null)
-    return { contract: XMR_CONTRACT, state: String(v.state), wallet: null };
+  if (v.updatedAt != null && !integer(v.updatedAt, 8640000000000000))
+    throw Error('Invalid XMR observation time');
+  let progress: XmrScanProgress | null = null;
+  if (v.progress != null) {
+    const p = v.progress;
+    if (
+      !record(p) ||
+      typeof p.scanId !== 'string' ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+        p.scanId
+      ) ||
+      !integer(p.startHeight) ||
+      !integer(p.height) ||
+      !integer(p.targetHeight) ||
+      p.targetHeight <= 0 ||
+      p.startHeight > p.height ||
+      p.height > p.targetHeight ||
+      !integer(p.updatedAt, 8640000000000000)
+    )
+      throw Error('Invalid XMR scan progress');
+    progress = {
+      scanId: p.scanId,
+      startHeight: p.startHeight,
+      height: p.height,
+      targetHeight: p.targetHeight,
+      updatedAt: p.updatedAt,
+    };
+  }
+  const base = {
+    contract: XMR_CONTRACT as typeof XMR_CONTRACT,
+    state: String(v.state),
+    updatedAt: (v.updatedAt ?? null) as number | null,
+    progress,
+  };
+  if (v.wallet === null) return { ...base, wallet: null };
   const w = v.wallet;
   if (
     !record(w) ||
@@ -131,8 +173,7 @@ export function parseXmrSnapshot(v: unknown): XmrSnapshot {
   if (new Set(transactions.map((t) => t.txid)).size !== transactions.length)
     throw Error('Duplicate XMR history');
   return {
-    contract: XMR_CONTRACT,
-    state: String(v.state),
+    ...base,
     wallet: {
       address: w.address,
       height: w.height,

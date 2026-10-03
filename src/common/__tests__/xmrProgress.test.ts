@@ -1,0 +1,105 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  clearXmrProgress,
+  recordXmrProgress,
+  xmrProgress,
+} from '../xmrProgress';
+import { parseXmrSnapshot, XMR_CONTRACT, type XmrSnapshot } from '../xmrWallet';
+const id = '11111111-1111-4111-8111-111111111111';
+const snap = (height: number, at: number, scanId = id): XmrSnapshot => ({
+  contract: XMR_CONTRACT,
+  state: 'SCANNING',
+  updatedAt: null,
+  wallet: null,
+  progress: {
+    scanId,
+    startHeight: 1000,
+    height,
+    targetHeight: 2000,
+    updatedAt: at,
+  },
+});
+beforeEach(() => {
+  clearXmrProgress();
+  vi.useFakeTimers();
+  vi.setSystemTime(100000);
+});
+afterEach(() => vi.useRealTimers());
+describe('XMR native progress observations', () => {
+  it('waits for real samples and does not count repeated UI polls as progress', () => {
+    for (const [height, at] of [
+      [1100, 100000],
+      [1200, 115000],
+      [1300, 130000],
+    ]) {
+      vi.setSystemTime(at);
+      recordXmrProgress('A', snap(height, at));
+    }
+    const s = snap(1300, 130000);
+    expect(xmrProgress('A', s, 130000)).toEqual({
+      percent: 30,
+      remainingSeconds: 105,
+      stalled: false,
+    });
+    for (let at = 135000; at <= 185000; at += 5000) {
+      vi.setSystemTime(at);
+      recordXmrProgress('A', s);
+    }
+    expect(xmrProgress('A', s, 190000).remainingSeconds).toBeNull();
+    expect(xmrProgress('A', s, 190000).stalled).toBe(true);
+    expect(xmrProgress('B', s, 130000).remainingSeconds).toBeNull();
+  });
+  it('uses callback time for ETA even when balances are stale and resets on scan change, rewind and gaps', () => {
+    for (const [height, at] of [
+      [1100, 100000],
+      [1200, 115000],
+      [1300, 130000],
+    ]) {
+      vi.setSystemTime(at);
+      recordXmrProgress('A', snap(height, at));
+    }
+    expect(
+      xmrProgress('A', { ...snap(1300, 130000), state: 'STALE' }, 130000)
+        .remainingSeconds
+    ).toBe(105);
+    for (const s of [
+      snap(1100, 135000),
+      snap(1400, 200000),
+      snap(1500, 215000, '22222222-2222-4222-8222-222222222222'),
+    ]) {
+      vi.setSystemTime(s.progress!.updatedAt);
+      recordXmrProgress('A', s);
+      expect(xmrProgress('A', s, Date.now()).remainingSeconds).toBeNull();
+    }
+    clearXmrProgress();
+    expect(
+      xmrProgress('A', snap(1500, 215000), 215000).remainingSeconds
+    ).toBeNull();
+    expect(xmrProgress('A', snap(2000, 215000), 215000).percent).toBe(99.9);
+  });
+  it('validates progress without exposing authority and accepts older responses', () => {
+    const input = { ...snap(1100, 100000), send: false };
+    expect(parseXmrSnapshot(input).progress?.height).toBe(1100);
+    expect(
+      parseXmrSnapshot({ ...input, progress: undefined, updatedAt: undefined })
+        .progress
+    ).toBeNull();
+    for (const patch of [
+      { scanId: 'bad' },
+      { height: 999 },
+      { height: 2001 },
+      { targetHeight: 500000001 },
+      { updatedAt: -1 },
+    ]) {
+      expect(() =>
+        parseXmrSnapshot({
+          ...input,
+          progress: { ...input.progress, ...patch },
+        })
+      ).toThrow();
+    }
+    expect(
+      xmrProgress('A', snap(1100, 200000), 100000).remainingSeconds
+    ).toBeNull();
+  });
+});

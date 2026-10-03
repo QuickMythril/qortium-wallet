@@ -1,3 +1,8 @@
+import { useXmrWallet } from '../../hooks/useXmrWallet';
+import { hasXmrProgress } from '../../common/xmrProgress';
+import { supportsXmr } from '../../common/xmrWallet';
+import { XmrSyncProgress } from './XmrSyncProgress';
+import type { XmrWalletStatus } from '../../hooks/useXmrWallet';
 import { useTranslation } from 'react-i18next';
 import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
 import {
@@ -155,6 +160,7 @@ interface BlockProps {
   // with an explicit "total · verifying" qualifier, never as `balance`.
   provisionalTotal?: string | null;
   arrrStatus?: UseArrrSyncStatusResult;
+  xmrStatus?: XmrWalletStatus;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   cachedAddress?: string | null;
@@ -174,6 +180,7 @@ export function CoinBlock({
   balanceError,
   provisionalTotal,
   arrrStatus,
+  xmrStatus,
   onRetryBalance,
   canReceive,
   cachedAddress,
@@ -453,12 +460,23 @@ export function CoinBlock({
             mt: 0.25,
           }}
         >
-          {arrrStatus &&
-          (!arrrStatus.snapshot?.ready ||
-            arrrStatus.error ||
-            arrrStatus.switching ||
-            arrrStatus.switchingStalled ||
-            (balance == null && provisionalTotal == null && !balanceError)) ? (
+          {chain.coinEnum === 'XMR' && xmrStatus?.current?.error ? (
+            xmrStatus.current.error
+          ) : chain.coinEnum === 'XMR' && xmrStatus?.value ? (
+            <XmrSyncProgress
+              value={xmrStatus.value}
+              progress={xmrStatus.progress}
+              now={xmrStatus.now}
+              compact
+            />
+          ) : arrrStatus &&
+            (!arrrStatus.snapshot?.ready ||
+              arrrStatus.error ||
+              arrrStatus.switching ||
+              arrrStatus.switchingStalled ||
+              (balance == null &&
+                provisionalTotal == null &&
+                !balanceError)) ? (
             <ArrrSyncProgress status={arrrStatus} compact />
           ) : loading ? (
             <Skeleton
@@ -570,6 +588,7 @@ function SortableCoinItem({
   balanceError,
   provisionalTotal,
   arrrStatus,
+  xmrStatus,
   onRetryBalance,
   canReceive,
   cachedAddress,
@@ -585,6 +604,7 @@ function SortableCoinItem({
   balanceError?: string;
   provisionalTotal?: string | null;
   arrrStatus?: UseArrrSyncStatusResult;
+  xmrStatus?: XmrWalletStatus;
   onRetryBalance: (chain: ChainConfig) => void;
   canReceive: boolean;
   cachedAddress?: string | null;
@@ -622,6 +642,7 @@ function SortableCoinItem({
           balanceError={balanceError}
           provisionalTotal={provisionalTotal}
           arrrStatus={arrrStatus}
+          xmrStatus={xmrStatus}
           onRetryBalance={onRetryBalance}
           cachedAddress={cachedAddress}
           canReceive={canReceive}
@@ -642,6 +663,7 @@ function SortableCoinItem({
           balanceError={balanceError}
           provisionalTotal={provisionalTotal}
           arrrStatus={arrrStatus}
+          xmrStatus={xmrStatus}
           onRetryBalance={onRetryBalance}
           cachedAddress={cachedAddress}
           canReceive={canReceive}
@@ -753,6 +775,14 @@ export function CoinGrid() {
     Record<AssetNetwork, boolean>
   >({ qortium: false, qortal: false });
   const walletReady = useAtomValue(walletReadyAtom);
+  const xmrChain = chains.find((chain) => chain.coinEnum === 'XMR');
+  const xmrStatus = useXmrWallet(
+    !!xmrChain &&
+      supportsXmr(xmrChain) &&
+      walletReady &&
+      hasXmrProgress(account),
+    true
+  );
   const arrrChain = chains.find((chain) => chain.coinEnum === 'ARRR');
   const arrrAvailable =
     !!arrrChain &&
@@ -1390,6 +1420,9 @@ export function CoinGrid() {
                       balance={balances[item.key] ?? null}
                       balanceError={balanceErrors[item.key]}
                       provisionalTotal={provisionalTotals[item.key] ?? null}
+                      xmrStatus={
+                        item.chain.coinEnum === 'XMR' ? xmrStatus : undefined
+                      }
                       arrrStatus={
                         item.chain.coinEnum === 'ARRR' && arrrAvailable
                           ? arrrStatus

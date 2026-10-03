@@ -1,3 +1,5 @@
+import { XmrSyncProgress } from './XmrSyncProgress';
+import type { XmrWalletStatus } from '../../hooks/useXmrWallet';
 import type { UseArrrSyncStatusResult } from '../../hooks/useArrrSyncStatus';
 import { ArrrSyncProgress } from './ArrrSyncProgress';
 import { useEffect, useRef, useState } from 'react';
@@ -34,6 +36,7 @@ interface CoinListRowProps {
   // with an explicit "total · verifying" qualifier, never as `balance`.
   provisionalTotal?: string | null;
   arrrStatus?: UseArrrSyncStatusResult;
+  xmrStatus?: XmrWalletStatus;
   onRetryBalance?: (chain: ChainConfig) => void;
   canReceive: boolean;
   cachedAddress?: string | null;
@@ -69,6 +72,7 @@ export function CoinListRow({
   balanceError,
   provisionalTotal,
   arrrStatus,
+  xmrStatus,
   onRetryBalance,
   canReceive,
   cachedAddress,
@@ -278,10 +282,21 @@ export function CoinListRow({
             whiteSpace: 'nowrap',
           }}
         >
-          {arrrStatus &&
-          (!arrrStatus.snapshot?.ready ||
-            arrrStatus.error ||
-            (balance == null && provisionalTotal == null && !balanceError)) ? (
+          {chain.coinEnum === 'XMR' && xmrStatus?.current?.error ? (
+            xmrStatus.current.error
+          ) : chain.coinEnum === 'XMR' && xmrStatus?.value ? (
+            <XmrSyncProgress
+              value={xmrStatus.value}
+              progress={xmrStatus.progress}
+              now={xmrStatus.now}
+              compact
+            />
+          ) : arrrStatus &&
+            (!arrrStatus.snapshot?.ready ||
+              arrrStatus.error ||
+              (balance == null &&
+                provisionalTotal == null &&
+                !balanceError)) ? (
             <ArrrSyncProgress status={arrrStatus} compact />
           ) : loading ? (
             <Skeleton width={72} sx={{ ml: 'auto' }} />

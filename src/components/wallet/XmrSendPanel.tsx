@@ -73,16 +73,19 @@ export function XmrSendPanel({
     const lifecycle = generation;
     lifecycle.current++;
     alive.current = true;
+    return () => {
+      lifecycle.current++;
+      alive.current = false;
+    };
+  }, []);
+  // Readiness gates new work/polling; an already approved request retains its account lifetime.
+  useEffect(() => {
     if (ready) void latest.current('GET_XMR_SEND_STATUS', true);
     const timer = setInterval(() => {
       if (ready && !document.hidden)
         void latest.current('GET_XMR_SEND_STATUS', true);
     }, 6000);
-    return () => {
-      lifecycle.current++;
-      alive.current = false;
-      clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, [ready]);
   const shown =
     value &&
