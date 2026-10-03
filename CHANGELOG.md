@@ -2,6 +2,14 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [Unreleased]
+
+### Add Monero send review and automatic recovery
+
+- Show XMR sending only with the dedicated compatible Home/Core send contract.
+- Review the exact native network fee before Home approval, recover status automatically, cancel preparations safely, and dismiss confirmed notices across reloads.
+- Keep account changes isolated and block new payments while an earlier outcome is unresolved.
+
 ## [1.7.27] - 2026-10-03 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.27 for XMR read testing

@@ -31,8 +31,10 @@ export function supportsXmr(chain: ChainConfig) {
     c.custodyContract === XMR_CONTRACT &&
     c.implemented === true &&
     c.protocol === 'qdnRequest' &&
-    c.send === false &&
-    c.sendMode === 'NONE' &&
+    ((c.send === false && c.sendMode === 'NONE') ||
+      (c.send === true &&
+        c.sendMode === 'TRUSTED_CORE_CUSTODY' &&
+        c.sendContract === 'qortium-home-xmr-send-v1')) &&
     c.serverManagement === false &&
     c.requiresUnlockedAccount === true &&
     ((c.read === true &&
