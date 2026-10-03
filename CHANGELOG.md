@@ -2,7 +2,11 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## Unreleased
+## [1.7.29] - 2026-10-03 (QuickMythril fork test build)
+
+### Release Wallet 1.7.29 with Monero scan progress
+
+- Publish automatic Monero scan recovery, progress and ETA for local Core/Home testing.
 
 ### Keep Monero syncing visible with progress and automatic recovery
 
