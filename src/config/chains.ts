@@ -179,6 +179,19 @@ export const DEFAULT_CHAINS: ChainConfig[] = [
 // Full registry of chains the wallet can handle, including ones excluded from
 // the fallback (e.g. ARRR requires a sync phase that makes no sense offline).
 export const KNOWN_CHAINS: ChainConfig[] = [
+  {
+    key: 'XMR',
+    name: 'Monero',
+    ticker: 'XMR',
+    coinEnum: 'XMR',
+    route: 'monero',
+    defaultFee: 0,
+    isNative: false,
+    decimalPlaces: 12,
+    activeNetwork: 'MAIN',
+    supportsHtlc: false,
+    supportsLocalChainTrades: false,
+  },
   ...DEFAULT_CHAINS,
   {
     key: 'ARRR',

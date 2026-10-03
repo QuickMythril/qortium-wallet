@@ -90,10 +90,13 @@ export function CoinListRow({
   const previousCanReceive = useRef(canReceive);
   const receiveRevision = useRef(0);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    receiveRevision.current++;
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      receiveRevision.current++;
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    },
+    []
+  );
   canReceiveRef.current = canReceive;
   if (previousCanReceive.current !== canReceive) {
     previousCanReceive.current = canReceive;

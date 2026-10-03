@@ -1,3 +1,4 @@
+import { XmrWalletPanel } from './XmrWalletPanel';
 import { ArrrSendPanel } from './ArrrSendPanel';
 import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
 import { useArrrWalletSession } from '../../hooks/useArrrWalletSession';
@@ -270,6 +271,14 @@ function recipientInvalidMessage(
 }
 
 export function CoinDetail({ chain }: Props) {
+  return chain.coinEnum === 'XMR' ? (
+    <XmrWalletPanel chain={chain} />
+  ) : (
+    <StandardCoinDetail chain={chain} />
+  );
+}
+
+function StandardCoinDetail({ chain }: Props) {
   const c = useColors();
   const { t } = useTranslation('core');
   const uiStyle = useAtomValue(uiStyleAtom);

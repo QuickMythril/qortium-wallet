@@ -100,7 +100,9 @@ describe('CoinListRow', () => {
     renderRow({ chain: arrrChain, canSend: true });
     await user.hover(screen.getByRole('button', { name: 'send ARRR' }));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Send');
-    expect(screen.queryByText('Sending ARRR is not available yet')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Sending ARRR is not available yet')
+    ).not.toBeInTheDocument();
   });
 
   it('copies a stopped ARRR account cached address without a native read', async () => {

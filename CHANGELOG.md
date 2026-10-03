@@ -2,6 +2,21 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## Unreleased
+
+### Normalize wallet rows and regression tests for CI
+
+- Normalize wallet row formatting and related regression tests to the repository's formatting rules.
+
+### Add XMR receive, scan progress and transaction history
+
+- Add an XMR screen only when Home advertises its dedicated local custody contract.
+- Activate explicitly, unlock without reloading, and show the receive address/QR,
+  scan progress, exact 12-decimal total/unlocked balances and newest-first history.
+- Serialize reads, preserve the display on tab return, discard old-account replies,
+  and stop automatic updates when approval expires without reopening prompts.
+- Keep XMR sending and generic foreign-wallet actions disabled.
+
 ## [1.7.26] - 2026-10-02 (QuickMythril fork test build)
 
 ### Make ARRR send readiness and confirmed receipts easier to use

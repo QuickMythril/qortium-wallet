@@ -218,21 +218,41 @@ describe('CoinGrid shared balance cache (round 2, item B)', () => {
   it('labels the enabled ARRR tile send action correctly', async () => {
     getDefaultStore().set(viewModeAtom, 'grid');
     chainsFixture.push({
-      ...chainsFixture[1], key: 'ARRR', ticker: 'ARRR', coinEnum: 'ARRR', route: 'pirate-chain',
+      ...chainsFixture[1],
+      key: 'ARRR',
+      ticker: 'ARRR',
+      coinEnum: 'ARRR',
+      route: 'pirate-chain',
       homeWallet: {
         ...chainsFixture[1].homeWallet!,
-        readMode: 'TRUSTED_CORE_CUSTODY', receiveMode: 'TRUSTED_CORE_CUSTODY',
-        custodyContract: 'qortium-home-arrr-custody-v1', syncStatus: true,
-        send: true, sendMode: 'TRUSTED_CORE_CUSTODY', sendContract: 'qortium-home-arrr-send-v2',
+        readMode: 'TRUSTED_CORE_CUSTODY',
+        receiveMode: 'TRUSTED_CORE_CUSTODY',
+        custodyContract: 'qortium-home-arrr-custody-v1',
+        syncStatus: true,
+        send: true,
+        sendMode: 'TRUSTED_CORE_CUSTODY',
+        sendContract: 'qortium-home-arrr-send-v2',
       },
     });
     qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
-      if (opts.action === 'SHOW_ACTIONS') return ['SEND_COIN', 'GET_WALLET_BALANCE', 'GET_ARRR_SYNC_STATUS', 'GET_ARRR_SEND_READINESS', 'GET_ARRR_SEND_OPERATION', 'UNLOCK_SELECTED_ACCOUNT'];
+      if (opts.action === 'SHOW_ACTIONS')
+        return [
+          'SEND_COIN',
+          'GET_WALLET_BALANCE',
+          'GET_ARRR_SYNC_STATUS',
+          'GET_ARRR_SEND_READINESS',
+          'GET_ARRR_SEND_OPERATION',
+          'UNLOCK_SELECTED_ACCOUNT',
+        ];
       return null;
     });
     renderGrid();
-    await waitFor(() => expect(screen.getAllByLabelText('Send')).toHaveLength(3));
-    expect(screen.queryByLabelText('Sending ARRR is not available yet')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getAllByLabelText('Send')).toHaveLength(3)
+    );
+    expect(
+      screen.queryByLabelText('Sending ARRR is not available yet')
+    ).not.toBeInTheDocument();
   });
 
   it.each(['grid', 'list'] as const)(
