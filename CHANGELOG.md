@@ -2,7 +2,11 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.28] - 2026-10-03 (QuickMythril fork test build)
+
+### Release Wallet 1.7.28 for XMR send testing
+
+- Publish the merged XMR fee-review and recovery interface for local Core/Home acceptance.
 
 ### Add Monero send review and automatic recovery
 
