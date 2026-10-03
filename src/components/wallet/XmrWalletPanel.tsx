@@ -1,3 +1,4 @@
+import { XmrSendPanel } from './XmrSendPanel';
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
@@ -196,7 +197,9 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
       ) : (
         <>
           <Typography sx={{ mb: 2 }}>
-            Receive and view XMR. Sending is not available yet.
+            {chain.homeWallet?.send
+              ? 'Receive, view and send XMR with approval in Home.'
+              : 'Receive and view XMR. Sending is not available yet.'}
           </Typography>
           {current?.error && (
             <Typography role="alert" sx={{ mb: 2 }}>
@@ -242,6 +245,18 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                             value.state.toLowerCase().replace(/_/g, ' ')
                           : ''}
           </Typography>
+          {chain.homeWallet?.send === true &&
+            chain.homeWallet.sendContract === 'qortium-home-xmr-send-v1' && (
+              <XmrSendPanel
+                key={`${String(account)}:${revision}`}
+                account={String(account)}
+                ready={
+                  value?.state === 'READY' &&
+                  !current?.locked &&
+                  !current?.error
+                }
+              />
+            )}
           {wallet && (
             <>
               {value?.state !== 'READY' && value?.state !== 'SCANNING' && (
