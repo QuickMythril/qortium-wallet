@@ -2,7 +2,11 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.30] - 2026-10-04 (QuickMythril fork test build)
+
+### Release Wallet 1.7.30 with Monero stop controls
+
+- Publish the approved Monero stop/resume controls and matching coin detail layout for local Home testing.
 
 ### Add Monero stop controls and match coin wallet layout
 
