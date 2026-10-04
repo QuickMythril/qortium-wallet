@@ -1,7 +1,12 @@
+import { WalletScanSetup } from './WalletScanSetup';
+import {
+  WALLET_SCAN_START_CONTRACT,
+  type WalletScanStart,
+} from '../../common/walletScanStart';
 import { requestWalletAction } from '../../common/walletRequest';
 import { WalletControls } from './WalletPage';
 import { useEffect, useRef, useState } from 'react';
-import { Alert } from '@mui/material';
+import { Alert, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { parseArrrWalletSession } from '../../common/arrrWalletSession';
 import {
@@ -15,10 +20,16 @@ import {
 
 export function ArrrWalletSessionControls({
   session,
+  scanStartContract,
 }: {
   session: ReturnType<typeof useArrrWalletSession>;
+  scanStartContract?: string;
 }) {
   const { t } = useTranslation();
+  const [scanStart, setScanStart] = useState<WalletScanStart | null>({
+    scanMode: 'RESUME',
+  });
+  const choices = scanStartContract === WALLET_SCAN_START_CONTRACT;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Activation answered ARRR_WALLET_BUSY: Core has not finished stopping
@@ -37,7 +48,15 @@ export function ArrrWalletSessionControls({
   const degraded = value?.lifecycle === 'DEGRADED';
   const stop = session.active;
   const change = async () => {
-    if (!value || busy || inFlight.current || degraded || session.error) return;
+    if (
+      !value ||
+      (!stop && choices && !scanStart) ||
+      busy ||
+      inFlight.current ||
+      degraded ||
+      session.error
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     setError(null);
@@ -63,6 +82,7 @@ export function ArrrWalletSessionControls({
             action: 'ACTIVATE_ARRR_WALLET',
             coin: 'ARRR',
             expectedRevision: value.revision,
+            ...(choices ? scanStart : {}),
           } as any)
         );
         if (
@@ -109,6 +129,7 @@ export function ArrrWalletSessionControls({
           ? {
               disabled:
                 busy ||
+                (!stop && choices && !scanStart) ||
                 !value ||
                 !!session.error ||
                 value.lifecycle === 'STOPPING',
@@ -133,6 +154,18 @@ export function ArrrWalletSessionControls({
       }}
       note={t('arrr.session_scope')}
     >
+      {!stop && choices && (
+        <WalletScanSetup
+          minimumHeight={1}
+          disabled={busy}
+          onChange={setScanStart}
+        />
+      )}
+      {value?.scanStart && (
+        <Typography variant="body2" sx={{ mt: 1 }}>
+          Saved scan start: block {value.scanStart.height.toLocaleString()}.
+        </Typography>
+      )}
       {label && (
         <Alert severity={degraded ? 'warning' : 'info'} sx={{ mt: 1 }}>
           {t(label)}

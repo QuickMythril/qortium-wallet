@@ -1,3 +1,4 @@
+import type { WalletScanStart } from '../common/walletScanStart';
 import { requestWalletAction } from '../common/walletRequest';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from 'qapp-core';
@@ -16,6 +17,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
   const [revision, setRevision] = useState(0);
   const [request, setRequest] = useState({
     action: 'GET_XMR_WALLET',
+    scanStart: undefined as WalletScanStart | undefined,
     passive: passiveOnly,
     account,
     revision: 0,
@@ -59,6 +61,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
       setRevision((n) => n + 1);
       setRequest((r) => ({
         action: 'GET_XMR_WALLET',
+        scanStart: undefined,
         passive: true,
         account: null,
         revision: r.revision + 1,
@@ -80,7 +83,11 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight = false;
     if (!enabled) return;
-    const poll = async (action = 'GET_XMR_WALLET', passive = true) => {
+    const poll = async (
+      action = 'GET_XMR_WALLET',
+      passive = true,
+      scanStart?: WalletScanStart
+    ) => {
       if (
         inFlight ||
         stopped ||
@@ -109,6 +116,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
             action,
             coin: 'XMR',
             ...(action === 'GET_XMR_WALLET' ? { passive } : {}),
+            ...(action === 'ACTIVATE_XMR_WALLET' ? scanStart : {}),
           });
           if (id !== generation.current) return;
           const next = parseXmrSnapshot(response);
@@ -207,7 +215,8 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     }
     void poll(
       freshRequest ? request.action : 'GET_XMR_WALLET',
-      freshRequest ? request.passive : true
+      freshRequest ? request.passive : true,
+      freshRequest ? request.scanStart : undefined
     );
     const visible = () => {
       if (!document.hidden) void poll();
@@ -231,7 +240,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     return () => clearInterval(timer);
   }, []);
   const progress = xmrProgress(account, value ?? null, now);
-  const refresh = (action = 'GET_XMR_WALLET') => {
+  const refresh = (action = 'GET_XMR_WALLET', scanStart?: WalletScanStart) => {
     if (action !== 'STOP_XMR_WALLET') pausedAccount.current = null;
     else {
       if (isPaused() && request.action === action && current?.busy) return;
@@ -241,6 +250,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     generation.current++;
     setRequest((r) => ({
       action,
+      scanStart,
       passive: false,
       account,
       revision: r.revision + 1,

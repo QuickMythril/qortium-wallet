@@ -1888,6 +1888,7 @@ function StandardCoinDetail({ chain }: Props) {
                   <ArrrWalletSessionControls
                     key={`session:${homeAccount}:${arrrControlRevision}`}
                     session={arrrSession}
+                    scanStartContract={chain.homeWallet?.scanStartContract}
                   />
                 ) : (
                   canControlArrrSync && (

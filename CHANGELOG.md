@@ -4,6 +4,11 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+### Add shared ARRR and XMR scan-start controls
+
+- Use one scan selector for saved-progress resume, historical block restore, and explicitly never-funded addresses at the current tip. Home approves the chosen policy; existing checkpoints stay intact.
+- Show saved scan heights and distinguish Monero chain preparation from transaction scanning. Capability gating preserves older Home/Core compatibility and account changes reset unapproved choices.
+
 ## [1.7.31] - 2026-10-04 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.31 with shared wallet components

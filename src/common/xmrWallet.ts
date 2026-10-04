@@ -21,6 +21,9 @@ export type XmrSnapshot = {
   state: string;
   updatedAt: number | null;
   progress: XmrScanProgress | null;
+  preparation?: XmrScanProgress;
+  scanStart?: { mode: string; height: number };
+  scanStartError?: string;
   wallet: null | {
     address: string;
     height: number;
@@ -128,7 +131,58 @@ export function parseXmrSnapshot(v: unknown): XmrSnapshot {
       updatedAt: p.updatedAt,
     };
   }
+  const extra: Pick<
+    XmrSnapshot,
+    'scanStart' | 'preparation' | 'scanStartError'
+  > = {};
+  if (v.scanStart != null) {
+    const start = v.scanStart;
+    if (
+      !record(start) ||
+      !integer(start.height) ||
+      !['RESUME', 'RESTORE_FROM_HEIGHT', 'NEW_AT_CURRENT_TIP'].includes(
+        String(start.mode)
+      )
+    )
+      throw Error('Invalid scan start');
+    extra.scanStart = { mode: String(start.mode), height: start.height };
+  }
+  if (v.scanStartError != null) {
+    if (
+      ![
+        'XMR_EXISTING_WALLET',
+        'XMR_RESTORE_HEIGHT_MISMATCH',
+        'XMR_RESTORE_HEIGHT_ABOVE_TIP',
+        'XMR_DAEMON_UNAVAILABLE',
+      ].includes(String(v.scanStartError))
+    )
+      throw Error('Invalid scan error');
+    extra.scanStartError = String(v.scanStartError);
+  }
+  if (v.preparation != null) {
+    const p = v.preparation;
+    if (
+      !record(p) ||
+      typeof p.scanId !== 'string' ||
+      !/^[a-f0-9-]{36}$/.test(p.scanId) ||
+      !integer(p.startHeight) ||
+      !integer(p.height) ||
+      !integer(p.targetHeight) ||
+      p.startHeight > p.height ||
+      p.height >= p.targetHeight ||
+      !integer(p.updatedAt, 8640000000000000)
+    )
+      throw Error('Invalid preparation progress');
+    extra.preparation = {
+      scanId: p.scanId,
+      startHeight: p.startHeight,
+      height: p.height,
+      targetHeight: p.targetHeight,
+      updatedAt: p.updatedAt,
+    };
+  }
   const base = {
+    ...extra,
     contract: XMR_CONTRACT as typeof XMR_CONTRACT,
     state: String(v.state),
     updatedAt: (v.updatedAt ?? null) as number | null,

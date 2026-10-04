@@ -33,6 +33,8 @@ export interface HomeWalletCapability {
   // (locked account, Android, non-trusted route, old Home).
   custodyContract?: string;
   stopContract?: string;
+  scanStartContract?: string;
+  scanModes?: readonly string[];
   syncStatus?: boolean;
   syncControlContract?: string;
   walletSessionContract?: string;

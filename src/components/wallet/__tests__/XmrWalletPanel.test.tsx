@@ -808,3 +808,88 @@ it('read approval expiry does not hide the stop control for an already active Co
   await screen.findByText(/Automatic updates are paused/);
   expect(screen.getByRole('button', { name: 'Stop syncing' })).toBeEnabled();
 });
+
+it('requires unused-address affirmation and resets scan choice across account change', async () => {
+  bridge.mockResolvedValue({
+    contract: XMR_CONTRACT,
+    state: 'INACTIVE',
+    send: false,
+    wallet: null,
+  });
+  const scanChain = {
+    ...chain,
+    homeWallet: {
+      ...chain.homeWallet!,
+      scanStartContract: 'qortium-home-wallet-scan-start-v1',
+    },
+  };
+  const content = () => (
+    <MemoryRouter>
+      <XmrWalletPanel chain={scanChain} />
+    </MemoryRouter>
+  );
+  const rendered = render(content());
+  await screen.findByRole('combobox', { name: 'Wallet scan' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Wallet scan' }));
+  fireEvent.click(
+    screen.getByRole('option', { name: 'New wallet — start at current tip' })
+  );
+  expect(screen.getByRole('button', { name: 'Start syncing' })).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole('checkbox', {
+      name: 'This address has never received funds',
+    })
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Start syncing' }));
+  await waitFor(() =>
+    expect(bridge).toHaveBeenCalledWith({
+      action: 'ACTIVATE_XMR_WALLET',
+      coin: 'XMR',
+      scanMode: 'NEW_AT_CURRENT_TIP',
+    })
+  );
+  account = 'account-B';
+  rendered.rerender(content());
+  await waitFor(() =>
+    expect(
+      screen.getByRole('combobox', { name: 'Wallet scan' })
+    ).toHaveTextContent('Resume saved progress')
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Start syncing' })).toBeEnabled()
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Start syncing' }));
+  await waitFor(() =>
+    expect(bridge).toHaveBeenLastCalledWith({
+      action: 'ACTIVATE_XMR_WALLET',
+      coin: 'XMR',
+      scanMode: 'RESUME',
+    })
+  );
+});
+
+it('shows chain preparation without a wallet-scan percentage or ETA', async () => {
+  bridge.mockResolvedValue({
+    contract: XMR_CONTRACT,
+    state: 'SCANNING',
+    send: false,
+    wallet: null,
+    updatedAt: Date.now(),
+    scanStart: { mode: 'NEW_AT_CURRENT_TIP', height: 100000 },
+    preparation: {
+      scanId: '11111111-1111-4111-8111-111111111111',
+      startHeight: 0,
+      height: 50000,
+      targetHeight: 100000,
+      updatedAt: Date.now(),
+    },
+  });
+  render(view());
+  await screen.findByText('Preparing chain history…');
+  expect(
+    screen.queryByText(/Estimated time remaining/)
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/Preparing chain hashes up to block/)
+  ).toBeInTheDocument();
+});
