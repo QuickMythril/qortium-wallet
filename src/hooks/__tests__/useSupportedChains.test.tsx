@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useSupportedChains } from '../useSupportedChains';
 import {
+  configureWalletRequests,
+  walletRequestValue,
+  WALLET_REQUEST_CONTRACT,
+} from '../../common/walletRequest';
+import {
   ARRR_CUSTODY_CONTRACT,
   HOME_WALLET_CONTRACT,
 } from '../../common/homeWalletCapabilities';
@@ -53,9 +58,36 @@ describe('useSupportedChains bridge availability', () => {
   });
 
   afterEach(() => {
+    configureWalletRequests([]);
     sessionStorage.clear();
     delete (globalThis as any).qdnRequest;
     vi.restoreAllMocks();
+  });
+
+  it('uses fresh host negotiation and revokes it when rediscovery fails', async () => {
+    const request = vi.fn().mockResolvedValue([
+      {
+        currencyCode: 'ARRR',
+        walletEnabled: true,
+        decimalPlaces: 8,
+        activeNetwork: 'MAIN',
+        supportsHtlc: false,
+        supportsLocalChainTrades: false,
+        homeWallet: {
+          ...arrrCustodyCapability,
+          requestContract: WALLET_REQUEST_CONTRACT,
+        },
+      },
+    ]);
+    (globalThis as any).qdnRequest = request;
+    const { result } = renderHook(() => useSupportedChains());
+    await waitFor(() => expect(result.current.status).toBe('live'));
+    const read = { action: 'GET_ARRR_SYNC_STATUS', coin: 'ARRR' };
+    expect(walletRequestValue(read).action).toBe('WALLET_REQUEST');
+    request.mockRejectedValue(new Error('Host unavailable'));
+    window.dispatchEvent(selectedAccountChanged());
+    await waitFor(() => expect(result.current.status).toBe('fallback'));
+    expect(walletRequestValue(read)).toBe(read);
   });
 
   it('shows only QORT when hosted without qdnRequest', async () => {

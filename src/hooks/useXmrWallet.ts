@@ -1,3 +1,4 @@
+import { requestWalletAction } from '../common/walletRequest';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from 'qapp-core';
 import { isSelectedAccountChangedMessage } from '../common/accountChangedMessage';
@@ -104,7 +105,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
             locked: false,
             busy: true,
           }));
-          const response = await qdnRequest({
+          const response = await requestWalletAction({
             action,
             coin: 'XMR',
             ...(action === 'GET_XMR_WALLET' ? { passive } : {}),
@@ -248,7 +249,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
   const unlock = async () => {
     const unlockAccount = account;
     try {
-      await qdnRequest({ action: 'UNLOCK_SELECTED_ACCOUNT' });
+      await requestWalletAction({ action: 'UNLOCK_SELECTED_ACCOUNT' });
       if (currentAccount.current === unlockAccount) refresh();
     } catch {
       /* Explicit retry remains available. */

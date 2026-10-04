@@ -1,5 +1,7 @@
+import { requestWalletAction } from '../../common/walletRequest';
+import { WalletControls } from './WalletPage';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button } from '@mui/material';
+import { Alert } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { parseArrrWalletSession } from '../../common/arrrWalletSession';
 import {
@@ -42,7 +44,7 @@ export function ArrrWalletSessionControls({
     setActivationBusy(false);
     try {
       if (stop) {
-        const result = await qdnRequest({
+        const result = await requestWalletAction({
           action: 'STOP_ARRR_SYNC',
           coin: 'ARRR',
         });
@@ -57,7 +59,7 @@ export function ArrrWalletSessionControls({
           throw new Error(t('arrr.control_unconfirmed'));
       } else {
         const result = parseArrrWalletSession(
-          await qdnRequest({
+          await requestWalletAction({
             action: 'ACTIVATE_ARRR_WALLET',
             coin: 'ARRR',
             expectedRevision: value.revision,
@@ -101,35 +103,41 @@ export function ArrrWalletSessionControls({
             ? 'arrr.session_none'
             : null;
   return (
-    <Box sx={{ mt: 2, maxWidth: 460, mx: 'auto' }}>
+    <WalletControls
+      primary={
+        !degraded
+          ? {
+              disabled:
+                busy ||
+                !value ||
+                !!session.error ||
+                value.lifecycle === 'STOPPING',
+              onClick: () => void change(),
+              busy,
+              label: t(
+                busy
+                  ? 'wallet_controls.waiting'
+                  : stop
+                    ? 'wallet_controls.stop'
+                    : value?.relation === 'OTHER'
+                      ? 'arrr.session_switch'
+                      : 'wallet_controls.start'
+              ),
+            }
+          : undefined
+      }
+      refresh={{
+        disabled: busy,
+        onClick: session.refresh,
+        label: t('wallet_controls.refresh'),
+      }}
+      note={t('arrr.session_scope')}
+    >
       {label && (
-        <Alert severity={degraded ? 'warning' : 'info'} sx={{ mb: 1 }}>
+        <Alert severity={degraded ? 'warning' : 'info'} sx={{ mt: 1 }}>
           {t(label)}
         </Alert>
       )}
-      {!degraded && (
-        <Button
-          variant="outlined"
-          disabled={
-            busy || !value || !!session.error || value.lifecycle === 'STOPPING'
-          }
-          onClick={() => void change()}
-        >
-          {t(
-            busy
-              ? 'arrr.control_waiting'
-              : stop
-                ? 'arrr.control_stop'
-                : value?.relation === 'OTHER'
-                  ? 'arrr.session_switch'
-                  : 'arrr.control_start'
-          )}
-        </Button>
-      )}
-      <Button disabled={busy} onClick={session.refresh}>
-        {t('arrr.session_refresh')}
-      </Button>
-      <Box sx={{ mt: 1, fontSize: '0.75rem' }}>{t('arrr.session_scope')}</Box>
       {(session.error || error) && (
         <Alert
           severity={!session.error && activationBusy ? 'info' : 'warning'}
@@ -143,6 +151,6 @@ export function ArrrWalletSessionControls({
           {session.error || error}
         </Alert>
       )}
-    </Box>
+    </WalletControls>
   );
 }

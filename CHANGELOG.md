@@ -2,6 +2,13 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [Unreleased]
+
+### Standardize wallet pages and capability-negotiated requests
+
+- Use shared coin headers, balance/receive cards, address bars, send triggers, scan controls, progress/ETA and history surfaces. Place send and scan controls below the balance consistently, including Monero.
+- Select the versioned Home wallet request interface from fresh capabilities, with legacy compatibility and one dispatch per request. Preserve coin-specific ownership, exact amounts and send recovery.
+
 ## [1.7.30] - 2026-10-04 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.30 with Monero stop controls

@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "בלוק {{ scanned }} מתוך {{ tip }}",
+    "blocks": "בלוק {{ synced }} מתוך {{ total }}",
+    "indeterminate": "מסנכרן…"
+  },
   "action": {
     "add": "הוסף",
     "add_peer": "הוסף עמית חדש",

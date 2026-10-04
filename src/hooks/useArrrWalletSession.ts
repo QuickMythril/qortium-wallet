@@ -1,3 +1,4 @@
+import { requestWalletAction } from '../common/walletRequest';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   parseArrrWalletSession,
@@ -39,7 +40,10 @@ export function useArrrWalletSession(enabled: boolean, account: unknown) {
       if (document.hidden || blocked) return;
       try {
         const value = parseArrrWalletSession(
-          await qdnRequest({ action: 'GET_ARRR_WALLET_SESSION', coin: 'ARRR' })
+          await requestWalletAction({
+            action: 'GET_ARRR_WALLET_SESSION',
+            coin: 'ARRR',
+          })
         );
         if (current !== generation.current) return;
         observed.add(account);

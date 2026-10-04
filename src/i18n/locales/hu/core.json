@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "blokk {{ scanned }} / {{ tip }}",
+    "blocks": "blokk {{ synced }} / {{ total }}",
+    "indeterminate": "szinkronizálás…"
+  },
   "action": {
     "add": "hozzáadás",
     "add_peer": "új csomópont hozzáadása",

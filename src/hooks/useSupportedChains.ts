@@ -1,3 +1,4 @@
+import { configureWalletRequests } from '../common/walletRequest';
 import { useState, useEffect, useRef } from 'react';
 import {
   DEFAULT_CHAINS,
@@ -75,6 +76,7 @@ export function useSupportedChains(): {
       const revision = ++discoveryRevision.current;
       if (typeof qdnRequest !== 'function') {
         if (cancelled || revision !== discoveryRevision.current) return;
+        configureWalletRequests([]);
         setChains([QORT_CHAIN]);
         setStatus('fallback');
         setWalletAuthorityReady(false);
@@ -144,6 +146,7 @@ export function useSupportedChains(): {
           })
           .filter((c): c is ChainConfig => c !== undefined);
         if (cancelled || revision !== discoveryRevision.current) return;
+        configureWalletRequests(data);
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(merged));
         sessionStorage.setItem(SESSION_STATUS_KEY, 'live');
         setChains([QORT_CHAIN, ...merged]);
@@ -151,6 +154,7 @@ export function useSupportedChains(): {
         setWalletAuthorityReady(authorityReady);
       } catch (err) {
         if (cancelled || revision !== discoveryRevision.current) return;
+        configureWalletRequests([]);
         console.warn(
           '[Walletium] GET_CROSSCHAIN_BLOCKCHAINS unavailable:',
           err
@@ -163,6 +167,7 @@ export function useSupportedChains(): {
 
     discover();
     const refresh = () => {
+      configureWalletRequests([]);
       // Revoke cached live authority immediately while the current Home
       // instance is rediscovered.
       setChains((current) =>

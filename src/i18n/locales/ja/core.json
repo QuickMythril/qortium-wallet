@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "ブロック {{ scanned }} / {{ tip }}",
+    "blocks": "ブロック {{ synced }} / {{ total }}",
+    "indeterminate": "同期中…"
+  },
   "action": {
     "add": "追加",
     "add_peer": "新しいピアを追加",

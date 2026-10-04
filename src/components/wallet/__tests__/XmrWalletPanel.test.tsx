@@ -107,7 +107,8 @@ describe('XMR receive and history', () => {
     ).toBe(false);
     bridge.mockResolvedValue(snapshot());
     render(view());
-    await screen.findByText('9007.199254740993 XMR');
+    const exactAmount = await screen.findByText('9007.199254740993');
+    expect(exactAmount.parentElement).toHaveTextContent('XMR');
     expect(
       screen
         .getByText('b'.repeat(64))
@@ -132,7 +133,7 @@ describe('XMR receive and history', () => {
     });
     render(view());
     const button = await screen.findByRole('button', {
-      name: 'Activate this wallet',
+      name: 'Start syncing',
     });
     await waitFor(() => expect(button).toBeEnabled());
     expect(bridge).toHaveBeenCalledTimes(1);
@@ -230,7 +231,7 @@ describe('XMR receive and history', () => {
         data: { action: 'SELECTED_ACCOUNT_CHANGED' },
       })
     );
-    await screen.findByRole('button', { name: 'Activate this wallet' });
+    await screen.findByRole('button', { name: 'Start syncing' });
   });
   it('automatic account and bridge events remain passive after denial', async () => {
     bridge.mockRejectedValue({ code: 'XMR_READ_APPROVAL_REQUIRED' });
@@ -267,7 +268,7 @@ describe('XMR receive and history', () => {
       .mockRejectedValue({ code: 'XMR_READ_APPROVAL_REQUIRED' });
     render(view());
     const activate = await screen.findByRole('button', {
-      name: 'Activate this wallet',
+      name: 'Start syncing',
     });
     await waitFor(() => expect(activate).toBeEnabled());
     fireEvent.click(activate);
@@ -288,7 +289,7 @@ describe('XMR receive and history', () => {
     });
     const ui = render(view());
     const activate = await screen.findByRole('button', {
-      name: 'Activate this wallet',
+      name: 'Start syncing',
     });
     await waitFor(() => expect(activate).toBeEnabled());
     fireEvent.click(activate);
@@ -311,7 +312,7 @@ describe('XMR receive and history', () => {
     });
     render(<StrictMode>{view()}</StrictMode>);
     const button = await screen.findByRole('button', {
-      name: 'Activate this wallet',
+      name: 'Start syncing',
     });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
@@ -394,7 +395,7 @@ describe('XMR passive scan recovery', () => {
     expect(
       screen.getByText(/last recorded wallet snapshot/)
     ).toBeInTheDocument();
-    expect(screen.getByText('9007.199254740993 XMR')).toBeInTheDocument();
+    expect(screen.getByText('9007.199254740993')).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
@@ -535,7 +536,7 @@ describe('explicit XMR stop and resume', () => {
     );
     render(view());
     await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
     await act(async () => {});
     expect(screen.getByText(/Stop accepted/)).toBeInTheDocument();
     expect(bridge).toHaveBeenCalledWith({
@@ -548,7 +549,7 @@ describe('explicit XMR stop and resume', () => {
       await vi.advanceTimersByTimeAsync(120000);
     });
     expect(bridge).toHaveBeenCalledTimes(count);
-    fireEvent.click(screen.getByRole('button', { name: 'Resume wallet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start syncing' }));
     await act(async () => {});
     expect(bridge).toHaveBeenLastCalledWith({
       action: 'ACTIVATE_XMR_WALLET',
@@ -573,8 +574,8 @@ describe('explicit XMR stop and resume', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(screen.getByRole('button', { name: 'Stop wallet' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    expect(screen.getByRole('button', { name: 'Stop syncing' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
     await act(async () => {});
     expect(bridge).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/Stopping wallet/)).toBeInTheDocument();
@@ -596,7 +597,7 @@ describe('explicit XMR stop and resume', () => {
     );
     render(view());
     await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
     await act(async () => {});
     expect(screen.getByText(/Stop was not confirmed/)).toBeInTheDocument();
     fireEvent(document, new Event('visibilitychange'));
@@ -605,7 +606,7 @@ describe('explicit XMR stop and resume', () => {
     });
     expect(bridge).toHaveBeenCalledTimes(2);
     bridge.mockResolvedValue(stopped);
-    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
     await act(async () => {});
     expect(screen.getByText(/Stop accepted/)).toBeInTheDocument();
   });
@@ -617,10 +618,10 @@ describe('explicit XMR stop and resume', () => {
       wallet: null,
     });
     const ui = render(view());
-    await screen.findByRole('button', { name: 'Activate this wallet' });
+    await screen.findByRole('button', { name: 'Start syncing' });
     ui.unmount();
     render(view());
-    await screen.findByRole('button', { name: 'Activate this wallet' });
+    await screen.findByRole('button', { name: 'Start syncing' });
     expect(
       bridge.mock.calls.every(([r]) => r.action === 'GET_XMR_WALLET')
     ).toBe(true);
@@ -639,7 +640,7 @@ describe('explicit XMR stop and resume', () => {
     );
     await screen.findByText(address);
     expect(
-      screen.queryByRole('button', { name: 'Stop wallet' })
+      screen.queryByRole('button', { name: 'Stop syncing' })
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(/requires an updated desktop Home/)
@@ -676,7 +677,7 @@ it('keeps paused controls usable across bridge changes without replaying a stop'
   );
   render(view());
   await screen.findByText(address);
-  fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
   await screen.findByText(/Stop accepted/);
   const before = bridge.mock.calls.length;
   fireEvent(window, new Event('qortiumBridgeStateChanged'));
@@ -684,7 +685,7 @@ it('keeps paused controls usable across bridge changes without replaying a stop'
     /Automatic page updates are paused. Refresh status or activate/
   );
   expect(screen.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
-  expect(screen.getByRole('button', { name: 'Stop wallet' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Stop syncing' })).toBeEnabled();
   expect(bridge).toHaveBeenCalledTimes(before);
   expect(screen.queryByText(address)).not.toBeInTheDocument();
 });
@@ -702,7 +703,7 @@ it('account changes cannot dispatch a queued stop for the old account', async ()
   await screen.findByText(address);
   fireEvent(document, new Event('visibilitychange'));
   await waitFor(() => expect(bridge).toHaveBeenCalledTimes(2));
-  fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
   account = 'account-B';
   ui.rerender(view());
   await act(async () => {
@@ -775,7 +776,7 @@ it('a late send preparation cannot re-enable sending after a stop', async () => 
       bridge.mock.calls.some(([r]) => r.action === 'PREPARE_XMR_SEND')
     ).toBe(true)
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
   await screen.findByText(/Stop accepted/);
   await act(async () => {
     prepared({
@@ -805,5 +806,5 @@ it('read approval expiry does not hide the stop control for an already active Co
   await screen.findByText(address);
   fireEvent(document, new Event('visibilitychange'));
   await screen.findByText(/Automatic updates are paused/);
-  expect(screen.getByRole('button', { name: 'Stop wallet' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Stop syncing' })).toBeEnabled();
 });

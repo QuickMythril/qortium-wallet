@@ -1,4 +1,32 @@
 {
+  "wallet_controls": {
+    "back": "Back to wallets",
+    "receive": "Receive {{ticker}}",
+    "start": "Start syncing",
+    "stop": "Stop syncing",
+    "waiting": "Waiting for Home / Core…",
+    "refresh": "Refresh status"
+  },
+  "wallet_progress": {
+    "heights": "block {{ scanned }} of {{ tip }}",
+    "blocks": "block {{ synced }} of {{ total }}",
+    "indeterminate": "syncing…",
+    "syncing": "Syncing",
+    "percent": "Syncing · {{percent}}%",
+    "ready": "Ready",
+    "estimating": "Estimated time remaining: estimating…",
+    "eta": "Estimated time remaining: about {{duration}}",
+    "waiting": "Waiting for progress…",
+    "outdated": "Sync status needs updating",
+    "minutes_one": "{{count}} minute",
+    "minutes_other": "{{count}} minutes",
+    "hours_minutes": "{{hours}} h {{minutes}} min",
+    "scanned": "Scanned {{scanned}} of {{total}} blocks",
+    "chain_height": "Chain height: {{scanned}} of {{tip}}",
+    "open_wallet": "Open wallet to check sync",
+    "estimating_short": "Estimating…",
+    "eta_short": "About {{duration}} left"
+  },
   "action": {
     "add": "add",
     "add_peer": "add new peer",

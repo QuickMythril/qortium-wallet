@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "블록 {{ scanned }} / {{ tip }}",
+    "blocks": "블록 {{ synced }} / {{ total }}",
+    "indeterminate": "동기화 중…"
+  },
   "action": {
     "add": "추가",
     "add_peer": "새 피어 추가",

@@ -1,5 +1,7 @@
+import { requestWalletAction } from '../../common/walletRequest';
+import { WalletControls } from './WalletPage';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress } from '@mui/material';
+import { Alert } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { UseArrrSyncStatusResult } from '../../hooks/useArrrSyncStatus';
 import { describeBridgeError } from '../../common/bridgeErrors';
@@ -41,7 +43,7 @@ export function ArrrSyncControls({
     setMessage(null);
     const action = start ? 'START_ARRR_SYNC' : 'STOP_ARRR_SYNC';
     try {
-      const result = await qdnRequest({ action, coin: 'ARRR' });
+      const result = await requestWalletAction({ action, coin: 'ARRR' });
       if (!mounted.current) return;
       if (
         !result ||
@@ -76,26 +78,23 @@ export function ArrrSyncControls({
     }
   };
   return (
-    <Box sx={{ mt: 2, maxWidth: 460, mx: 'auto' }}>
-      <Button
-        variant="outlined"
-        disabled={disabled}
-        onClick={() => void control()}
-        startIcon={busy ? <CircularProgress size={14} /> : undefined}
-      >
-        {busy
-          ? t('arrr.control_waiting')
+    <WalletControls
+      primary={{
+        disabled,
+        onClick: () => void control(),
+        busy,
+        label: busy
+          ? t('wallet_controls.waiting')
           : t(
               stopUnconfirmed
                 ? 'arrr.control_check_stop'
                 : start
-                  ? 'arrr.control_start'
-                  : 'arrr.control_stop'
-            )}
-      </Button>
-      <Box sx={{ mt: 0.75, fontSize: '0.75rem', opacity: 0.8 }}>
-        {t('arrr.control_scope')}
-      </Box>
+                  ? 'wallet_controls.start'
+                  : 'wallet_controls.stop'
+            ),
+      }}
+      note={t('arrr.control_scope')}
+    >
       {message && (
         <Alert severity="info" sx={{ mt: 1 }}>
           {message}
@@ -106,6 +105,6 @@ export function ArrrSyncControls({
           {error}
         </Alert>
       )}
-    </Box>
+    </WalletControls>
   );
 }

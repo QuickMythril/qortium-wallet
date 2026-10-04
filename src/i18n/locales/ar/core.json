@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "الكتلة {{ scanned }} من {{ tip }}",
+    "blocks": "الكتلة {{ synced }} من {{ total }}",
+    "indeterminate": "جارٍ المزامنة…"
+  },
   "action": {
     "add": "إضافة",
     "add_peer": "إضافة نظير جديد",
