@@ -4,6 +4,12 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.31] - 2026-10-04 (QuickMythril fork test build)
+
+### Release Wallet 1.7.31 with shared wallet components
+
+- Publish the approved uniform wallet pages and capability-negotiated requests for local Core/Home testing.
+
 ### Standardize wallet pages and capability-negotiated requests
 
 - Use shared coin headers, balance/receive cards, address bars, send triggers, scan controls, progress/ETA and history surfaces. Place send and scan controls below the balance consistently, including Monero.
