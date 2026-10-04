@@ -31,6 +31,7 @@ export interface HomeWalletCapability {
   // support; `unavailableReason` explains a false read/receive for ARRR
   // (locked account, Android, non-trusted route, old Home).
   custodyContract?: string;
+  stopContract?: string;
   syncStatus?: boolean;
   syncControlContract?: string;
   walletSessionContract?: string;

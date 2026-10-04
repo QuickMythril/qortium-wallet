@@ -1,4 +1,5 @@
 import type { ChainConfig } from '../config/chains';
+export const XMR_STOP_CONTRACT = 'qortium-home-xmr-stop-v1';
 export const XMR_CONTRACT = 'qortium-home-xmr-custody-v1';
 export type XmrTx = {
   txid: string;
