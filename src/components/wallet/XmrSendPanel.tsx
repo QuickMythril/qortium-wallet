@@ -1,3 +1,5 @@
+import { WalletSendButton } from './WalletPage';
+import { requestWalletAction } from '../../common/walletRequest';
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, TextField, Typography } from '@mui/material';
 import { formatXmr } from '../../common/xmrWallet';
@@ -41,7 +43,7 @@ export function XmrSendPanel({
     setBusy(true);
     setError('');
     try {
-      const response = await qdnRequest({
+      const response = await requestWalletAction({
         action,
         coin: 'XMR',
         ...(action === 'PREPARE_XMR_SEND'
@@ -121,15 +123,14 @@ export function XmrSendPanel({
               : value?.state.toLowerCase().replace(/_/g, ' ');
   return (
     <Box sx={{ my: 3 }}>
-      <Button
+      <WalletSendButton
         disabled={!ready || busy}
         onClick={() => {
           setOpen(true);
           void request('GET_XMR_SEND_STATUS');
         }}
-      >
-        Send XMR
-      </Button>
+        label="Send XMR"
+      />
       {shown && (
         <Typography role="status" sx={{ overflowWrap: 'anywhere' }}>
           {label}

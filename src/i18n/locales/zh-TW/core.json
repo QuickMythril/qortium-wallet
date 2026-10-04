@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "區塊 {{ scanned }} / {{ tip }}",
+    "blocks": "區塊 {{ synced }} / {{ total }}",
+    "indeterminate": "同步中…"
+  },
   "action": {
     "add": "新增",
     "add_peer": "新增節點",

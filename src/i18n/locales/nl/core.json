@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "blok {{ scanned }} van {{ tip }}",
+    "blocks": "blok {{ synced }} van {{ total }}",
+    "indeterminate": "synchroniseren…"
+  },
   "action": {
     "add": "toevoegen",
     "add_peer": "nieuwe peer toevoegen",

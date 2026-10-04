@@ -1,7 +1,12 @@
+import { walletRequestValue } from './walletRequest';
 import { EMPTY_STRING, ONE_SPACE } from './constants';
 
 export function requestQdn(options: QdnRequestOptions): Promise<any> {
-  return qdnRequest(options);
+  return qdnRequest(
+    walletRequestValue(
+      options as Record<string, unknown> & { action: string }
+    ) as QdnRequestOptions
+  );
 }
 
 export function requestWithTimeout(

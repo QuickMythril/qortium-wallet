@@ -1,3 +1,5 @@
+import { WalletSendButton } from './WalletPage';
+import { requestWalletAction } from '../../common/walletRequest';
 import { requestWithArrrBusyRetry } from '../../common/arrrSync';
 import {
   describeBridgeError,
@@ -112,7 +114,11 @@ export function ArrrSendPanel({
       setBusy(true);
       try {
         const result = (await requestWithArrrBusyRetry(
-          () => qdnRequest({ action: 'GET_ARRR_SEND_READINESS', coin: 'ARRR' }),
+          () =>
+            requestWalletAction({
+              action: 'GET_ARRR_SEND_READINESS',
+              coin: 'ARRR',
+            }),
           { shouldAbort: () => !mounted.current || document.hidden }
         )) as Record<string, unknown>;
         if (!mounted.current) return;
@@ -176,7 +182,7 @@ export function ArrrSendPanel({
     setAllowed(false);
     setError(null);
     try {
-      const result = await qdnRequest({
+      const result = await requestWalletAction({
         action: 'SEND_COIN',
         coin: 'ARRR',
         recipient,
@@ -252,8 +258,7 @@ export function ArrrSendPanel({
           {error}
         </Alert>
       )}
-      <Button
-        variant="contained"
+      <WalletSendButton
         disabled={!enabled || !ready || blocked || busy}
         onClick={() => {
           setRecipient('');
@@ -263,9 +268,8 @@ export function ArrrSendPanel({
           setOpen(true);
           void check();
         }}
-      >
-        Send ARRR
-      </Button>
+        label="Send ARRR"
+      />
       <Button disabled={!enabled || busy} onClick={() => void check()}>
         Check send status
       </Button>

@@ -164,8 +164,16 @@ function sendCalls(mock: ReturnType<typeof vi.fn>) {
     .filter((opts) => opts.action === 'SEND_COIN');
 }
 
+async function clickVerifiedSend(user: ReturnType<typeof userEvent.setup>) {
+  // Discovery replaces the unavailable surface; wait for its verified, enabled trigger.
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeEnabled()
+  );
+  await user.click(screen.getByRole('button', { name: /^send$/i }));
+}
+
 async function openSendDialog(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: /^send$/i }));
+  await clickVerifiedSend(user);
   await screen.findByLabelText(/amount \(BTC\)/i);
   await waitFor(() =>
     expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(0.0002)
@@ -228,7 +236,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
       reverse: true,
     });
 
-    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await clickVerifiedSend(user);
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
@@ -281,7 +289,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     const user = userEvent.setup();
     renderDetail(qortChain);
 
-    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await clickVerifiedSend(user);
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
@@ -324,7 +332,7 @@ describe('CoinDetail QORT qortalRequest flow', () => {
     const user = userEvent.setup();
     renderDetail(qortChain);
 
-    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await clickVerifiedSend(user);
     await user.type(screen.getByLabelText(/amount \(QORT\)/i), '1.25');
     await user.type(
       screen.getByLabelText(/recipient address/i),
@@ -520,7 +528,7 @@ describe('CoinDetail foreign send flow', () => {
     const user = userEvent.setup();
     renderDetail(dgbChain);
 
-    await user.click(await screen.findByRole('button', { name: /^send$/i }));
+    await clickVerifiedSend(user);
     await screen.findByLabelText(/amount \(DGB\)/i);
     await waitFor(() =>
       expect(screen.getByLabelText(/optional fee per byte/i)).toHaveValue(

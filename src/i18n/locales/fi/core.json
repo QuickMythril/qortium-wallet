@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "lohko {{ scanned }} / {{ tip }}",
+    "blocks": "lohko {{ synced }} / {{ total }}",
+    "indeterminate": "synkronoidaan…"
+  },
   "action": {
     "add": "lisää",
     "add_peer": "lisää uusi solmu",

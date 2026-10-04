@@ -1,3 +1,4 @@
+import { requestWalletAction } from './walletRequest';
 import type { ChainConfig } from '../config/chains';
 
 export type QortSendAction = 'SEND_QORT' | 'SEND_COIN';
@@ -42,7 +43,7 @@ export function requestQortWallet(): Promise<any> {
 export function requestWalletForCoin(coin: string): Promise<any> {
   return coin === 'QORT'
     ? requestQortWallet()
-    : qdnRequest({ action: 'GET_USER_WALLET', coin });
+    : requestWalletAction({ action: 'GET_USER_WALLET', coin });
 }
 
 export function requestWalletForChain(chain: ChainConfig): Promise<any> {

@@ -12,6 +12,7 @@ export type HomeWalletMode =
   | 'NONE';
 
 export interface HomeWalletCapability {
+  requestContract?: string;
   contract?: string;
   implemented: boolean;
   protocol?: 'qdnRequest' | 'qortalRequest';

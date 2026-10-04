@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "bloc {{ scanned }} din {{ tip }}",
+    "blocks": "bloc {{ synced }} din {{ total }}",
+    "indeterminate": "se sincronizează…"
+  },
   "action": {
     "add": "adaugă",
     "add_peer": "adaugă peer nou",

@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "блок {{ scanned }} из {{ tip }}",
+    "blocks": "блок {{ synced }} из {{ total }}",
+    "indeterminate": "синхронизация…"
+  },
   "action": {
     "add": "добавить",
     "add_peer": "добавить новый пир",

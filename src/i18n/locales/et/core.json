@@ -1,4 +1,9 @@
 {
+  "wallet_progress": {
+    "heights": "plokk {{ scanned }} / {{ tip }}",
+    "blocks": "plokk {{ synced }} / {{ total }}",
+    "indeterminate": "sünkroonimine…"
+  },
   "action": {
     "add": "Lisa",
     "add_peer": "Lisa uus peer",

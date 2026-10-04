@@ -1,3 +1,4 @@
+import { requestWalletAction } from '../common/walletRequest';
 import {
   advanceArrrProgress,
   calculateArrrProgress,
@@ -154,7 +155,11 @@ export function useArrrSyncStatus(
       const owner = ownerConfirmedRef.current;
       try {
         const raw = await requestWithArrrBusyRetry(
-          () => qdnRequest({ action: 'GET_ARRR_SYNC_STATUS', coin: 'ARRR' }),
+          () =>
+            requestWalletAction({
+              action: 'GET_ARRR_SYNC_STATUS',
+              coin: 'ARRR',
+            }),
           {
             shouldAbort,
             ownerConfirmed: owner,

@@ -1,3 +1,14 @@
+import { requestWalletAction } from '../../common/walletRequest';
+import {
+  WalletPage,
+  WalletHeader,
+  WalletBalanceCard,
+  WalletAmount,
+  WalletAddressBar,
+  WalletTransactions,
+  WalletSendButton,
+  WalletUnavailable,
+} from './WalletPage';
 import { XmrWalletPanel } from './XmrWalletPanel';
 import { ArrrSendPanel } from './ArrrSendPanel';
 import { ARRR_WALLET_SESSION_CONTRACT } from '../../common/arrrWalletSession';
@@ -30,22 +41,13 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import DnsIcon from '@mui/icons-material/Dns';
-import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import _QRCodeDefault from 'react-qr-code';
-// CJS interop guard: Vite/Rollup may resolve the default import to the module
-// namespace object rather than exports.default when __esModule is set via
-// Object.defineProperty. Extracting .default handles both cases safely.
-const QRCode = ((_QRCodeDefault as any).default ??
-  _QRCodeDefault) as typeof _QRCodeDefault;
 import { useAtomValue } from 'jotai';
 import { useAuth } from 'qapp-core';
 import { NumericFormat as _NumericFormat } from 'react-number-format';
@@ -66,7 +68,6 @@ import {
   walletReadyAtom,
 } from '../../state/global/system';
 import { useCoinImageUrl } from '../../hooks/useCoinImageUrl';
-import { CoinImage } from './CoinImage';
 import type { ChainConfig } from '../../config/chains';
 import {
   PreparedTransactionPreview,
@@ -192,7 +193,7 @@ async function ensureAccountUnlocked(
     if (getCachedAccountUnlocked() === true) return true;
 
     try {
-      const account = (await qdnRequest({
+      const account = (await requestWalletAction({
         action: 'GET_SELECTED_ACCOUNT',
       })) as { isUnlocked?: boolean } | null;
       if (account?.isUnlocked === true) {
@@ -207,7 +208,7 @@ async function ensureAccountUnlocked(
 
   const result = await (chain.isNative
     ? requestQortUnlock()
-    : qdnRequest({ action: 'UNLOCK_SELECTED_ACCOUNT' }));
+    : requestWalletAction({ action: 'UNLOCK_SELECTED_ACCOUNT' }));
   const unlocked = isUnlockedResult(result);
   if (usesQdnRequestForUnlock) setCachedAccountUnlocked(unlocked);
   return unlocked;
@@ -291,7 +292,6 @@ function StandardCoinDetail({ chain }: Props) {
   const { address: homeAccount } = useAuth();
   const prices = useMarketPrices();
   const pricePerUnit = prices[chain.coinEnum];
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const coinImageUrl = useCoinImageUrl(chain.ticker);
   const isARRR = chain.coinEnum === 'ARRR';
@@ -493,7 +493,7 @@ function StandardCoinDetail({ chain }: Props) {
     // which silently loses precision above 2^53 atomic units (Codex round
     // 5 review finding 2).
     const fetchTotalDisplay = async (): Promise<string | null> => {
-      const totalRaw = await qdnRequest({
+      const totalRaw = await requestWalletAction({
         action: 'GET_WALLET_BALANCE',
         coin: 'ARRR',
         verified: false,
@@ -503,7 +503,8 @@ function StandardCoinDetail({ chain }: Props) {
 
     try {
       const verifiedRaw = await requestWithArrrBusyRetry(
-        () => qdnRequest({ action: 'GET_WALLET_BALANCE', coin: 'ARRR' }),
+        () =>
+          requestWalletAction({ action: 'GET_WALLET_BALANCE', coin: 'ARRR' }),
         { shouldAbort, ownerConfirmed: arrrOwnerConfirmedRef.current }
       );
       if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
@@ -717,7 +718,7 @@ function StandardCoinDetail({ chain }: Props) {
         resetForeignAvailability();
         return;
       }
-      qdnRequest({ action: 'SHOW_ACTIONS' })
+      requestWalletAction({ action: 'SHOW_ACTIONS' })
         .then((actions: unknown) => {
           if (requestRevision !== revision) return;
           const availability = foreignWalletAvailability(
@@ -774,7 +775,7 @@ function StandardCoinDetail({ chain }: Props) {
     setForeignServerOpen(true);
     setForeignServerLoading(true);
     try {
-      const servers = await qdnRequest({
+      const servers = await requestWalletAction({
         action: 'GET_CROSSCHAIN_SERVER_INFO',
         coin: chain.coinEnum,
       });
@@ -791,7 +792,7 @@ function StandardCoinDetail({ chain }: Props) {
       setForeignServerOpen(false);
       if (!canManageForeignServerRef.current) return;
       try {
-        await qdnRequest({
+        await requestWalletAction({
           action: 'SET_CURRENT_FOREIGN_SERVER',
           coin: chain.coinEnum,
           server,
@@ -1195,7 +1196,7 @@ function StandardCoinDetail({ chain }: Props) {
         if (chain.coinEnum !== 'ARRR' && suggestedFee.fee !== '') {
           payload.feePerByte = suggestedFee.fee.trim();
         }
-        const foreignResult = (await qdnRequest(payload as any)) as
+        const foreignResult = (await requestWalletAction(payload as any)) as
           | (SendCoinResult & {
               accepted?: boolean;
               foreignOutcome?: 'unknown' | 'mismatch';
@@ -1739,29 +1740,7 @@ function StandardCoinDetail({ chain }: Props) {
             </Box>
           ) : (
             <>
-              <Typography
-                sx={{
-                  fontSize: { xs: '2rem', md: '3rem' },
-                  fontWeight: tokens.typography.weightBlack,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1,
-                  color: c.textPrimary,
-                  wordBreak: 'break-all',
-                }}
-              >
-                {mainDisplay ?? '—'}
-                <Box
-                  component="span"
-                  sx={{
-                    fontSize: '1.1rem',
-                    fontWeight: tokens.typography.weightBold,
-                    ml: 1.5,
-                    color: c.textSecondary,
-                  }}
-                >
-                  {chain.ticker}
-                </Box>
-              </Typography>
+              <WalletAmount amount={mainDisplay} ticker={chain.ticker} />
               <Box
                 sx={{
                   mt: 1.5,
@@ -1814,498 +1793,253 @@ function StandardCoinDetail({ chain }: Props) {
     }
   }
 
+  const legacySendControl = (
+    <Box sx={{ mt: 2 }}>
+      {!(isARRR && canSend) && (
+        <Tooltip
+          title={
+            isARRR
+              ? t('arrr.send_unavailable')
+              : !canSend
+                ? 'Sending requires a local node'
+                : ''
+          }
+          disableHoverListener={!isARRR && canSend}
+        >
+          <span>
+            <WalletSendButton
+              label="Send"
+              onClick={openSend}
+              disabled={isARRR || !canSend || !walletAvailable}
+            />
+          </span>
+        </Tooltip>
+      )}
+    </Box>
+  );
+
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: isClassic ? c.frameBg : c.bg }}>
-      {/* ── sticky sub-header ── */}
-      <Box
-        sx={{
-          position: 'sticky',
-          top: `var(--wallet-top-bar-height, ${tokens.spacing.topBarHeight}px)`,
-          zIndex: 90,
-          bgcolor: c.surface,
-          borderBottom: `${
-            isClassic
-              ? tokens.shape.classicBorderWidth
-              : tokens.shape.borderWidth
-          } solid ${isClassic ? c.border : c.borderLight}`,
-          boxShadow: isClassic ? c.topBarShadow : 'none',
-          display: 'flex',
-          alignItems: 'center',
-          px: { xs: isClassic ? 1.5 : 3, sm: 3 },
-          py: isClassic ? 1 : 0,
-          minHeight: tokens.spacing.topBarHeight,
-          gap: { xs: 1, sm: 2 },
-          flexWrap: { xs: 'wrap', sm: 'nowrap' },
-        }}
-      >
-        <IconButton
-          onClick={() => navigate('/')}
-          size="small"
-          sx={{ borderRadius: 0, color: c.textPrimary }}
-        >
-          <ArrowBackIcon fontSize="small" />
-        </IconButton>
-        <CoinImage
-          url={coinImageUrl}
+    <WalletPage
+      header={
+        <WalletHeader
+          name={chain.name}
           ticker={chain.ticker}
-          size={24}
-          placeholderSx={{ fontSize: '0.7rem' }}
-        />
-        <Box
-          sx={{
-            fontWeight: tokens.typography.weightBold,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            fontSize: '0.85rem',
-          }}
-        >
-          {chain.name}
-        </Box>
-        {chain.activeNetwork !== 'MAIN' && (
-          <Box
-            sx={{
-              fontSize: '0.5rem',
-              fontWeight: tokens.typography.weightBold,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              px: 0.75,
-              py: 0.25,
-              borderRadius: '3px',
-              bgcolor: c.error,
-              color: '#fff',
-              lineHeight: 1.4,
-            }}
-          >
-            {chain.activeNetwork.toLowerCase()}
-          </Box>
-        )}
-        <Box sx={{ flexGrow: 1 }} />
-        {!chain.isNative && !isARRR && canManageForeignServer && (
-          <Tooltip title="ElectrumX servers">
-            <IconButton
-              size="small"
-              onClick={openForeignServerDialog}
-              sx={{ borderRadius: 0, color: c.textSecondary }}
-            >
-              <DnsIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
-        {!(isARRR && canSend) && (
-          <Tooltip
-            title={
-              isARRR
-                ? t('arrr.send_unavailable')
-                : !canSend
-                  ? 'Sending requires a local node'
-                  : ''
-            }
-            disableHoverListener={!isARRR && canSend}
-          >
-            <span>
-              <Button
-                variant="contained"
-                size="small"
-                endIcon={<SendIcon sx={{ fontSize: '1rem !important' }} />}
-                onClick={openSend}
-                disableElevation
-                disabled={isARRR || !canSend}
-                sx={{
-                  bgcolor: c.accent,
-                  color: c.accentText,
-                  '&:hover': { bgcolor: c.accentHover },
-                  '&.Mui-disabled': { opacity: 0.4 },
-                  borderRadius: isClassic
-                    ? `${tokens.shape.radiusMd}px`
-                    : '50px',
-                  px: 2.5,
-                  letterSpacing: isClassic ? 0 : '0.06em',
-                  fontWeight: tokens.typography.weightBold,
-                  fontSize: '0.75rem',
-                }}
-              >
-                Send
-              </Button>
-            </span>
-          </Tooltip>
-        )}
-      </Box>
-
-      <Box
-        sx={{
-          width: '100%',
-          maxWidth: isClassic ? c.layoutWideMaxWidth : c.layoutMaxWidth,
-          mx: 'auto',
-          px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 },
-          py: isClassic ? 3 : 4,
-        }}
-      >
-        {!walletAvailable ? (
-          <Box
-            sx={{
-              border: `${isClassic ? tokens.shape.classicBorderWidth : tokens.shape.borderWidth} solid ${isClassic ? c.border : c.borderLight}`,
-              borderRadius: `${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px`,
-              bgcolor: c.surface,
-              boxShadow: c.shadowCard,
-              p: { xs: 4, md: 6 },
-              textAlign: 'center',
-              color: c.textSecondary,
-              fontSize: '0.875rem',
-              lineHeight: 1.6,
-            }}
-          >
-            {isARRR ? (
-              (chain.homeWallet?.unavailableReason ??
-              t('arrr.unavailable_fallback'))
-            ) : (
-              <>
-                Wallet features are not available on a public node.
-                <br />
-                Connect to a local Qortium node to view balances and
-                transactions.
-              </>
-            )}
-          </Box>
-        ) : (
-          <>
-            {/* ── balance hero ── */}
-            <Box
-              sx={{
-                border: `${
-                  isClassic
-                    ? tokens.shape.classicBorderWidth
-                    : tokens.shape.borderWidth
-                } solid ${isClassic ? c.border : c.borderLight}`,
-                borderRadius: `${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px ${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px 0 0`,
-                bgcolor: c.surface,
-                boxShadow: c.shadowCard,
-                p: { xs: 3, md: 5 },
-                mb: 0,
-                display: 'flex',
-                flexDirection: { xs: 'column', sm: 'row' },
-                alignItems: 'center',
-                gap: { xs: 3, sm: 4 },
-              }}
-            >
-              <Box
-                sx={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  textAlign: 'center',
-                  width: '100%',
-                }}
-              >
-                <CoinImage
-                  url={coinImageUrl}
-                  ticker={chain.ticker}
-                  size={56}
-                  sx={{ mb: 2 }}
-                  placeholderSx={{
-                    bgcolor: 'rgba(128,128,128,0.15)',
-                    fontSize: '1.2rem',
-                    color: 'rgba(128,128,128,0.5)',
-                  }}
-                />
-                {isARRR ? (
-                  <>
-                    {arrrPanel}
-                    {canSend && (
-                      <ArrrSendPanel
-                        key={`send:${homeAccount}:${arrrControlRevision}`}
-                        transactions={transactions}
-                        receiptScope={homeAccount ?? undefined}
-                        enabled={walletReady}
-                        ready={
-                          arrrSnapshot?.ready === true &&
-                          (!hasWalletSession || arrrSession.active)
-                        }
-                        onBroadcast={() => {
-                          void fetchBalance();
-                          void fetchTransactions();
-                        }}
-                      />
-                    )}
-                    {hasWalletSession ? (
-                      <ArrrWalletSessionControls
-                        key={`session:${homeAccount}:${arrrControlRevision}`}
-                        session={arrrSession}
-                      />
-                    ) : (
-                      canControlArrrSync && (
-                        <ArrrSyncControls
-                          key={`sync:${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
-                          status={arrrStatus}
-                          onChanged={refreshArrrStatus}
-                        />
-                      )
-                    )}
-                  </>
-                ) : loadingBalance ? (
-                  <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
-                ) : (
-                  <>
-                    <Typography
-                      sx={{
-                        fontSize: { xs: '2rem', md: '3rem' },
-                        fontWeight: tokens.typography.weightBlack,
-                        letterSpacing: '-0.02em',
-                        lineHeight: 1,
-                        color: c.textPrimary,
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {balance ?? '—'}
-                      <Box
-                        component="span"
-                        sx={{
-                          fontSize: '1.1rem',
-                          fontWeight: tokens.typography.weightBold,
-                          ml: 1.5,
-                          color: c.textSecondary,
-                        }}
-                      >
-                        {chain.ticker}
-                      </Box>
-                    </Typography>
-                    <Box
-                      sx={{
-                        mt: 1.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 0.5,
-                      }}
-                    >
-                      {pricePerUnit != null && balance != null && (
-                        <Box
-                          sx={{
-                            fontSize: '1.1rem',
-                            fontWeight: tokens.typography.weightBold,
-                            color: c.textPrimary,
-                          }}
-                        >
-                          {formatFiat(
-                            parseFloat(balance) * pricePerUnit,
-                            currency
-                          )}
-                        </Box>
-                      )}
-                      <Box
-                        sx={{
-                          fontSize: '0.78rem',
-                          color: c.textSecondary,
-                          letterSpacing: '0.02em',
-                        }}
-                      >
-                        1 {chain.ticker} ={' '}
-                        {pricePerUnit != null
-                          ? formatFiat(pricePerUnit, currency)
-                          : '-'}
-                      </Box>
-                      {balanceError && (
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.75,
-                            mt: 0.5,
-                          }}
-                        >
-                          <Tooltip title={balanceError} placement="top">
-                            <Box
-                              sx={{
-                                fontSize: '0.75rem',
-                                color: c.error,
-                                maxWidth: 220,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {t('balance_unavailable')}
-                            </Box>
-                          </Tooltip>
-                          <IconButton
-                            size="small"
-                            onClick={fetchBalance}
-                            aria-label="retry balance"
-                            sx={{ color: c.error }}
-                          >
-                            <RefreshIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Box>
-                      )}
-                    </Box>
-                  </>
-                )}
-              </Box>
-
-              {address && (
-                <Box
-                  sx={{
-                    flexShrink: 0,
-                    p: 1.5,
-                    bgcolor: '#fff',
-                    borderRadius: `${tokens.shape.radius / 2}px`,
-                    display: 'flex',
-                  }}
-                >
-                  <QRCode
-                    value={address}
-                    size={120}
-                    bgColor="#ffffff"
-                    fgColor="#111111"
-                  />
-                </Box>
-              )}
-            </Box>
-
-            {/* ── address bar ── */}
-            <Box
-              onClick={handleCopy}
-              sx={{
-                border: `${
-                  isClassic
-                    ? tokens.shape.classicBorderWidth
-                    : tokens.shape.borderWidth
-                } solid ${isClassic ? c.border : c.borderLight}`,
-                borderTop: 'none',
-                borderRadius: `0 0 ${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px ${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px`,
-                bgcolor: copied ? c.accent : c.surface,
-                display: 'flex',
-                alignItems: 'center',
-                px: 2.5,
-                py: 1.5,
-                gap: 1.5,
-                cursor: 'pointer',
-                transition: 'background-color 0.15s ease',
-                mb: 4,
-              }}
-            >
-              <Box
-                sx={{
-                  flex: 1,
-                  fontFamily: c.monoFontFamily,
-                  fontSize: '0.8rem',
-                  letterSpacing: '0.04em',
-                  color: copied ? c.accentText : c.textSecondary,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  transition: 'color 0.15s ease',
-                }}
-              >
-                {address || '—'}
-              </Box>
-              {copied ? (
-                <CheckIcon sx={{ fontSize: 16, color: c.accentText }} />
-              ) : (
-                <ContentCopyIcon
-                  sx={{ fontSize: 16, color: c.textSecondary }}
-                />
-              )}
-              <Box
-                sx={{
-                  fontSize: '0.65rem',
-                  fontWeight: tokens.typography.weightBold,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: copied ? c.accentText : c.textSecondary,
-                  transition: 'color 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {copied ? 'Copied' : 'Click to copy'}
-              </Box>
-            </Box>
-
-            {/* ── transaction history ── */}
-            <Box
-              sx={{
-                fontWeight: tokens.typography.weightBold,
-                fontSize: '0.65rem',
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: c.textSecondary,
-                mb: 1.5,
-              }}
-            >
-              Transactions
-            </Box>
-
-            <Box
-              sx={{
-                border: `${
-                  isClassic
-                    ? tokens.shape.classicBorderWidth
-                    : tokens.shape.borderWidth
-                } solid ${isClassic ? c.border : c.borderLight}`,
-                borderRadius: `${isClassic ? tokens.shape.radiusMd : tokens.shape.radius}px`,
-                overflow: 'hidden',
-                boxShadow: c.shadowCard,
-              }}
-            >
-              {loadingTx ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-                  <CircularProgress size={28} sx={{ color: c.accent }} />
-                </Box>
-              ) : displayedTransactions.length === 0 && txError ? (
-                <Box
-                  sx={{
-                    py: 6,
-                    textAlign: 'center',
-                    color: c.error,
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  <Tooltip title={txError} placement="top">
-                    <Box component="span">{t('transactions_unavailable')}</Box>
-                  </Tooltip>
+          imageUrl={coinImageUrl}
+          network={chain.activeNetwork}
+          actions={
+            <>
+              {!chain.isNative && !isARRR && canManageForeignServer && (
+                <Tooltip title="ElectrumX servers">
                   <IconButton
                     size="small"
-                    onClick={fetchTransactions}
-                    aria-label="retry transactions"
-                    sx={{ color: c.error, ml: 0.5 }}
+                    onClick={openForeignServerDialog}
+                    sx={{ borderRadius: 0, color: c.textSecondary }}
                   >
-                    <RefreshIcon sx={{ fontSize: 16 }} />
+                    <DnsIcon fontSize="small" />
                   </IconButton>
-                </Box>
-              ) : displayedTransactions.length === 0 ? (
+                </Tooltip>
+              )}
+            </>
+          }
+        />
+      }
+    >
+      {!walletAvailable ? (
+        <WalletUnavailable>
+          {isARRR ? (
+            (chain.homeWallet?.unavailableReason ??
+            t('arrr.unavailable_fallback'))
+          ) : (
+            <>
+              Wallet features are not available on a public node.
+              <br />
+              Connect to a local Qortium node to view balances and transactions.
+            </>
+          )}
+          {legacySendControl}
+        </WalletUnavailable>
+      ) : (
+        <>
+          <WalletBalanceCard
+            ticker={chain.ticker}
+            imageUrl={coinImageUrl}
+            address={address}
+          >
+            {isARRR ? (
+              <>
+                {arrrPanel}
+                {canSend && (
+                  <ArrrSendPanel
+                    key={`send:${homeAccount}:${arrrControlRevision}`}
+                    transactions={transactions}
+                    receiptScope={homeAccount ?? undefined}
+                    enabled={walletReady}
+                    ready={
+                      arrrSnapshot?.ready === true &&
+                      (!hasWalletSession || arrrSession.active)
+                    }
+                    onBroadcast={() => {
+                      void fetchBalance();
+                      void fetchTransactions();
+                    }}
+                  />
+                )}
+                {hasWalletSession ? (
+                  <ArrrWalletSessionControls
+                    key={`session:${homeAccount}:${arrrControlRevision}`}
+                    session={arrrSession}
+                  />
+                ) : (
+                  canControlArrrSync && (
+                    <ArrrSyncControls
+                      key={`sync:${homeAccount ?? 'no-account'}:${arrrControlRevision}`}
+                      status={arrrStatus}
+                      onChanged={refreshArrrStatus}
+                    />
+                  )
+                )}
+              </>
+            ) : loadingBalance ? (
+              <Skeleton width={220} height={64} sx={{ mx: 'auto' }} />
+            ) : (
+              <>
+                <WalletAmount amount={balance} ticker={chain.ticker} />
                 <Box
                   sx={{
-                    py: 6,
-                    textAlign: 'center',
-                    color: c.textSecondary,
-                    fontSize: '0.85rem',
-                    letterSpacing: '0.06em',
+                    mt: 1.5,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 0.5,
                   }}
                 >
-                  {isARRR && !arrrReady
-                    ? t('arrr.transactions_pending')
-                    : 'No transactions yet'}
+                  {pricePerUnit != null && balance != null && (
+                    <Box
+                      sx={{
+                        fontSize: '1.1rem',
+                        fontWeight: tokens.typography.weightBold,
+                        color: c.textPrimary,
+                      }}
+                    >
+                      {formatFiat(parseFloat(balance) * pricePerUnit, currency)}
+                    </Box>
+                  )}
+                  <Box
+                    sx={{
+                      fontSize: '0.78rem',
+                      color: c.textSecondary,
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    1 {chain.ticker} ={' '}
+                    {pricePerUnit != null
+                      ? formatFiat(pricePerUnit, currency)
+                      : '-'}
+                  </Box>
+                  {balanceError && (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        mt: 0.5,
+                      }}
+                    >
+                      <Tooltip title={balanceError} placement="top">
+                        <Box
+                          sx={{
+                            fontSize: '0.75rem',
+                            color: c.error,
+                            maxWidth: 220,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {t('balance_unavailable')}
+                        </Box>
+                      </Tooltip>
+                      <IconButton
+                        size="small"
+                        onClick={fetchBalance}
+                        aria-label="retry balance"
+                        sx={{ color: c.error }}
+                      >
+                        <RefreshIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Box>
+                  )}
                 </Box>
-              ) : (
-                displayedTransactions.map((row, i) => (
-                  <TransactionRow
-                    key={i}
-                    row={row}
-                    index={i}
-                    isLastRow={i === displayedTransactions.length - 1}
-                    chain={chain}
-                    userAddress={address}
-                    expanded={expandedTx === i}
-                    onToggleExpand={() => handleToggleExpand(i)}
-                    copiedHash={copiedHash}
-                    onCopyHash={handleCopyHash}
-                  />
-                ))
-              )}
-            </Box>
-          </>
-        )}
-      </Box>
+              </>
+            )}
+            {legacySendControl}
+          </WalletBalanceCard>
+          <WalletAddressBar
+            address={address}
+            ticker={chain.ticker}
+            copied={copied}
+            onCopy={handleCopy}
+          />
+
+          <WalletTransactions>
+            {loadingTx ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                <CircularProgress size={28} sx={{ color: c.accent }} />
+              </Box>
+            ) : displayedTransactions.length === 0 && txError ? (
+              <Box
+                sx={{
+                  py: 6,
+                  textAlign: 'center',
+                  color: c.error,
+                  fontSize: '0.85rem',
+                }}
+              >
+                <Tooltip title={txError} placement="top">
+                  <Box component="span">{t('transactions_unavailable')}</Box>
+                </Tooltip>
+                <IconButton
+                  size="small"
+                  onClick={fetchTransactions}
+                  aria-label="retry transactions"
+                  sx={{ color: c.error, ml: 0.5 }}
+                >
+                  <RefreshIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            ) : displayedTransactions.length === 0 ? (
+              <Box
+                sx={{
+                  py: 6,
+                  textAlign: 'center',
+                  color: c.textSecondary,
+                  fontSize: '0.85rem',
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {isARRR && !arrrReady
+                  ? t('arrr.transactions_pending')
+                  : 'No transactions yet'}
+              </Box>
+            ) : (
+              displayedTransactions.map((row, i) => (
+                <TransactionRow
+                  key={i}
+                  row={row}
+                  index={i}
+                  isLastRow={i === displayedTransactions.length - 1}
+                  chain={chain}
+                  userAddress={address}
+                  expanded={expandedTx === i}
+                  onToggleExpand={() => handleToggleExpand(i)}
+                  copiedHash={copiedHash}
+                  onCopyHash={handleCopyHash}
+                />
+              ))
+            )}
+          </WalletTransactions>
+        </>
+      )}
 
       {/* ── send dialog ── */}
       <Dialog
@@ -2850,6 +2584,6 @@ function StandardCoinDetail({ chain }: Props) {
           </DialogContent>
         </Dialog>
       )}
-    </Box>
+    </WalletPage>
   );
 }
