@@ -2,6 +2,14 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## [Unreleased]
+
+### Add Monero stop controls and match coin wallet layout
+
+- Stop automatic page updates immediately and request an owner-scoped Core stop through Home. Resume scanning only through explicit activation; unsuccessful stops remain clearly unconfirmed.
+- Keep stop usable during background reads, discard late replies and prevent tab/account events from replaying control actions.
+- Match the other coin pages' sticky header, Monero images, balance and receive card, copyable address bar and themed transaction history in Classic and Modern layouts.
+
 ## [1.7.29] - 2026-10-03 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.29 with Monero scan progress

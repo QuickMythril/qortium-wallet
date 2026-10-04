@@ -18,6 +18,9 @@ import {
   formatXmr,
   parseXmrSnapshot,
 } from '../../../common/xmrWallet';
+vi.mock('../../../hooks/useCoinImageUrl', () => ({
+  useCoinImageUrl: () => null,
+}));
 import { foreignWalletAvailability } from '../../../common/homeWalletCapabilities';
 let account = 'account-A';
 vi.mock('qapp-core', () => ({ useAuth: () => ({ address: account }) }));
@@ -53,6 +56,7 @@ const chain: ChainConfig = {
   homeWallet: {
     contract: 'qortium-home-wallet-v1',
     custodyContract: XMR_CONTRACT,
+    stopContract: 'qortium-home-xmr-stop-v1',
     implemented: true,
     protocol: 'qdnRequest',
     read: true,
@@ -103,7 +107,7 @@ describe('XMR receive and history', () => {
     ).toBe(false);
     bridge.mockResolvedValue(snapshot());
     render(view());
-    await screen.findByText('Balance: 9007.199254740993 XMR');
+    await screen.findByText('9007.199254740993 XMR');
     expect(
       screen
         .getByText('b'.repeat(64))
@@ -390,9 +394,7 @@ describe('XMR passive scan recovery', () => {
     expect(
       screen.getByText(/last recorded wallet snapshot/)
     ).toBeInTheDocument();
-    expect(
-      screen.getByText('Balance: 9007.199254740993 XMR')
-    ).toBeInTheDocument();
+    expect(screen.getByText('9007.199254740993 XMR')).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
@@ -513,4 +515,295 @@ it('keeps a pending send preparation alive across a queued wallet poll and stale
     walletRead({ ...snapshot(), updatedAt: Date.now() });
   });
   expect(screen.getByText('Approve and send')).toBeEnabled();
+});
+
+describe('explicit XMR stop and resume', () => {
+  const stopped = {
+    contract: XMR_CONTRACT,
+    state: 'STOPPED',
+    send: false,
+    wallet: null,
+  };
+  it('stops UNAVAILABLE retries, visibility refreshes and sending until explicit resume', async () => {
+    vi.useFakeTimers();
+    bridge.mockImplementation(({ action }) =>
+      Promise.resolve(
+        action === 'STOP_XMR_WALLET'
+          ? stopped
+          : { ...snapshot(), state: 'UNAVAILABLE' }
+      )
+    );
+    render(view());
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    await act(async () => {});
+    expect(screen.getByText(/Stop accepted/)).toBeInTheDocument();
+    expect(bridge).toHaveBeenCalledWith({
+      action: 'STOP_XMR_WALLET',
+      coin: 'XMR',
+    });
+    const count = bridge.mock.calls.length;
+    fireEvent(document, new Event('visibilitychange'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120000);
+    });
+    expect(bridge).toHaveBeenCalledTimes(count);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume wallet' }));
+    await act(async () => {});
+    expect(bridge).toHaveBeenLastCalledWith({
+      action: 'ACTIVATE_XMR_WALLET',
+      coin: 'XMR',
+    });
+  });
+  it('queues a stop behind an in-flight read and discards its late ready reply', async () => {
+    vi.useFakeTimers();
+    let finish!: (v: unknown) => void;
+    let reads = 0;
+    bridge.mockImplementation(({ action }) =>
+      action === 'STOP_XMR_WALLET'
+        ? Promise.resolve(stopped)
+        : ++reads === 1
+          ? Promise.resolve({ ...snapshot(), state: 'SCANNING' })
+          : new Promise((resolve) => {
+              finish = resolve;
+            })
+    );
+    render(view());
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByRole('button', { name: 'Stop wallet' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    await act(async () => {});
+    expect(bridge).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/Stopping wallet/)).toBeInTheDocument();
+    await act(async () => {
+      finish(snapshot());
+    });
+    expect(screen.getByText(/Stop accepted/)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Synced', { exact: true })
+    ).not.toBeInTheDocument();
+    expect(bridge).toHaveBeenCalledTimes(3);
+  });
+  it('keeps retries paused after an unconfirmed stop and allows an explicit stop retry', async () => {
+    vi.useFakeTimers();
+    bridge.mockImplementation(({ action }) =>
+      action === 'STOP_XMR_WALLET'
+        ? Promise.reject({ code: 'XMR_ACCESS_UNAVAILABLE' })
+        : Promise.resolve({ ...snapshot(), state: 'SCANNING' })
+    );
+    render(view());
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    await act(async () => {});
+    expect(screen.getByText(/Stop was not confirmed/)).toBeInTheDocument();
+    fireEvent(document, new Event('visibilitychange'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120000);
+    });
+    expect(bridge).toHaveBeenCalledTimes(2);
+    bridge.mockResolvedValue(stopped);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+    await act(async () => {});
+    expect(screen.getByText(/Stop accepted/)).toBeInTheDocument();
+  });
+  it('a remount reads inactive status without activating or restarting a stopped scan', async () => {
+    bridge.mockResolvedValue({
+      contract: XMR_CONTRACT,
+      state: 'INACTIVE',
+      send: false,
+      wallet: null,
+    });
+    const ui = render(view());
+    await screen.findByRole('button', { name: 'Activate this wallet' });
+    ui.unmount();
+    render(view());
+    await screen.findByRole('button', { name: 'Activate this wallet' });
+    expect(
+      bridge.mock.calls.every(([r]) => r.action === 'GET_XMR_WALLET')
+    ).toBe(true);
+  });
+  it('does not offer an unsupported stop action on older Home', async () => {
+    bridge.mockResolvedValue(snapshot());
+    render(
+      <MemoryRouter>
+        <XmrWalletPanel
+          chain={{
+            ...chain,
+            homeWallet: { ...chain.homeWallet!, stopContract: undefined },
+          }}
+        />
+      </MemoryRouter>
+    );
+    await screen.findByText(address);
+    expect(
+      screen.queryByRole('button', { name: 'Stop wallet' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/requires an updated desktop Home/)
+    ).toBeInTheDocument();
+  });
+  it('uses coin-page chrome, bundled Monero images and the receive/history surfaces', async () => {
+    bridge.mockResolvedValue(snapshot());
+    render(view());
+    await screen.findByText(address);
+    expect(screen.getByRole('heading', { name: 'Monero' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Back to wallets' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: 'XMR' })).toHaveLength(2);
+    expect(
+      screen.getByRole('button', { name: 'Copy XMR address' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Transactions')).toBeInTheDocument();
+  });
+});
+
+it('keeps paused controls usable across bridge changes without replaying a stop', async () => {
+  bridge.mockImplementation(({ action }) =>
+    Promise.resolve(
+      action === 'STOP_XMR_WALLET'
+        ? {
+            contract: XMR_CONTRACT,
+            state: 'STOPPED',
+            send: false,
+            wallet: null,
+          }
+        : snapshot()
+    )
+  );
+  render(view());
+  await screen.findByText(address);
+  fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+  await screen.findByText(/Stop accepted/);
+  const before = bridge.mock.calls.length;
+  fireEvent(window, new Event('qortiumBridgeStateChanged'));
+  await screen.findByText(
+    /Automatic page updates are paused. Refresh status or activate/
+  );
+  expect(screen.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Stop wallet' })).toBeEnabled();
+  expect(bridge).toHaveBeenCalledTimes(before);
+  expect(screen.queryByText(address)).not.toBeInTheDocument();
+});
+it('account changes cannot dispatch a queued stop for the old account', async () => {
+  let finish!: (v: unknown) => void;
+  let reads = 0;
+  bridge.mockImplementation(({ action }) =>
+    action === 'GET_XMR_WALLET' && ++reads === 2
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve(snapshot())
+  );
+  const ui = render(view());
+  await screen.findByText(address);
+  fireEvent(document, new Event('visibilitychange'));
+  await waitFor(() => expect(bridge).toHaveBeenCalledTimes(2));
+  fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+  account = 'account-B';
+  ui.rerender(view());
+  await act(async () => {
+    finish(snapshot());
+  });
+  await waitFor(() => expect(bridge).toHaveBeenCalledTimes(3));
+  expect(bridge.mock.calls.some(([r]) => r.action === 'STOP_XMR_WALLET')).toBe(
+    false
+  );
+  expect(bridge.mock.calls[2][0]).toEqual({
+    action: 'GET_XMR_WALLET',
+    coin: 'XMR',
+    passive: true,
+  });
+});
+
+it('a late send preparation cannot re-enable sending after a stop', async () => {
+  let prepared!: (v: unknown) => void;
+  const sendContract = 'qortium-home-xmr-send-v1';
+  bridge.mockImplementation(({ action }) =>
+    action === 'GET_XMR_WALLET'
+      ? Promise.resolve({ ...snapshot(), updatedAt: Date.now() })
+      : action === 'STOP_XMR_WALLET'
+        ? Promise.resolve({
+            contract: XMR_CONTRACT,
+            state: 'STOPPED',
+            send: false,
+            wallet: null,
+          })
+        : action === 'PREPARE_XMR_SEND'
+          ? new Promise((resolve) => {
+              prepared = resolve;
+            })
+          : Promise.resolve({
+              contract: sendContract,
+              handle: null,
+              state: 'NONE',
+              walletHeld: false,
+            })
+  );
+  render(
+    <MemoryRouter>
+      <XmrWalletPanel
+        chain={{
+          ...chain,
+          homeWallet: {
+            ...chain.homeWallet!,
+            send: true,
+            sendMode: 'TRUSTED_CORE_CUSTODY',
+            sendContract,
+          },
+        }}
+      />
+    </MemoryRouter>
+  );
+  await screen.findByText(address);
+  fireEvent.click(screen.getByText('Send XMR'));
+  await waitFor(() =>
+    expect(screen.getByLabelText('Recipient XMR address')).toBeEnabled()
+  );
+  fireEvent.change(screen.getByLabelText('Recipient XMR address'), {
+    target: { value: address },
+  });
+  fireEvent.change(screen.getByLabelText('Amount (XMR)'), {
+    target: { value: '0.01' },
+  });
+  fireEvent.click(screen.getByText('Review network fee'));
+  await waitFor(() =>
+    expect(
+      bridge.mock.calls.some(([r]) => r.action === 'PREPARE_XMR_SEND')
+    ).toBe(true)
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Stop wallet' }));
+  await screen.findByText(/Stop accepted/);
+  await act(async () => {
+    prepared({
+      contract: sendContract,
+      handle: '11111111-1111-1111-1111-111111111111',
+      state: 'PREPARED',
+      recipient: address,
+      amountAtomic: '10000000000',
+      feeAtomic: '10000000',
+      expiresAt: Date.now() + 120000,
+      walletHeld: true,
+      canCancelPreparation: true,
+    });
+  });
+  expect(screen.getByText('Approve and send')).toBeDisabled();
+  expect(screen.getByText('Send XMR')).toBeDisabled();
+  expect(bridge.mock.calls.some(([r]) => r.action === 'COMMIT_XMR_SEND')).toBe(
+    false
+  );
+});
+
+it('read approval expiry does not hide the stop control for an already active Core wallet', async () => {
+  bridge
+    .mockResolvedValueOnce(snapshot())
+    .mockRejectedValue({ code: 'XMR_READ_APPROVAL_REQUIRED' });
+  render(view());
+  await screen.findByText(address);
+  fireEvent(document, new Event('visibilitychange'));
+  await screen.findByText(/Automatic updates are paused/);
+  expect(screen.getByRole('button', { name: 'Stop wallet' })).toBeEnabled();
 });

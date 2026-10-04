@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from 'qapp-core';
 import { isSelectedAccountChangedMessage } from '../common/accountChangedMessage';
 import { describeBridgeError } from '../common/bridgeErrors';
@@ -43,6 +43,13 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
   const consumedRequest = useRef<unknown>(null);
   const currentAccount = useRef(account);
   currentAccount.current = account;
+  const pausedAccount = useRef<{ account: unknown } | null>(null);
+  const isPaused = useCallback(
+    () =>
+      pausedAccount.current !== null &&
+      pausedAccount.current.account === account,
+    [account]
+  );
   const lane = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     const invalidate = () => {
@@ -73,7 +80,13 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     let inFlight = false;
     if (!enabled) return;
     const poll = async (action = 'GET_XMR_WALLET', passive = true) => {
-      if (inFlight || stopped || document.hidden) return;
+      if (
+        inFlight ||
+        stopped ||
+        (document.hidden && action !== 'STOP_XMR_WALLET') ||
+        (isPaused() && action !== 'STOP_XMR_WALLET')
+      )
+        return;
       inFlight = true;
       clearTimeout(timer);
       const work = lane.current
@@ -100,6 +113,10 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
           const next = parseXmrSnapshot(response);
           // Only financial display may be retained, never readiness. Scope is checked again below.
           const value = next;
+          if (action === 'STOP_XMR_WALLET') {
+            stopped = true;
+            clearXmrProgress();
+          }
           recordXmrProgress(account, next);
           setNow(Date.now());
 
@@ -118,6 +135,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
             busy: false,
           }));
           if (
+            action !== 'STOP_XMR_WALLET' &&
             [
               'OPENING',
               'SCANNING',
@@ -146,17 +164,20 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
           account,
           revision,
           value:
-            code === 'XMR_READ_APPROVAL_REQUIRED' &&
+            (action === 'STOP_XMR_WALLET' ||
+              code === 'XMR_READ_APPROVAL_REQUIRED') &&
             old.account === account &&
             old.revision === revision
               ? old.value
               : null,
           error:
-            code === 'XMR_READ_APPROVAL_REQUIRED'
-              ? 'Automatic updates are paused. Refresh status to approve wallet reads.'
-              : locked
-                ? 'Unlock the selected account to use its XMR wallet.'
-                : 'XMR access paused. Check the local Core and wallet approval, then refresh.',
+            action === 'STOP_XMR_WALLET'
+              ? 'Stop was not confirmed. Automatic page updates are paused, but Core may still be scanning. Retry Stop wallet or refresh status.'
+              : code === 'XMR_READ_APPROVAL_REQUIRED'
+                ? 'Automatic updates are paused. Refresh status to approve wallet reads.'
+                : locked
+                  ? 'Unlock the selected account to use its XMR wallet.'
+                  : 'XMR access paused. Check the local Core and wallet approval, then refresh.',
           locked,
           busy: false,
         }));
@@ -167,6 +188,22 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     const freshRequest =
       consumedRequest.current !== request && request.account === account;
     consumedRequest.current = request;
+    if (isPaused() && !(freshRequest && request.action === 'STOP_XMR_WALLET')) {
+      // Keep controls usable after host invalidation, without resuming reads or retaining old financial data.
+      setState((old) => ({
+        account,
+        revision,
+        value:
+          old.account === account && old.revision === revision
+            ? old.value
+            : null,
+        error:
+          'Automatic page updates are paused. Refresh status or activate the wallet to continue; retry Stop wallet if stopping was not confirmed.',
+        locked: false,
+        busy: false,
+      }));
+      return;
+    }
     void poll(
       freshRequest ? request.action : 'GET_XMR_WALLET',
       freshRequest ? request.passive : true
@@ -180,7 +217,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [account, revision, request, enabled]);
+  }, [account, revision, request, enabled, isPaused]);
   const current =
     enabled && state.account === account && state.revision === revision
       ? state
@@ -193,13 +230,21 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     return () => clearInterval(timer);
   }, []);
   const progress = xmrProgress(account, value ?? null, now);
-  const refresh = (action = 'GET_XMR_WALLET') =>
+  const refresh = (action = 'GET_XMR_WALLET') => {
+    if (action !== 'STOP_XMR_WALLET') pausedAccount.current = null;
+    else {
+      if (isPaused() && request.action === action && current?.busy) return;
+      pausedAccount.current = { account };
+    }
+    // Fence a late read before React runs the replacement effect. Never replay controls on visibility events.
+    generation.current++;
     setRequest((r) => ({
       action,
       passive: false,
       account,
       revision: r.revision + 1,
     }));
+  };
   const unlock = async () => {
     const unlockAccount = account;
     try {
@@ -217,6 +262,12 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
     wallet,
     refresh,
     unlock,
+    stop: () => refresh('STOP_XMR_WALLET'),
+    paused: isPaused(),
+    stopping:
+      isPaused() &&
+      request.action === 'STOP_XMR_WALLET' &&
+      current?.busy === true,
     progress,
     now,
   };
