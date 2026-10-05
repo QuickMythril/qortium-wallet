@@ -4,6 +4,12 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.32] - 2026-10-04 (QuickMythril fork test build)
+
+### Release Wallet 1.7.32 with shared scan-start controls
+
+- Publish the approved ARRR/XMR scan-start selector, saved heights and Monero chain-preparation display for local Core/Home testing.
+
 ### Add shared ARRR and XMR scan-start controls
 
 - Use one scan selector for saved-progress resume, historical block restore, and explicitly never-funded addresses at the current tip. Home approves the chosen policy; existing checkpoints stay intact.
