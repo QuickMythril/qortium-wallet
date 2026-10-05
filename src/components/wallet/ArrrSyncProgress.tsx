@@ -5,9 +5,11 @@ import type { UseArrrSyncStatusResult } from '../../hooks/useArrrSyncStatus';
 export function ArrrSyncProgress({
   status,
   compact = false,
+  paused = false,
 }: {
   status: UseArrrSyncStatusResult;
   compact?: boolean;
+  paused?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const {
@@ -20,7 +22,7 @@ export function ArrrSyncProgress({
   } = status;
   const number = (value: number) => value.toLocaleString(i18n.resolvedLanguage);
   const { percent } = progress;
-  const syncing = snapshot?.state === 'SYNCHRONIZING';
+  const syncing = !paused && snapshot?.state === 'SYNCHRONIZING';
   const ready =
     snapshot?.ready === true && !snapshot.stale && !snapshot.restartRequired;
   let label =
@@ -31,7 +33,6 @@ export function ArrrSyncProgress({
   else if (switchingStalled) label = t('arrr.state_switching_stalled');
   else if (switching) label = t('arrr.state_switching');
   else if (error) label = error.message;
-  else if (snapshot?.stale) label = t('wallet_progress.outdated');
   else if (snapshot?.restartRequired) label = t('arrr.restart_required');
   else if (ready) label = t('wallet_progress.ready');
   else if (syncing)
@@ -39,14 +40,20 @@ export function ArrrSyncProgress({
       percent == null
         ? t('wallet_progress.syncing')
         : t('wallet_progress.percent', { percent: number(percent) });
+  else if (snapshot?.stale) label = t('wallet_progress.outdated');
   else if (snapshot?.state === 'DEGRADED') label = t('arrr.state_degraded');
   else if (snapshot?.state === 'DISABLED') label = t('arrr.state_disabled');
   else if (snapshot?.state === 'READY') label = t('wallet_progress.outdated');
 
+  if (paused)
+    label =
+      percent == null
+        ? 'Saved scan progress'
+        : `Saved scan · ${number(percent)}%`;
   const active =
+    !paused &&
     !error &&
     !switchingStalled &&
-    !snapshot?.stale &&
     !snapshot?.restartRequired &&
     (switching ||
       syncing ||
@@ -59,10 +66,24 @@ export function ArrrSyncProgress({
       syncing={syncing}
       progress={progress}
       compact={compact}
-      scanned={snapshot?.syncedBlocks}
-      total={snapshot?.totalBlocks}
-      height={snapshot?.scannedHeight}
-      tip={snapshot?.tipHeight}
+      scanned={
+        snapshot?.syncedBlocks ??
+        snapshot?.scanHistory?.samples[snapshot.scanHistory.samples.length - 1]
+          ?.blocks
+      }
+      total={
+        snapshot?.totalBlocks ??
+        snapshot?.scanHistory?.samples[snapshot.scanHistory.samples.length - 1]
+          ?.total
+      }
+      observedAt={
+        snapshot?.scanHistory?.samples[snapshot.scanHistory.samples.length - 1]
+          ?.at ?? snapshot?.observedAt
+      }
+      height={
+        snapshot?.syncedBlocks == null ? snapshot?.scannedHeight : undefined
+      }
+      tip={snapshot?.syncedBlocks == null ? snapshot?.tipHeight : undefined}
     />
   );
 }

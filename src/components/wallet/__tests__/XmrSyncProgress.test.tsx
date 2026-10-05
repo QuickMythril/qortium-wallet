@@ -57,11 +57,11 @@ it('does not invent a balance phase from stale data or a retry for older bridges
     screen.queryByText(/Updating balances and history/)
   ).not.toBeInTheDocument();
   expect(
-    screen.getByText(/Balances and history will refresh/)
-  ).toBeInTheDocument();
+    screen.queryByText(/Balances and history will refresh/)
+  ).not.toBeInTheDocument();
   ui.rerender(
     <XmrSyncProgress value={value} progress={progress} now={100000} />
   );
-  expect(screen.getByText('Waiting for a wallet update…')).toBeInTheDocument();
+  expect(screen.getByText('Syncing')).toBeInTheDocument();
   expect(screen.queryByText(/retry/i)).not.toBeInTheDocument();
 });

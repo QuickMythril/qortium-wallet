@@ -68,9 +68,7 @@ describe('shared wallet presentation', () => {
     };
     const { rerender } = render(wrap(<WalletSyncProgress {...props} />));
     expect(
-      screen.getByText(
-        /Rough estimate: Estimated time remaining: about 2 minutes/
-      )
+      screen.getByText(/Rough estimate: About 2 minutes left/)
     ).toBeInTheDocument();
     rerender(
       wrap(
@@ -95,7 +93,7 @@ describe('shared wallet presentation', () => {
       )
     );
     expect(
-      screen.getByText(/Last rough estimate:.*about 2 minutes/)
+      screen.getByText(/Last rough estimate:.*About 2 minutes/)
     ).toBeInTheDocument();
     expect(screen.queryByText(/Last rough estimate/)).not.toBeNull();
   });

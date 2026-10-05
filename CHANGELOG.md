@@ -2,6 +2,12 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
+## Unreleased
+
+### Keep scan estimates visible and simplify wallet status
+
+- Use elapsed batch timing for shared ARRR/XMR estimates, retain a timestamped forecast through ordinary waits, and restore owner-verified timing history after reloads. Keep financial data and counts visible with one freshness notice; move scan guidance into expandable details. Scope changes, rewinds and prolonged gaps still invalidate estimates, and cached data never authorizes spending.
+
 ## [1.7.34] - 2026-10-05 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.34

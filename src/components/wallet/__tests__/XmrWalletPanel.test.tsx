@@ -346,15 +346,11 @@ describe('XMR receive and history', () => {
   it('labels an old synced snapshot stale when Core no longer considers it current', async () => {
     bridge.mockResolvedValue({ ...snapshot(), state: 'STALE' });
     render(view());
-    await screen.findByText(
-      'Balances and history will refresh after a complete wallet update.'
-    );
+    await screen.findByText(/Balances\/history may have changed/);
     expect(
       screen.queryByText('Synced', { exact: true })
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/last recorded wallet snapshot/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Balances\/history may/)).toBeInTheDocument();
   });
 });
 
@@ -394,9 +390,7 @@ describe('XMR passive scan recovery', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(
-      screen.getByText(/last recorded wallet snapshot/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Balances\/history may/)).toBeInTheDocument();
     expect(screen.getByText('9007.199254740993')).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
@@ -410,7 +404,7 @@ describe('XMR passive scan recovery', () => {
     });
     expect(screen.getByText(/Syncing.*60/)).toBeInTheDocument();
     expect(
-      screen.queryByText(/last recorded wallet snapshot/)
+      screen.queryByText(/Balances\/history may have changed/g)
     ).not.toBeInTheDocument();
     expect(bridge).toHaveBeenCalledTimes(4);
     expect(
@@ -909,7 +903,7 @@ it('reloads stale owner data from an explicit display snapshot without live read
   });
   render(view());
   await screen.findByText(address);
-  expect(screen.getByText(/Last observed/)).toBeInTheDocument();
+  expect(screen.getByText(/Balances\/history as of/)).toBeInTheDocument();
   expect(screen.getByText('9007.199254740993')).toBeInTheDocument();
   expect(screen.queryByText('Synced', { exact: true })).toBeNull();
 });

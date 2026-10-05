@@ -15,6 +15,7 @@ export function WalletSyncProgress({
   total,
   height,
   tip,
+  observedAt,
   children,
 }: {
   label: string;
@@ -27,6 +28,7 @@ export function WalletSyncProgress({
   total?: number | null;
   height?: number | null;
   tip?: number | null;
+  observedAt?: number | null;
   children?: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
@@ -35,8 +37,11 @@ export function WalletSyncProgress({
   let eta = t(
     compact ? 'wallet_progress.estimating_short' : 'wallet_progress.estimating'
   );
-  if (stalled && remainingSeconds === null)
-    eta = 'Waiting for more scan progress…';
+  if (remainingSeconds === null)
+    eta =
+      progress.reason === 'EXPIRED'
+        ? 'Estimate paused; waiting for an update.'
+        : 'Measuring scan speed…';
   else if (remainingSeconds !== null) {
     const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
     const duration =
@@ -46,12 +51,15 @@ export function WalletSyncProgress({
             hours: Math.floor(minutes / 60),
             minutes: minutes % 60,
           });
-    eta = t(compact ? 'wallet_progress.eta_short' : 'wallet_progress.eta', {
+    eta = t('wallet_progress.eta_short', {
       duration,
     });
   }
   if (remainingSeconds !== null)
-    eta = (stalled ? 'Last rough estimate: ' : 'Rough estimate: ') + eta;
+    eta =
+      (progress.reason === 'RETAINED' || stalled
+        ? 'Last rough estimate: '
+        : 'Rough estimate: ') + eta;
   return (
     <Box
       role="status"
@@ -62,7 +70,11 @@ export function WalletSyncProgress({
       }}
     >
       <Tooltip
-        title={active && syncing && showEta ? `${label} · ${eta}` : label}
+        title={
+          active && syncing && showEta
+            ? `${label} · ${eta}${progress.estimatedAt != null ? ` · Estimate updated ${new Date(progress.estimatedAt).toLocaleTimeString()}` : ''}`
+            : label
+        }
       >
         <Box
           sx={{
@@ -109,6 +121,14 @@ export function WalletSyncProgress({
                 scanned: number(height),
                 tip: number(tip),
               })}
+            </Box>
+          )}
+          {observedAt != null && (
+            <Box
+              data-wallet-observation="progress"
+              sx={{ mt: 0.5, fontSize: '0.75rem', opacity: 0.8 }}
+            >
+              Updated {new Date(observedAt).toLocaleTimeString()}.
             </Box>
           )}
           {children}

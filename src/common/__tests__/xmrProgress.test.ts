@@ -37,7 +37,7 @@ describe('XMR native progress observations', () => {
       recordXmrProgress('A', snap(height, at));
     }
     const s = snap(1400, 160000);
-    expect(xmrProgress('A', s, 160000)).toEqual({
+    expect(xmrProgress('A', s, 160000)).toMatchObject({
       percent: 40,
       remainingSeconds: 120,
       stalled: false,
@@ -71,7 +71,11 @@ describe('XMR native progress observations', () => {
     ]) {
       vi.setSystemTime(s.progress!.updatedAt);
       recordXmrProgress('A', s);
-      expect(xmrProgress('A', s, Date.now()).remainingSeconds).toBeNull();
+      if (s.progress!.updatedAt === 200000)
+        expect(
+          xmrProgress('A', s, Date.now()).remainingSeconds
+        ).toBeGreaterThan(0);
+      else expect(xmrProgress('A', s, Date.now()).remainingSeconds).toBeNull();
     }
     clearXmrProgress();
     expect(
@@ -104,4 +108,29 @@ describe('XMR native progress observations', () => {
       xmrProgress('A', snap(1100, 200000), 100000).remainingSeconds
     ).toBeNull();
   });
+});
+
+it('rehydrates a bounded backend history after hard reload without granting readiness', () => {
+  const value = {
+    ...snap(1400, 160000),
+    state: 'STALE',
+    scanHistory: {
+      identity: id,
+      samples: [
+        { at: 100000, blocks: 100, total: 1000 },
+        { at: 120000, blocks: 200, total: 1000 },
+        { at: 140000, blocks: 300, total: 1000 },
+        { at: 160000, blocks: 400, total: 1000 },
+      ],
+    },
+  };
+  clearXmrProgress();
+  recordXmrProgress('A', value);
+  expect(xmrProgress('A', value, 200000).remainingSeconds).toBe(120);
+  expect(value.wallet).toBeNull();
+  expect(xmrProgress('B', value, 200000).remainingSeconds).toBeNull();
+  recordXmrProgress('A', { ...value, state: 'STOPPED' });
+  expect(
+    xmrProgress('A', { ...value, state: 'STOPPED' }, 200000).remainingSeconds
+  ).toBeNull();
 });

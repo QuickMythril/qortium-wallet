@@ -1,3 +1,7 @@
+import {
+  WalletObservationNotice,
+  WalletScanDetails,
+} from './WalletObservationNotice';
 import { WalletScanSetup } from './WalletScanSetup';
 import {
   WALLET_SCAN_START_CONTRACT,
@@ -101,18 +105,6 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                 {wallet.unlockedAtomic === null ? '' : ' XMR'}
               </Typography>
             )}
-            {value?.display && !value.wallet && (
-              <Typography sx={{ color: c.textSecondary, mt: 1 }}>
-                Last observed{' '}
-                {new Date(value.display.updatedAt).toLocaleString()}. Balances
-                and history may have changed.
-              </Typography>
-            )}
-            <Typography sx={{ color: c.textSecondary, mt: 2 }}>
-              {chain.homeWallet?.send
-                ? 'Receive, view and send XMR with approval in Home.'
-                : 'Receive and view XMR. Sending is not available yet.'}
-            </Typography>
             {current?.error && (
               <Typography role="alert" sx={{ my: 2, color: c.error }}>
                 {current.error}
@@ -155,6 +147,21 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                             : ''}
               </Typography>
             )}
+            {wallet && (
+              <WalletObservationNotice
+                at={value?.wallet ? value.updatedAt : value?.display?.updatedAt}
+                syncing={
+                  !paused &&
+                  !stopping &&
+                  !!value &&
+                  ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state) &&
+                  !wallet.synced
+                }
+                stale={
+                  !!current?.error || !value?.wallet || value.state !== 'READY'
+                }
+              />
+            )}
             {chain.homeWallet?.send === true &&
               chain.homeWallet.sendContract === 'qortium-home-xmr-send-v1' && (
                 <XmrSendPanel
@@ -172,11 +179,6 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                   }
                 />
               )}
-            {value?.scanStart && (
-              <Typography variant="body2" sx={{ mt: 2 }}>
-                Scan starts at block {value.scanStart.height.toLocaleString()}.
-              </Typography>
-            )}
             {value?.scanStartError && (
               <Typography role="alert" sx={{ mt: 2 }}>
                 {value.scanStartError === 'XMR_EXISTING_WALLET' ||
@@ -220,7 +222,7 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
               note={
                 chain.homeWallet?.stopContract !== XMR_STOP_CONTRACT
                   ? 'Stopping from Wallet requires an updated desktop Home.'
-                  : 'Controls affect this account’s wallet. Saved scan progress is kept.'
+                  : undefined
               }
             >
               {scanChoices && inactive && !current?.locked && (
@@ -231,19 +233,10 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                 />
               )}
             </WalletControls>
-            {wallet &&
-              (current?.error ||
-                (value?.state !== 'READY' && value?.state !== 'SCANNING')) && (
-                <Typography>
-                  This is the last recorded wallet snapshot. Balances and
-                  history may be out of date.
-                </Typography>
-              )}
-            {wallet && !wallet.synced && (
-              <Typography sx={{ mt: 2, color: c.textSecondary }}>
-                Balances may be incomplete while syncing.
-              </Typography>
-            )}
+            <WalletScanDetails height={value?.scanStart?.height}>
+              Controls affect this account’s wallet. Saved scan progress is
+              kept. Sending requires approval in Home.
+            </WalletScanDetails>
           </WalletBalanceCard>
           <WalletAddressBar
             address={wallet?.address ?? ''}

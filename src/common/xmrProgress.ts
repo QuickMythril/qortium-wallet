@@ -1,6 +1,7 @@
 import type { XmrSnapshot } from './xmrWallet';
 import {
   advanceScanProgress,
+  restoreScanProgress,
   calculateScanProgress,
   type ScanProgressHistory,
   type ScanObservation,
@@ -31,7 +32,9 @@ function observation(value: XmrSnapshot, now: number): ScanObservation {
   };
 }
 export function recordXmrProgress(account: unknown, value: XmrSnapshot) {
-  const history = cached && cached.account === account ? cached.history : null;
+  const history =
+    restoreScanProgress(value.scanHistory, observation(value, Date.now())) ??
+    (cached && cached.account === account ? cached.history : null);
   // Core timestamps change only when native counts change; duplicate polls add no samples.
   const at = value.progress?.updatedAt ?? 0;
   cached = {
@@ -52,8 +55,5 @@ export function xmrProgress(
     now,
     o?.ready ? now : (value?.progress?.updatedAt ?? 0)
   );
-  return {
-    ...p,
-    stalled: p.stalled || !!(o?.active && (o.stale || p.percent === null)),
-  };
+  return p;
 }

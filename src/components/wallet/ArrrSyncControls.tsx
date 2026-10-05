@@ -1,3 +1,4 @@
+import { WalletScanDetails } from './WalletObservationNotice';
 import { requestWalletAction } from '../../common/walletRequest';
 import { WalletControls } from './WalletPage';
 import { useEffect, useRef, useState } from 'react';
@@ -93,7 +94,7 @@ export function ArrrSyncControls({
                   : 'wallet_controls.stop'
             ),
       }}
-      note={t('arrr.control_scope')}
+      note={<WalletScanDetails>{t('arrr.control_scope')}</WalletScanDetails>}
     >
       {message && (
         <Alert severity="info" sx={{ mt: 1 }}>
