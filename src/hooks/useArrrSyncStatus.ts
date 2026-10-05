@@ -187,17 +187,8 @@ export function useArrrSyncStatus(
           return;
         }
         const receivedAt = Date.now();
-        historyRef.current = advanceArrrProgress(
-          historyRef.current,
-          parsed,
-          receivedAt
-        );
-        writeArrrProgressHistory(keyRef.current, historyRef.current);
-        receivedAtRef.current = receivedAt;
-        setNow(receivedAt);
-        setSnapshotKey(requestKey);
-        setSnapshotEpoch(requestEpoch);
-        setSnapshot((previous) =>
+        const previous = visibleStateRef.current.snapshot;
+        const accepted =
           previous &&
           parsed.walletIdentityHash !== null &&
           parsed.walletIdentityHash === previous.walletIdentityHash &&
@@ -227,8 +218,18 @@ export function useArrrSyncStatus(
                   parsed.tipHeight
                 ),
               }
-            : parsed
+            : parsed;
+        historyRef.current = advanceArrrProgress(
+          historyRef.current,
+          accepted,
+          receivedAt
         );
+        writeArrrProgressHistory(keyRef.current, historyRef.current);
+        receivedAtRef.current = receivedAt;
+        setNow(receivedAt);
+        setSnapshotKey(requestKey);
+        setSnapshotEpoch(requestEpoch);
+        setSnapshot(accepted);
         setError(null);
         setConsentDenied(false);
         setSwitching(false);

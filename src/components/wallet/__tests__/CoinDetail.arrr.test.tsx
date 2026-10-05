@@ -423,6 +423,39 @@ describe('CoinDetail ARRR structured state rendering', () => {
     ).toBeInTheDocument();
   });
 
+  it('keeps the approved balance during a stale scan with one financial notice and a restored ETA', async () => {
+    syncStatusResponse = baseSnapshot({ state: 'READY', ready: true });
+    const first = renderDetail();
+    await screen.findByText('1.40000000');
+    first.unmount();
+    const at = Date.now() - 120000;
+    syncStatusResponse = baseSnapshot({
+      state: 'SYNCHRONIZING',
+      ready: false,
+      stale: true,
+      syncedBlocks: 60,
+      totalBlocks: 100,
+      observedAt: at,
+      scanHistory: {
+        identity: 'hash-a',
+        samples: [
+          { at: at - 240000, blocks: 50, total: 100 },
+          { at, blocks: 60, total: 100 },
+        ],
+      },
+    });
+    const second = renderDetail();
+    await screen.findByText(/Last rough estimate: About/);
+    expect(screen.getByText('1.40000000')).toBeInTheDocument();
+    expect(
+      second.container.querySelectorAll('[data-wallet-observation="financial"]')
+    ).toHaveLength(1);
+    expect(
+      second.container.querySelectorAll('[data-wallet-observation="progress"]')
+    ).toHaveLength(1);
+    expect(screen.getByText('Scanned 60 of 100 blocks')).toBeInTheDocument();
+  });
+
   it('renders the READY state with verified as the main balance and total as a secondary line, formatted to 8 decimals', async () => {
     syncStatusResponse = baseSnapshot({ state: 'READY', ready: true });
     renderDetail();

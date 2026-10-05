@@ -1,3 +1,4 @@
+import { WalletScanDetails } from './WalletObservationNotice';
 import { WalletScanSetup } from './WalletScanSetup';
 import {
   WALLET_SCAN_START_CONTRACT,
@@ -6,7 +7,7 @@ import {
 import { requestWalletAction } from '../../common/walletRequest';
 import { WalletControls } from './WalletPage';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Typography } from '@mui/material';
+import { Alert } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { parseArrrWalletSession } from '../../common/arrrWalletSession';
 import {
@@ -152,7 +153,11 @@ export function ArrrWalletSessionControls({
         onClick: session.refresh,
         label: t('wallet_controls.refresh'),
       }}
-      note={t('arrr.session_scope')}
+      note={
+        <WalletScanDetails height={value?.scanStart?.height}>
+          {t('arrr.session_scope')}
+        </WalletScanDetails>
+      }
     >
       {!stop && choices && (
         <WalletScanSetup
@@ -161,11 +166,7 @@ export function ArrrWalletSessionControls({
           onChange={setScanStart}
         />
       )}
-      {value?.scanStart && (
-        <Typography variant="body2" sx={{ mt: 1 }}>
-          Saved scan start: block {value.scanStart.height.toLocaleString()}.
-        </Typography>
-      )}
+
       {label && (
         <Alert severity={degraded ? 'warning' : 'info'} sx={{ mt: 1 }}>
           {t(label)}

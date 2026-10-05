@@ -78,6 +78,7 @@ describe('useArrrSyncStatus', () => {
     let blocks = 100;
     qdnRequestMock.mockImplementation(async () => ({
       ...syncingSnapshot,
+      observedAt: Date.now(),
       syncedBlocks: blocks,
       totalBlocks: 1000,
     }));
@@ -106,6 +107,7 @@ describe('useArrrSyncStatus', () => {
     let blocks = 100;
     qdnRequestMock.mockImplementation(async () => ({
       ...syncingSnapshot,
+      observedAt: Date.now(),
       syncedBlocks: blocks,
       totalBlocks: 1000,
     }));

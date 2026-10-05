@@ -1,3 +1,7 @@
+import {
+  projectWalletScanHistory,
+  type WalletScanHistory,
+} from './walletScanHistory';
 import type { ChainConfig } from '../config/chains';
 import {
   projectWalletReadStatus,
@@ -25,6 +29,7 @@ export type XmrSnapshot = {
   state: string;
   updatedAt: number | null;
   progress: XmrScanProgress | null;
+  scanHistory?: WalletScanHistory;
   preparation?: XmrScanProgress;
   scanStart?: { mode: string; height: number };
   scanStartError?: string;
@@ -139,8 +144,16 @@ export function parseXmrSnapshot(v: unknown): XmrSnapshot {
   }
   const extra: Pick<
     XmrSnapshot,
-    'scanStart' | 'preparation' | 'scanStartError'
+    'scanStart' | 'preparation' | 'scanStartError' | 'scanHistory'
   > = {};
+  const scanHistory = projectWalletScanHistory(
+    v.scanHistory,
+    progress?.scanId ?? null,
+    progress ? progress.height - progress.startHeight : null,
+    progress ? progress.targetHeight - progress.startHeight : null,
+    progress?.updatedAt ?? null
+  );
+  if (scanHistory) extra.scanHistory = scanHistory;
   if (v.scanStart != null) {
     const start = v.scanStart;
     if (

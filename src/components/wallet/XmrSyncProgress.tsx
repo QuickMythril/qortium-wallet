@@ -31,24 +31,17 @@ export function XmrSyncProgress({
     !!value.preparation &&
     now >= value.preparation.updatedAt &&
     now - value.preparation.updatedAt < 60000;
-  const label =
-    value.state === 'UNAVAILABLE' && !message
-      ? 'Waiting for a wallet update…'
-      : message && ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state)
-        ? message
-        : preparing
-          ? 'Preparing chain history…'
-          : ready
-            ? t('wallet_progress.ready')
-            : syncing
-              ? percent === null
-                ? t('wallet_progress.syncing')
-                : t('wallet_progress.percent', { percent: number(percent) })
-              : value.state === 'UNAVAILABLE'
-                ? 'Waiting for a wallet update…'
-                : value.state === 'READY'
-                  ? t('wallet_progress.outdated')
-                  : `Wallet status: ${value.state.toLowerCase().replace(/_/g, ' ')}`;
+  const label = preparing
+    ? 'Preparing chain history…'
+    : ready
+      ? t('wallet_progress.ready')
+      : syncing
+        ? percent === null
+          ? t('wallet_progress.syncing')
+          : t('wallet_progress.percent', { percent: number(percent) })
+        : value.state === 'READY'
+          ? t('wallet_progress.outdated')
+          : `Wallet status: ${value.state.toLowerCase().replace(/_/g, ' ')}`;
   const p = value.progress;
   return (
     <WalletSyncProgress
@@ -62,6 +55,7 @@ export function XmrSyncProgress({
       }
       compact={compact}
       showEta={!preparing}
+      observedAt={p?.updatedAt}
       scanned={
         preparing
           ? undefined
@@ -84,16 +78,8 @@ export function XmrSyncProgress({
           at the saved restore height.
         </Box>
       )}
-      {p && now - p.updatedAt >= 60000 && (
-        <Box sx={{ mt: 1 }}>
-          Last observed scan progress{' '}
-          {new Date(p.updatedAt).toLocaleTimeString()}.
-        </Box>
-      )}
-      {value.state === 'STALE' && (
-        <Box sx={{ mt: 1 }}>
-          Balances and history will refresh after a complete wallet update.
-        </Box>
+      {!compact && message && (
+        <Box sx={{ mt: 0.5, fontSize: '0.75rem', opacity: 0.8 }}>{message}</Box>
       )}
     </WalletSyncProgress>
   );

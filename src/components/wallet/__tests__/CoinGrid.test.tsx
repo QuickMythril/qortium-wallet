@@ -327,7 +327,7 @@ describe('CoinGrid shared balance cache (round 2, item B)', () => {
       await waitFor(() =>
         expect(screen.getByText('Syncing · 9.3%')).toBeInTheDocument()
       );
-      expect(screen.getByText('Estimating…')).toBeInTheDocument();
+      expect(screen.getByText('Measuring scan speed…')).toBeInTheDocument();
       expect(balanceCalls(qdnRequestMock, 'GET_ARRR_SYNC_STATUS')).toHaveLength(
         1
       );

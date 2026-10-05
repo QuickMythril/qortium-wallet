@@ -30,7 +30,7 @@ const at = (blocks: number) => ({ ...snapshot, syncedBlocks: blocks });
 
 describe('ARRR progress estimates', () => {
   it('uses the scan range instead of absolute chain height and waits for rate samples', () => {
-    expect(calculateArrrProgress(snapshot, null, 0, 0)).toEqual({
+    expect(calculateArrrProgress(snapshot, null, 0, 0)).toMatchObject({
       percent: 9.3,
       remainingSeconds: null,
       stalled: false,
@@ -68,7 +68,7 @@ describe('ARRR progress estimates', () => {
       advanceArrrProgress(history, at(204500), 120000).samples
     ).toHaveLength(1);
   });
-  it('drops the estimate when progress stops or status becomes stale', () => {
+  it('includes ordinary pauses in the estimate while preserving the percentage', () => {
     let history: ArrrProgressHistory | null = null;
     for (const [time, blocks] of [
       [0, 200000],
@@ -83,14 +83,14 @@ describe('ARRR progress estimates', () => {
     }
     expect(
       calculateArrrProgress(at(203000), history, 90000, 90000)
-    ).toMatchObject({ stalled: true, remainingSeconds: null });
+    ).toMatchObject({ remainingSeconds: 38828 });
     expect(
       calculateArrrProgress(at(203000), history, 150000, 90000).percent
     ).toBe(9.4);
     expect(
       calculateArrrProgress({ ...snapshot, stale: true }, history, 90000, 90000)
         .remainingSeconds
-    ).toBeNull();
+    ).toBeGreaterThan(0);
   });
   it('never reports 100% before backend readiness, including missing/zero/invalid ranges', () => {
     expect(
@@ -115,4 +115,34 @@ describe('ARRR progress estimates', () => {
       ).toBeNull();
     }
   });
+});
+
+it('recovers the same owner ETA from backend history after reload, including a temporary empty counter tuple', () => {
+  const scanHistory = {
+    identity: 'wallet-a',
+    samples: [
+      { at: 1000, blocks: 100, total: 1000 },
+      { at: 61000, blocks: 200, total: 1000 },
+    ],
+  };
+  const value = {
+    ...snapshot,
+    syncedBlocks: null,
+    totalBlocks: null,
+    observedAt: 70000,
+    scanHistory,
+  };
+  const restored = advanceArrrProgress(null, value, 70000);
+  expect(calculateArrrProgress(value, restored, 70000, 70000)).toMatchObject({
+    percent: 20,
+    remainingSeconds: 480,
+  });
+  expect(
+    calculateArrrProgress(
+      { ...value, walletIdentityHash: 'other' },
+      restored,
+      70000,
+      70000
+    ).remainingSeconds
+  ).toBeNull();
 });

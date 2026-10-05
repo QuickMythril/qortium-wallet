@@ -1,4 +1,5 @@
-/** Coin-neutral progress arithmetic. Observation times must describe backend work, not UI polls. */
+import type { WalletScanHistory } from './walletScanHistory';
+/** Coin-neutral progress arithmetic. Times describe backend work, never UI polls. */
 export interface ScanObservation {
   identity: string | null;
   active: boolean;
@@ -13,52 +14,113 @@ const WINDOW_MS = 30 * 60_000;
 const MAX_GAP_MS = 15 * 60_000;
 const MIN_SAMPLE_MS = 60_000;
 const RATE_INTERVAL_MS = 20_000;
-
 type Sample = { at: number; blocks: number; total: number };
+type Estimate = { at: number; blocks: number; remainingSeconds: number };
 export interface ScanProgressHistory {
   identity: string | null;
   samples: Sample[];
+  estimate?: Estimate;
 }
 export interface ScanProgress {
   percent: number | null;
   remainingSeconds: number | null;
   stalled: boolean;
+  estimatedAt?: number;
+  reason?: 'MEASURING' | 'ESTIMATE' | 'RETAINED' | 'EXPIRED';
 }
-
+function estimate(samples: Sample[]): Estimate | undefined {
+  const first = samples[0];
+  if (!first) return;
+  let anchor = first;
+  for (const sample of samples.slice(1)) {
+    if (sample.at - anchor.at >= RATE_INTERVAL_MS) anchor = sample;
+  }
+  if (anchor.at - first.at < MIN_SAMPLE_MS || anchor.blocks <= first.blocks)
+    return;
+  // Whole elapsed intervals include ordinary pauses between native batches.
+  // The incomplete tail never changes the forecast or erases a usable estimate.
+  const rate = (anchor.blocks - first.blocks) / ((anchor.at - first.at) / 1000);
+  return {
+    at: anchor.at,
+    blocks: anchor.blocks,
+    remainingSeconds: Math.ceil((anchor.total - anchor.blocks) / rate),
+  };
+}
 export function advanceScanProgress(
   history: ScanProgressHistory | null,
   snapshot: ScanObservation,
-  now: number
+  at: number
 ): ScanProgressHistory {
-  const { blocks, total } = snapshot;
-  const identity = snapshot.identity;
+  const { identity, blocks, total } = snapshot;
   if (
     !snapshot.active ||
     snapshot.restartRequired ||
+    identity === null ||
     blocks == null ||
     total == null ||
     total <= 0 ||
-    blocks > total
+    blocks < 0 ||
+    blocks > total ||
+    !Number.isFinite(at) ||
+    at < 0
   )
     return { identity, samples: [] };
-  let samples = history?.identity === identity ? history.samples : [];
+  const same = history?.identity === identity;
+  let samples = same ? history.samples : [];
+  let saved = same ? history.estimate : undefined;
   const last = samples[samples.length - 1];
-  // A restart, rescan, changed work range, or long observation gap invalidates
-  // the old rate. Absolute chain height is deliberately not a denominator.
   if (
     last &&
-    (now - last.at > MAX_GAP_MS ||
-      now < last.at ||
+    (at - last.at > MAX_GAP_MS ||
+      at < last.at ||
       blocks < last.blocks ||
       total < last.total)
-  )
+  ) {
     samples = [];
-  if (last && now === last.at && blocks === last.blocks && total === last.total)
-    return { identity, samples };
-  samples = samples.filter((sample) => now - sample.at <= WINDOW_MS);
-  return { identity, samples: [...samples, { at: now, blocks, total }] };
+    saved = undefined;
+  } else if (last && at === last.at) return history!;
+  samples = samples.filter((sample) => at - sample.at <= WINDOW_MS);
+  samples = [...samples, { at, blocks, total }];
+  // Keep anchors plus one changing tail, bounding per-block native callbacks.
+  const bounded: Sample[] = [];
+  for (const sample of samples)
+    if (
+      !bounded.length ||
+      sample.at - bounded[bounded.length - 1].at >= RATE_INTERVAL_MS
+    )
+      bounded.push(sample);
+  const tail = samples[samples.length - 1];
+  if (bounded[bounded.length - 1] !== tail) bounded.push(tail);
+  const computed = estimate(bounded);
+  const next =
+    saved && computed && computed.blocks <= saved.blocks ? saved : computed;
+  return {
+    identity,
+    samples: bounded,
+    ...(next || saved ? { estimate: next ?? saved } : {}),
+  };
 }
-
+/** Rebuild from an owner-verified Core history after reload; no browser disk storage. */
+export function restoreScanProgress(
+  value: WalletScanHistory | undefined,
+  snapshot: ScanObservation
+): ScanProgressHistory | null {
+  if (
+    !value ||
+    value.identity !== snapshot.identity ||
+    !snapshot.active ||
+    snapshot.restartRequired
+  )
+    return null;
+  let history: ScanProgressHistory | null = null;
+  for (const sample of value.samples)
+    history = advanceScanProgress(
+      history,
+      { ...snapshot, blocks: sample.blocks, total: sample.total },
+      sample.at
+    );
+  return history;
+}
 export function calculateScanProgress(
   snapshot: ScanObservation | null,
   history: ScanProgressHistory | null,
@@ -69,65 +131,33 @@ export function calculateScanProgress(
   if (!snapshot || snapshot.restartRequired || now < receivedAt) return empty;
   if (snapshot.ready) return { ...empty, percent: 100 };
   const { blocks, total } = snapshot;
-  if (blocks == null || total == null || total <= 0 || blocks > total)
+  if (
+    blocks == null ||
+    total == null ||
+    blocks < 0 ||
+    total <= 0 ||
+    blocks > total
+  )
     return empty;
-  // Never round an unfinished scan to 100%, even at 99.99%.
   const percent = Math.min(99.9, Math.floor((blocks / total) * 1000) / 10);
   if (!snapshot.active)
     return { percent, remainingSeconds: null, stalled: false };
-  const samples =
-    history?.identity === snapshot.identity ? history.samples : [];
-  const first = samples[0];
-  const last = samples[samples.length - 1];
-  const lastDifferent = [...samples].reverse().find((s) => s.blocks < blocks);
-  const unchangedSince = lastDifferent
-    ? (samples[samples.indexOf(lastDifferent) + 1]?.at ?? now)
-    : (first?.at ?? now);
-  const stalled = now - unchangedSince >= SCAN_PROGRESS_STALE_MS;
-  if (
-    !first ||
-    !last ||
-    samples.length < 3 ||
-    last.at - first.at < MIN_SAMPLE_MS ||
-    last.blocks <= first.blocks ||
-    now - last.at >= MAX_GAP_MS
-  ) {
-    return { percent, remainingSeconds: null, stalled };
-  }
-  const wholeRate =
-    (last.blocks - first.blocks) / ((last.at - first.at) / 1000);
-  // Per-block callbacks can be noisy. Compare independent spans rather than
-  // callback intervals, and withhold precise times during bursts/pauses.
-  const rates: number[] = [];
-  let anchor = first;
-  for (const sample of samples.slice(1)) {
-    if (sample.at - anchor.at < RATE_INTERVAL_MS) continue;
-    rates.push(
-      (sample.blocks - anchor.blocks) / ((sample.at - anchor.at) / 1000)
-    );
-    anchor = sample;
-  }
-  const batchBaseline =
-    last.at - first.at >= 180_000 && rates.filter((r) => r > 0).length >= 2;
-  if (
-    (rates.length < 3 && !batchBaseline) ||
-    (!batchBaseline &&
-      (Math.min(...rates) <= 0 ||
-        Math.max(...rates) / Math.min(...rates) > 2 ||
-        wholeRate > Math.max(...rates) * 2 ||
-        wholeRate < Math.min(...rates) / 2)) ||
-    (last.blocks - anchor.blocks) /
-      Math.max(RATE_INTERVAL_MS / 1000, (last.at - anchor.at) / 1000) >
-      Math.max(...rates) * 2
-  ) {
-    return { percent, remainingSeconds: null, stalled };
-  }
-  // The incomplete trailing span never changes the estimated rate. A large
-  // tail burst above is rejected instead of manufacturing a fast forecast.
-  const rate = (anchor.blocks - first.blocks) / ((anchor.at - first.at) / 1000);
+  const matching = history?.identity === snapshot.identity ? history : null;
+  const last = matching?.samples[matching.samples.length - 1];
+  const saved = matching?.estimate ?? estimate(matching?.samples ?? []);
+  const stalled = !!last && now - last.at >= SCAN_PROGRESS_STALE_MS;
+  if (!last || now < last.at || (saved && now < saved.at))
+    return { percent, remainingSeconds: null, stalled, reason: 'MEASURING' };
+  if (now - last.at >= MAX_GAP_MS || (saved && now - saved.at >= MAX_GAP_MS))
+    return { percent, remainingSeconds: null, stalled, reason: 'EXPIRED' };
+  if (!saved)
+    return { percent, remainingSeconds: null, stalled, reason: 'MEASURING' };
+  // A retained forecast is not a countdown while no backend progress arrives.
   return {
     percent,
-    remainingSeconds: Math.ceil((total - blocks) / rate),
+    remainingSeconds: saved.remainingSeconds,
     stalled,
+    estimatedAt: saved.at,
+    reason: stalled || last.at !== saved.at ? 'RETAINED' : 'ESTIMATE',
   };
 }

@@ -1,3 +1,7 @@
+import {
+  projectWalletScanHistory,
+  type WalletScanHistory,
+} from './walletScanHistory';
 // ARRR structured sync-status contract (round 5) - see design section 2/3 in
 // projects/wallet-review and the `GET_ARRR_SYNC_STATUS` row of qortium-home's
 // HOME_V2_BRIDGE_COMPATIBILITY.md. This module is the single source of
@@ -38,6 +42,7 @@ export interface ArrrLastError {
 }
 
 export interface ArrrSyncSnapshot {
+  scanHistory?: WalletScanHistory;
   contract: string;
   coin: 'ARRR';
   state: ArrrSyncState;
@@ -142,7 +147,20 @@ export function parseArrrSyncSnapshot(raw: unknown): ArrrSyncSnapshot | null {
   if (r.verifiedBalanceAtomic != null && verifiedBalanceAtomic == null)
     return null;
 
+  let scanHistory: WalletScanHistory | undefined;
+  try {
+    scanHistory = projectWalletScanHistory(
+      r.scanHistory,
+      stringOrNull(r.walletIdentityHash),
+      syncedBlocks,
+      totalBlocks,
+      r.observedAt
+    );
+  } catch {
+    return null;
+  }
   return {
+    ...(scanHistory ? { scanHistory } : {}),
     contract: stringOrNull(r.contract) ?? '',
     coin: 'ARRR',
     state: state as ArrrSyncState,

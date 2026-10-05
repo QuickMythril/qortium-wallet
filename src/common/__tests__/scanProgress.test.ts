@@ -1,3 +1,4 @@
+import trace from './scan-batch-trace.json';
 import { describe, expect, it } from 'vitest';
 import {
   advanceScanProgress,
@@ -42,7 +43,7 @@ describe('shared ETA confidence', () => {
       ]).result.remainingSeconds
     ).toBe(1940);
   });
-  it('suppresses bursty rates and target-only pauses without hiding the scan percentage', () => {
+  it('includes bursty batches and ordinary pauses in the elapsed rate', () => {
     for (const points of [
       [
         [0, 0],
@@ -57,27 +58,24 @@ describe('shared ETA confidence', () => {
         [60000, 200],
       ],
     ])
-      expect(replay(points).result).toMatchObject({
-        remainingSeconds: null,
-        stalled: false,
-      });
+      expect(replay(points).result.remainingSeconds).toBeGreaterThan(0);
   });
   it('accepts dense native callbacks after stable independent spans', () => {
     const points = Array.from({ length: 61 }, (_, i) => [i * 1000, i * 5]);
     expect(replay(points).result.remainingSeconds).toBe(1940);
   });
-  it('does not let an unchecked tail burst manufacture a fast forecast', () => {
+  it('retains a timestamped estimate through an incomplete tail burst', () => {
     const stable = [
       [0, 0],
       [20000, 100],
       [40000, 200],
       [60000, 300],
     ];
-    expect(
-      replay([...stable, [61000, 9000]]).result.remainingSeconds
-    ).toBeNull();
+    expect(replay([...stable, [61000, 9000]]).result.remainingSeconds).toBe(
+      1940
+    );
     expect(replay([...stable, [61000, 305]]).result.remainingSeconds).toBe(
-      1939
+      1940
     );
     // A short incomplete pause cannot distort the rate from validated spans.
     expect(replay([...stable, [79000, 300]]).result.remainingSeconds).toBe(
@@ -147,4 +145,51 @@ it('produces a rough ETA for sparse advancing batches and preserves counts while
     calculateScanProgress(observation(3000), history, 1300000, 360000)
       .remainingSeconds
   ).toBeNull();
+});
+
+it('shows an estimate within two minutes on the captured variable-batch trace and keeps it during waits', () => {
+  let history: ScanProgressHistory | null = null;
+  let firstAt: number | null = null;
+  for (const row of trace) {
+    const o = { ...observation(row.blocks), total: row.total };
+    history = advanceScanProgress(history, o, row.at);
+    const result = calculateScanProgress(o, history, row.pollAt, row.at);
+    if (result.remainingSeconds !== null) firstAt ??= row.pollAt;
+    if (firstAt !== null) expect(result.remainingSeconds).toBeGreaterThan(0);
+  }
+  expect(firstAt).not.toBeNull();
+  expect(firstAt).toBeLessThan(120000);
+  const tail = trace[trace.length - 1];
+  const o = { ...observation(tail.blocks), total: tail.total };
+  const estimated = calculateScanProgress(o, history, tail.pollAt, tail.at);
+  expect(
+    calculateScanProgress(o, history, tail.at + 180000, tail.at)
+  ).toMatchObject({
+    remainingSeconds: estimated.remainingSeconds,
+    reason: 'RETAINED',
+  });
+  expect(
+    calculateScanProgress(o, history, tail.at + 900000, tail.at)
+  ).toMatchObject({ remainingSeconds: null, reason: 'EXPIRED' });
+});
+it('bounds dense history and resets on future time, range rewind and scan change', () => {
+  const { history } = replay(
+    Array.from({ length: 4000 }, (_, i) => [i * 1000, i])
+  );
+  expect(history!.samples.length).toBeLessThanOrEqual(92);
+  expect(
+    calculateScanProgress(observation(3999), history, 1, 3999000)
+      .remainingSeconds
+  ).toBeNull();
+  for (const o of [
+    { ...observation(3999), identity: 'B' },
+    observation(5),
+    { ...observation(3999), active: false },
+    { ...observation(3999), restartRequired: true },
+  ]) {
+    const reset = advanceScanProgress(history, o, 4000000);
+    expect(
+      calculateScanProgress(o, reset, 4000000, 4000000).remainingSeconds
+    ).toBeNull();
+  }
 });

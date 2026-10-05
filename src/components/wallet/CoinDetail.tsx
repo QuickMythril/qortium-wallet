@@ -1,3 +1,5 @@
+import { calculateArrrProgress } from '../../common/arrrProgress';
+import { WalletObservationNotice } from './WalletObservationNotice';
 import { walletDisplayEpoch } from '../../common/walletDisplay';
 import { isArrrCustodyConsentDeniedError } from '../../common/bridgeErrors';
 import {
@@ -59,11 +61,7 @@ import { useAtomValue } from 'jotai';
 import { useAuth } from 'qapp-core';
 import { NumericFormat as _NumericFormat } from 'react-number-format';
 import { useMarketPrices } from '../../hooks/useMarketPrices';
-import {
-  copyToClipboard,
-  epochToAgo,
-  formatFiat,
-} from '../../common/functions';
+import { copyToClipboard, formatFiat } from '../../common/functions';
 const NumericFormat = _NumericFormat as React.FC<
   React.ComponentProps<typeof _NumericFormat> & Record<string, unknown>
 >;
@@ -1734,11 +1732,26 @@ function StandardCoinDetail({ chain }: Props) {
   let arrrPanel: ReactNode = null;
   if (isARRR) {
     if (hasWalletSession && !arrrSession.active) {
-      arrrPanel = !address ? (
-        <Box sx={{ fontSize: '0.85rem' }}>
-          {t('arrr.session_address_unavailable')}
-        </Box>
-      ) : null;
+      arrrPanel =
+        retainedArrr && arrrSnapshot ? (
+          <ArrrSyncProgress
+            paused
+            status={{
+              ...arrrStatus,
+              snapshot: arrrSnapshot,
+              progress: calculateArrrProgress(
+                { ...arrrSnapshot, state: 'LOADING', ready: false },
+                null,
+                Date.now(),
+                arrrSnapshot.observedAt
+              ),
+            }}
+          />
+        ) : !address ? (
+          <Box sx={{ fontSize: '0.85rem' }}>
+            {t('arrr.session_address_unavailable')}
+          </Box>
+        ) : null;
     } else if (arrrConsentDenied) {
       arrrPanel = (
         <Box data-testid="arrr-consent-denied" sx={{ textAlign: 'center' }}>
@@ -2002,14 +2015,6 @@ function StandardCoinDetail({ chain }: Props) {
                     )}
                   </Box>
                 )}
-                {arrrSnapshot.stale && (
-                  <Box sx={{ fontSize: '0.7rem', color: c.textSecondary }}>
-                    {t('arrr.stale_label', {
-                      time: epochToAgo(arrrSnapshot.observedAt),
-                    })}{' '}
-                    · {t('arrr.provisional_label')}
-                  </Box>
-                )}
               </Box>
             </>
           )}
@@ -2092,28 +2097,31 @@ function StandardCoinDetail({ chain }: Props) {
           >
             {isARRR ? (
               <>
-                {arrrPanel}
                 {arrrDisplay &&
                   (!arrrLiveSnapshot ||
+                    arrrSnapshot?.state !== 'READY' ||
                     (hasWalletSession && !arrrSession.active)) && (
                     <Box sx={{ mt: 1 }}>
                       <WalletAmount
                         amount={arrrVerifiedDisplay ?? arrrTotalDisplay}
                         ticker={chain.ticker}
                       />
-                      Last observed {new Date(arrrDisplay.at).toLocaleString()}.
-                      Balance may have changed.
                     </Box>
                   )}
-                {!arrrLiveSnapshot &&
-                  retainedArrr?.syncedBlocks != null &&
-                  retainedArrr.totalBlocks != null && (
-                    <Box sx={{ mt: 1 }}>
-                      Last observed: Scanned{' '}
-                      {retainedArrr.syncedBlocks.toLocaleString()} of{' '}
-                      {retainedArrr.totalBlocks.toLocaleString()} blocks.
-                    </Box>
-                  )}
+                {arrrPanel}
+                <WalletObservationNotice
+                  at={arrrDisplay?.at ?? arrrSnapshot?.observedAt}
+                  historyAt={
+                    transactionsAccount === homeAccount
+                      ? transactionsObservedAt
+                      : null
+                  }
+                  syncing={
+                    (!hasWalletSession || arrrSession.active) &&
+                    arrrSnapshot?.state === 'SYNCHRONIZING'
+                  }
+                  stale={!arrrReady}
+                />
                 {canSend && (
                   <ArrrSendPanel
                     key={`send:${homeAccount}:${arrrControlRevision}`}
@@ -2226,16 +2234,6 @@ function StandardCoinDetail({ chain }: Props) {
           />
 
           <WalletTransactions>
-            {isARRR &&
-              transactionsAccount === homeAccount &&
-              transactionsObservedAt != null &&
-              (loadingTx || txError || !arrrReady) && (
-                <Box sx={{ mb: 1, color: c.textSecondary, fontSize: '0.8rem' }}>
-                  History last observed{' '}
-                  {new Date(transactionsObservedAt).toLocaleString()}. It will
-                  refresh after a complete wallet read.
-                </Box>
-              )}
             {loadingTx &&
             !(
               isARRR &&

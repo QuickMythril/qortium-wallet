@@ -1,6 +1,7 @@
 import type { ArrrSyncSnapshot } from './arrrSync';
 import {
   advanceScanProgress,
+  restoreScanProgress,
   calculateScanProgress,
   type ScanObservation,
   type ScanProgressHistory,
@@ -18,15 +19,28 @@ const observation = (s: ArrrSyncSnapshot): ScanObservation => ({
   ready: s.ready,
   stale: s.stale,
   restartRequired: s.restartRequired,
-  blocks: s.syncedBlocks,
-  total: s.totalBlocks,
+  blocks:
+    s.syncedBlocks ??
+    s.scanHistory?.samples[s.scanHistory.samples.length - 1]?.blocks ??
+    null,
+  total:
+    s.totalBlocks ??
+    s.scanHistory?.samples[s.scanHistory.samples.length - 1]?.total ??
+    null,
 });
 export function advanceArrrProgress(
   history: ArrrProgressHistory | null,
   snapshot: ArrrSyncSnapshot,
   now: number
 ) {
-  return advanceScanProgress(history, observation(snapshot), now);
+  const o = observation(snapshot);
+  return advanceScanProgress(
+    restoreScanProgress(snapshot.scanHistory, o) ?? history,
+    o,
+    snapshot.scanHistory?.samples[snapshot.scanHistory.samples.length - 1]
+      ?.at ??
+      (snapshot.observedAt || now)
+  );
 }
 export function calculateArrrProgress(
   snapshot: ArrrSyncSnapshot | null,
