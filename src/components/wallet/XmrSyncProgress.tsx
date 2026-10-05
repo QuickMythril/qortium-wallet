@@ -20,7 +20,7 @@ export function XmrSyncProgress({
   const number = (n: number) => n.toLocaleString(i18n.resolvedLanguage);
   const { percent } = progress;
   const message = walletReadMessage(value.read);
-  const syncing = ['SCANNING', 'STALE'].includes(value.state);
+  const syncing = ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state);
   const ready =
     value.state === 'READY' &&
     value.wallet?.synced &&
@@ -32,21 +32,23 @@ export function XmrSyncProgress({
     now >= value.preparation.updatedAt &&
     now - value.preparation.updatedAt < 60000;
   const label =
-    message && ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state)
-      ? message
-      : preparing
-        ? 'Preparing chain history…'
-        : ready
-          ? t('wallet_progress.ready')
-          : syncing
-            ? percent === null
-              ? t('wallet_progress.syncing')
-              : t('wallet_progress.percent', { percent: number(percent) })
-            : value.state === 'UNAVAILABLE'
-              ? 'Waiting for a wallet update…'
-              : value.state === 'READY'
-                ? t('wallet_progress.outdated')
-                : `Wallet status: ${value.state.toLowerCase().replace(/_/g, ' ')}`;
+    value.state === 'UNAVAILABLE' && !message
+      ? 'Waiting for a wallet update…'
+      : message && ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state)
+        ? message
+        : preparing
+          ? 'Preparing chain history…'
+          : ready
+            ? t('wallet_progress.ready')
+            : syncing
+              ? percent === null
+                ? t('wallet_progress.syncing')
+                : t('wallet_progress.percent', { percent: number(percent) })
+              : value.state === 'UNAVAILABLE'
+                ? 'Waiting for a wallet update…'
+                : value.state === 'READY'
+                  ? t('wallet_progress.outdated')
+                  : `Wallet status: ${value.state.toLowerCase().replace(/_/g, ' ')}`;
   const p = value.progress;
   return (
     <WalletSyncProgress
@@ -59,7 +61,7 @@ export function XmrSyncProgress({
           : progress
       }
       compact={compact}
-      showEta={!preparing && !message}
+      showEta={!preparing}
       scanned={
         preparing
           ? undefined
@@ -80,6 +82,12 @@ export function XmrSyncProgress({
           Preparing chain hashes up to block{' '}
           {number(value.preparation!.targetHeight)}. Transaction scanning begins
           at the saved restore height.
+        </Box>
+      )}
+      {p && now - p.updatedAt >= 60000 && (
+        <Box sx={{ mt: 1 }}>
+          Last observed scan progress{' '}
+          {new Date(p.updatedAt).toLocaleTimeString()}.
         </Box>
       )}
       {value.state === 'STALE' && (

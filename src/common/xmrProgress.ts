@@ -18,7 +18,7 @@ function observation(value: XmrSnapshot, now: number): ScanObservation {
   const fresh = !!p && now >= p.updatedAt && now - p.updatedAt < 60000;
   return {
     identity: p?.scanId ?? null,
-    active: ['SCANNING', 'STALE'].includes(value.state),
+    active: ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state),
     ready:
       value.state === 'READY' &&
       value.wallet?.synced === true &&

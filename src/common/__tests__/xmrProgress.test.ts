@@ -46,7 +46,7 @@ describe('XMR native progress observations', () => {
       vi.setSystemTime(at);
       recordXmrProgress('A', s);
     }
-    expect(xmrProgress('A', s, 220000).remainingSeconds).toBeNull();
+    expect(xmrProgress('A', s, 220000).remainingSeconds).toBe(120);
     expect(xmrProgress('A', s, 220000).stalled).toBe(true);
     expect(xmrProgress('B', s, 160000).remainingSeconds).toBeNull();
   });

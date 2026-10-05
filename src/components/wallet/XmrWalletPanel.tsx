@@ -101,6 +101,13 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                 {wallet.unlockedAtomic === null ? '' : ' XMR'}
               </Typography>
             )}
+            {value?.display && !value.wallet && (
+              <Typography sx={{ color: c.textSecondary, mt: 1 }}>
+                Last observed{' '}
+                {new Date(value.display.updatedAt).toLocaleString()}. Balances
+                and history may have changed.
+              </Typography>
+            )}
             <Typography sx={{ color: c.textSecondary, mt: 2 }}>
               {chain.homeWallet?.send
                 ? 'Receive, view and send XMR with approval in Home.'
@@ -155,6 +162,7 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                   account={String(account)}
                   ready={
                     value?.state === 'READY' &&
+                    value.wallet !== null &&
                     (value.updatedAt === null ||
                       (now >= value.updatedAt &&
                         now - value.updatedAt < 30000)) &&
@@ -226,7 +234,7 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
             {wallet &&
               (current?.error ||
                 (value?.state !== 'READY' && value?.state !== 'SCANNING')) && (
-                <Typography role="alert">
+                <Typography>
                   This is the last recorded wallet snapshot. Balances and
                   history may be out of date.
                 </Typography>

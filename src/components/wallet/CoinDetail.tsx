@@ -1,3 +1,10 @@
+import { walletDisplayEpoch } from '../../common/walletDisplay';
+import { isArrrCustodyConsentDeniedError } from '../../common/bridgeErrors';
+import {
+  readWalletDisplay,
+  writeWalletDisplay,
+  clearWalletDisplay,
+} from '../../common/walletDisplay';
 import { requestWalletAction } from '../../common/walletRequest';
 import {
   WalletPage,
@@ -297,12 +304,20 @@ function StandardCoinDetail({ chain }: Props) {
   const isARRR = chain.coinEnum === 'ARRR';
   const isClassic = uiStyle === 'classic';
 
-  const [address, setAddress] = useState<string>(EMPTY_STRING);
+  const [storedAddress, setAddress] = useState<string>(EMPTY_STRING);
+  const [addressAccount, setAddressAccount] = useState(homeAccount);
+  const address = addressAccount === homeAccount ? storedAddress : EMPTY_STRING;
   const [balance, setBalance] = useState<string | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(true);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<TxRow[]>([]);
+  const [storedTransactions, setTransactions] = useState<TxRow[]>([]);
+  const [transactionsAccount, setTransactionsAccount] = useState(homeAccount);
+  const transactions =
+    transactionsAccount === homeAccount ? storedTransactions : [];
+  const [transactionsObservedAt, setTransactionsObservedAt] = useState<
+    number | null
+  >(null);
   const [loadingTx, setLoadingTx] = useState(true);
   const [expandedTx, setExpandedTx] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
@@ -442,11 +457,26 @@ function StandardCoinDetail({ chain }: Props) {
     arrrOwnerConfirmed
   );
   useEffect(() => {
-    if (hasWalletSession)
-      setAddress(arrrSession.value?.address ?? EMPTY_STRING);
-  }, [hasWalletSession, arrrSession.value?.address, homeAccount]);
+    if (hasWalletSession) {
+      setAddress(
+        (old) =>
+          arrrSession.value?.address ??
+          (addressAccount === homeAccount &&
+          arrrSession.value?.relation !== 'OTHER'
+            ? old
+            : EMPTY_STRING)
+      );
+      setAddressAccount(homeAccount);
+    }
+  }, [
+    hasWalletSession,
+    arrrSession.value?.address,
+    arrrSession.value?.relation,
+    homeAccount,
+    addressAccount,
+  ]);
   const {
-    snapshot: arrrSnapshot,
+    snapshot: arrrLiveSnapshot,
     loading: arrrStatusLoading,
     error: arrrStatusError,
     consentDenied: arrrConsentDenied,
@@ -454,12 +484,75 @@ function StandardCoinDetail({ chain }: Props) {
     switchingStalled: arrrSwitchingStalled,
     refresh: refreshArrrStatus,
   } = arrrStatus;
-  const arrrReady = arrrSnapshot?.ready === true;
+  const arrrScope = `${homeAccount}:${chain.key}`;
+  const retainedArrr =
+    arrrCapabilityGranted &&
+    !arrrConsentDenied &&
+    arrrSession.value?.relation !== 'OTHER'
+      ? readWalletDisplay<NonNullable<typeof arrrLiveSnapshot>>(
+          'ARRR-progress',
+          arrrScope
+        )
+      : null;
+  const arrrSnapshot =
+    arrrLiveSnapshot ??
+    (retainedArrr ? { ...retainedArrr, ready: false, stale: true } : null);
+  useEffect(() => {
+    if (arrrLiveSnapshot)
+      writeWalletDisplay(
+        'ARRR-progress',
+        arrrScope,
+        arrrLiveSnapshot,
+        arrrStatus.displayEpoch
+      );
+    if (arrrConsentDenied || arrrSession.value?.relation === 'OTHER') {
+      clearWalletDisplay('ARRR-progress');
+      clearWalletDisplay('ARRR-history');
+    }
+  }, [
+    arrrLiveSnapshot,
+    arrrStatus.displayEpoch,
+    arrrScope,
+    arrrConsentDenied,
+    arrrSession.value?.relation,
+  ]);
+  const restoredHistoryScope = useRef<string | null>(null);
+  const historyScope = `${arrrScope}:${arrrStatus.displayEpoch}`;
+  useEffect(() => {
+    if (
+      !isARRR ||
+      !arrrLiveSnapshot ||
+      arrrStatus.displayEpoch !== walletDisplayEpoch() ||
+      restoredHistoryScope.current === historyScope
+    )
+      return;
+    restoredHistoryScope.current = historyScope;
+    const history = readWalletDisplay<{ rows: TxRow[]; at: number }>(
+      'ARRR-history',
+      arrrScope
+    );
+    if (history) {
+      setTransactions(history.rows);
+      setTransactionsObservedAt(history.at);
+      setTransactionsAccount(homeAccount);
+    }
+  }, [
+    isARRR,
+    arrrLiveSnapshot,
+    arrrStatus.displayEpoch,
+    historyScope,
+    arrrScope,
+    homeAccount,
+  ]);
+  const arrrReady =
+    arrrLiveSnapshot?.ready === true &&
+    (!hasWalletSession || arrrSession.active);
 
   const [arrrVerifiedBalance, setArrrVerifiedBalance] = useState<string | null>(
     null
   );
   const [arrrTotalBalance, setArrrTotalBalance] = useState<string | null>(null);
+  const [arrrBalanceAccount, setArrrBalanceAccount] = useState(homeAccount);
   // True once the verified read specifically rejected with
   // ARRR_VERIFIED_BALANCE_UNAVAILABLE and total is shown provisionally
   // instead (host contract item 4).
@@ -473,6 +566,7 @@ function StandardCoinDetail({ chain }: Props) {
   const fetchArrrBalances = useCallback(async () => {
     const revision = ++arrrBalanceRevision.current;
     const startAccount = homeAccount;
+    const displayEpoch = walletDisplayEpoch();
     setArrrBalanceLoading(true);
     setArrrBalanceError(null);
 
@@ -482,6 +576,7 @@ function StandardCoinDetail({ chain }: Props) {
     // switch (revision alone doesn't catch this - see currentAccountRef),
     // or the tab going hidden (Codex round 5 review finding 4).
     const shouldAbort = () =>
+      displayEpoch !== walletDisplayEpoch() ||
       revision !== arrrBalanceRevision.current ||
       !isMountedRef.current ||
       currentAccountRef.current !== startAccount ||
@@ -493,11 +588,13 @@ function StandardCoinDetail({ chain }: Props) {
     // which silently loses precision above 2^53 atomic units (Codex round
     // 5 review finding 2).
     const fetchTotalDisplay = async (): Promise<string | null> => {
+      if (shouldAbort()) throw { code: ARRR_READ_CANCELLED_CODE };
       const totalRaw = await requestWalletAction({
         action: 'GET_WALLET_BALANCE',
         coin: 'ARRR',
         verified: false,
       });
+      if (shouldAbort()) throw { code: ARRR_READ_CANCELLED_CODE };
       return formatArrrAmount(totalRaw != null ? String(totalRaw) : null);
     };
 
@@ -507,24 +604,51 @@ function StandardCoinDetail({ chain }: Props) {
           requestWalletAction({ action: 'GET_WALLET_BALANCE', coin: 'ARRR' }),
         { shouldAbort, ownerConfirmed: arrrOwnerConfirmedRef.current }
       );
-      if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
-        return;
+      if (shouldAbort()) return;
       const verified = formatArrrAmount(
         verifiedRaw != null ? String(verifiedRaw) : null
       );
+      setArrrBalanceAccount(startAccount);
       setArrrVerifiedBalance(verified);
+      writeWalletDisplay(
+        'ARRR-balances',
+        `${homeAccount}:${chain.key}`,
+        {
+          verified,
+          total: verified,
+          at: Date.now(),
+        },
+        displayEpoch
+      );
       setArrrBalanceVerifying(false);
 
       let total = verified;
       try {
         total = await fetchTotalDisplay();
-        if (revision === arrrBalanceRevision.current && isMountedRef.current)
+        if (!shouldAbort()) {
           setArrrTotalBalance(total);
-      } catch {
+          writeWalletDisplay(
+            'ARRR-balances',
+            `${homeAccount}:${chain.key}`,
+            {
+              verified,
+              total,
+              at: Date.now(),
+            },
+            displayEpoch
+          );
+        }
+      } catch (secondError) {
+        const decodedSecond = describeBridgeError(secondError);
+        if (
+          decodedSecond.code === 'ACCOUNT_LOCKED' ||
+          isArrrCustodyConsentDeniedError(decodedSecond)
+        )
+          throw secondError;
         /* best-effort second read - the verified balance above still shows */
       }
 
-      if (revision === arrrBalanceRevision.current && isMountedRef.current) {
+      if (!shouldAbort()) {
         setCachedBalance(homeAccount, chain.key, {
           balance: verified,
           verifiedBalance: verified,
@@ -539,17 +663,26 @@ function StandardCoinDetail({ chain }: Props) {
         });
       }
     } catch (err) {
-      if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
-        return;
+      if (shouldAbort()) return;
       const decoded = describeBridgeError(err);
       if (decoded.code === ARRR_READ_CANCELLED_CODE) return;
       if (isArrrVerifiedBalanceUnavailableError(decoded)) {
         try {
           const total = await fetchTotalDisplay();
-          if (revision !== arrrBalanceRevision.current || !isMountedRef.current)
-            return;
+          if (shouldAbort()) return;
+          setArrrBalanceAccount(startAccount);
           setArrrVerifiedBalance(null);
           setArrrTotalBalance(total);
+          writeWalletDisplay(
+            'ARRR-balances',
+            `${homeAccount}:${chain.key}`,
+            {
+              verified: null,
+              total,
+              at: Date.now(),
+            },
+            displayEpoch
+          );
           setArrrBalanceVerifying(true);
           setArrrBalanceError(null);
           // Finding 1: the verified (spendable) balance is NOT known here -
@@ -568,20 +701,45 @@ function StandardCoinDetail({ chain }: Props) {
             arrrStale: arrrSnapshot?.stale,
           });
         } catch (err2) {
-          if (
-            revision === arrrBalanceRevision.current &&
-            isMountedRef.current
-          ) {
-            setArrrBalanceError(describeBridgeError(err2));
+          if (!shouldAbort()) {
+            const secondary = describeBridgeError(err2);
+            if (
+              secondary.code === 'ACCOUNT_LOCKED' ||
+              isArrrCustodyConsentDeniedError(secondary)
+            ) {
+              clearWalletDisplay('ARRR-balances');
+              invalidateCachedBalance(homeAccount, chain.key);
+              clearWalletDisplay('ARRR-progress');
+              clearWalletDisplay('ARRR-history');
+              setArrrVerifiedBalance(null);
+              setArrrTotalBalance(null);
+              setTransactions([]);
+              setTransactionsObservedAt(null);
+              setAddress(EMPTY_STRING);
+            }
+            setArrrBalanceError(secondary);
           }
         }
       } else {
         console.warn('[wallet] arrr balance', decoded.message);
+        if (
+          decoded.code === 'ACCOUNT_LOCKED' ||
+          isArrrCustodyConsentDeniedError(decoded)
+        ) {
+          clearWalletDisplay('ARRR-balances');
+          invalidateCachedBalance(homeAccount, chain.key);
+          clearWalletDisplay('ARRR-progress');
+          clearWalletDisplay('ARRR-history');
+          setArrrVerifiedBalance(null);
+          setArrrTotalBalance(null);
+          setTransactions([]);
+          setTransactionsObservedAt(null);
+          setAddress(EMPTY_STRING);
+        }
         setArrrBalanceError(decoded);
       }
     } finally {
-      if (revision === arrrBalanceRevision.current && isMountedRef.current)
-        setArrrBalanceLoading(false);
+      if (!shouldAbort()) setArrrBalanceLoading(false);
     }
   }, [chain, homeAccount, arrrSnapshot?.state, arrrSnapshot?.stale]);
 
@@ -691,7 +849,16 @@ function StandardCoinDetail({ chain }: Props) {
       return;
     }
 
-    const resetForeignAvailability = () => {
+    const resetForeignAvailability = (clearDisplay = true) => {
+      arrrBalanceRevision.current++;
+      setArrrVerifiedBalance(null);
+      setArrrTotalBalance(null);
+      if (clearDisplay) {
+        clearWalletDisplay('ARRR-balances');
+        invalidateCachedBalance(homeAccount, chain.key);
+        clearWalletDisplay('ARRR-progress');
+        clearWalletDisplay('ARRR-history');
+      }
       setCanControlArrrSync(false);
       setCanReceive(false);
       setCanReadBalance(false);
@@ -709,6 +876,7 @@ function StandardCoinDetail({ chain }: Props) {
       setBalance(null);
       setLoadingBalance(false);
       setTransactions([]);
+      setTransactionsObservedAt(null);
       setLoadingTx(false);
     };
     let revision = 0;
@@ -757,7 +925,7 @@ function StandardCoinDetail({ chain }: Props) {
       resetForeignAvailability();
       refreshForeignAvailability();
     };
-    resetForeignAvailability();
+    resetForeignAvailability(false);
     refreshForeignAvailability();
     window.addEventListener('qortiumBridgeStateChanged', handleBridgeChange);
     return () => {
@@ -810,10 +978,12 @@ function StandardCoinDetail({ chain }: Props) {
   const fetchTransactions = useCallback(async () => {
     if (!chain.isNative && !canReadTransactions) {
       setTransactions([]);
+      setTransactionsObservedAt(null);
       setLoadingTx(false);
       return;
     }
     const revision = transactionReadRevision.current;
+    const transactionEpoch = walletDisplayEpoch();
     setLoadingTx(true);
     setTxError(null);
     try {
@@ -822,6 +992,7 @@ function StandardCoinDetail({ chain }: Props) {
         const addr = wallet?.address;
         if (!addr) {
           setTransactions([]);
+          setTransactionsObservedAt(null);
           return;
         }
         const res = await requestQortTransactions(addr, {
@@ -845,9 +1016,13 @@ function StandardCoinDetail({ chain }: Props) {
         });
         if (
           isMountedRef.current &&
+          transactionEpoch === walletDisplayEpoch() &&
+          currentAccountRef.current === homeAccount &&
           revision === transactionReadRevision.current
-        )
+        ) {
           setTransactions(rows);
+          setTransactionsAccount(homeAccount);
+        }
       } else {
         const readTransactions = () =>
           requestWithTimeout(
@@ -861,6 +1036,7 @@ function StandardCoinDetail({ chain }: Props) {
                 // Same cancellation guard as fetchArrrBalances above -
                 // Codex round 5 review finding 4.
                 shouldAbort: () =>
+                  transactionEpoch !== walletDisplayEpoch() ||
                   revision !== transactionReadRevision.current ||
                   !isMountedRef.current ||
                   currentAccountRef.current !== startAccount ||
@@ -870,17 +1046,31 @@ function StandardCoinDetail({ chain }: Props) {
         const txs = Array.isArray(res) ? res : [];
         if (
           isMountedRef.current &&
+          transactionEpoch === walletDisplayEpoch() &&
+          currentAccountRef.current === homeAccount &&
           revision === transactionReadRevision.current
-        )
-          setTransactions(
+        ) {
+          const rows =
             chain.coinEnum === 'ARRR'
               ? [...txs].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-              : txs
-          );
+              : txs;
+          setTransactions(rows);
+          setTransactionsObservedAt(Date.now());
+          setTransactionsAccount(homeAccount);
+          if (chain.coinEnum === 'ARRR')
+            writeWalletDisplay(
+              'ARRR-history',
+              `${homeAccount}:${chain.key}`,
+              { rows, at: Date.now() },
+              transactionEpoch
+            );
+        }
       }
     } catch (err) {
       if (
         isMountedRef.current &&
+        transactionEpoch === walletDisplayEpoch() &&
+        currentAccountRef.current === homeAccount &&
         revision === transactionReadRevision.current
       ) {
         const decoded = describeBridgeError(err);
@@ -890,11 +1080,32 @@ function StandardCoinDetail({ chain }: Props) {
           return;
         }
         console.warn('[wallet] transactions', chain.ticker, decoded.message);
-        setTransactions([]);
+        if (
+          chain.coinEnum !== 'ARRR' ||
+          decoded.code === 'ACCOUNT_LOCKED' ||
+          isArrrCustodyConsentDeniedError(decoded)
+        ) {
+          setTransactions([]);
+          setTransactionsObservedAt(null);
+          if (chain.coinEnum === 'ARRR') {
+            clearWalletDisplay('ARRR-balances');
+            invalidateCachedBalance(homeAccount, chain.key);
+            clearWalletDisplay('ARRR-progress');
+            clearWalletDisplay('ARRR-history');
+            setAddress(EMPTY_STRING);
+            setArrrVerifiedBalance(null);
+            setArrrTotalBalance(null);
+          }
+        }
         setTxError(decoded.message);
       }
     } finally {
-      if (isMountedRef.current && revision === transactionReadRevision.current)
+      if (
+        isMountedRef.current &&
+        transactionEpoch === walletDisplayEpoch() &&
+        currentAccountRef.current === homeAccount &&
+        revision === transactionReadRevision.current
+      )
         setLoadingTx(false);
     }
   }, [canReadTransactions, chain, homeAccount]);
@@ -914,7 +1125,6 @@ function StandardCoinDetail({ chain }: Props) {
   useEffect(() => {
     if (!isARRR || !walletReady) return;
     if (!arrrSnapshot?.ready) {
-      setTransactions([]);
       setLoadingTx(false);
       return;
     }
@@ -1453,8 +1663,23 @@ function StandardCoinDetail({ chain }: Props) {
   // formatArrrAmount here, which expects atomic input and would reject an
   // already-formatted decimal string like "1.40000000" (no decimal point
   // allowed) back to null.
-  const arrrVerifiedDisplay = arrrVerifiedBalance;
-  const arrrTotalDisplay = arrrTotalBalance;
+  const arrrDisplayScope = `${homeAccount}:${chain.key}`;
+  const arrrDisplay =
+    isARRR && arrrCapabilityGranted && !arrrConsentDenied
+      ? readWalletDisplay<{
+          verified: string | null;
+          total: string | null;
+          at: number;
+        }>('ARRR-balances', arrrDisplayScope)
+      : null;
+  const arrrVerifiedDisplay =
+    (arrrBalanceAccount === homeAccount ? arrrVerifiedBalance : null) ??
+    arrrDisplay?.verified ??
+    null;
+  const arrrTotalDisplay =
+    (arrrBalanceAccount === homeAccount ? arrrTotalBalance : null) ??
+    arrrDisplay?.total ??
+    null;
   const arrrStatusIsBusy =
     arrrStatusError != null && isArrrWalletBusyError(arrrStatusError);
   const arrrStatusIsUnsupported =
@@ -1571,7 +1796,7 @@ function StandardCoinDetail({ chain }: Props) {
           </Button>
         </Box>
       );
-    } else if (arrrStatusError && !arrrSnapshot) {
+    } else if (arrrStatusError && !arrrLiveSnapshot) {
       arrrPanel = (
         <Box data-testid="arrr-status-error" sx={{ textAlign: 'center' }}>
           <Box
@@ -1868,16 +2093,34 @@ function StandardCoinDetail({ chain }: Props) {
             {isARRR ? (
               <>
                 {arrrPanel}
+                {arrrDisplay &&
+                  (!arrrLiveSnapshot ||
+                    (hasWalletSession && !arrrSession.active)) && (
+                    <Box sx={{ mt: 1 }}>
+                      <WalletAmount
+                        amount={arrrVerifiedDisplay ?? arrrTotalDisplay}
+                        ticker={chain.ticker}
+                      />
+                      Last observed {new Date(arrrDisplay.at).toLocaleString()}.
+                      Balance may have changed.
+                    </Box>
+                  )}
+                {!arrrLiveSnapshot &&
+                  retainedArrr?.syncedBlocks != null &&
+                  retainedArrr.totalBlocks != null && (
+                    <Box sx={{ mt: 1 }}>
+                      Last observed: Scanned{' '}
+                      {retainedArrr.syncedBlocks.toLocaleString()} of{' '}
+                      {retainedArrr.totalBlocks.toLocaleString()} blocks.
+                    </Box>
+                  )}
                 {canSend && (
                   <ArrrSendPanel
                     key={`send:${homeAccount}:${arrrControlRevision}`}
                     transactions={transactions}
                     receiptScope={homeAccount ?? undefined}
                     enabled={walletReady}
-                    ready={
-                      arrrSnapshot?.ready === true &&
-                      (!hasWalletSession || arrrSession.active)
-                    }
+                    ready={arrrReady}
                     onBroadcast={() => {
                       void fetchBalance();
                       void fetchTransactions();
@@ -1983,7 +2226,22 @@ function StandardCoinDetail({ chain }: Props) {
           />
 
           <WalletTransactions>
-            {loadingTx ? (
+            {isARRR &&
+              transactionsAccount === homeAccount &&
+              transactionsObservedAt != null &&
+              (loadingTx || txError || !arrrReady) && (
+                <Box sx={{ mb: 1, color: c.textSecondary, fontSize: '0.8rem' }}>
+                  History last observed{' '}
+                  {new Date(transactionsObservedAt).toLocaleString()}. It will
+                  refresh after a complete wallet read.
+                </Box>
+              )}
+            {loadingTx &&
+            !(
+              isARRR &&
+              transactionsAccount === homeAccount &&
+              transactionsObservedAt != null
+            ) ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
                 <CircularProgress size={28} sx={{ color: c.accent }} />
               </Box>

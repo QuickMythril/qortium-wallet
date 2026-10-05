@@ -128,6 +128,39 @@ describe('useArrrSyncStatus', () => {
     expect(result.current.progress.percent).toBeNull();
   });
 
+  it('retains a complete missing tuple only for the same wallet identity', async () => {
+    qdnRequestMock.mockResolvedValue({
+      ...syncingSnapshot,
+      syncedBlocks: 20,
+      totalBlocks: 100,
+    });
+    const { result } = renderHook(() =>
+      useArrrSyncStatus(true, 'fixed-account')
+    );
+    await flush();
+    const empty = {
+      ...syncingSnapshot,
+      syncedBlocks: null,
+      totalBlocks: null,
+      scannedHeight: null,
+      tipHeight: null,
+    };
+    qdnRequestMock.mockResolvedValue(empty);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ARRR_POLL_ACTIVE_MS);
+    });
+    expect(result.current.snapshot?.syncedBlocks).toBe(20);
+    qdnRequestMock.mockResolvedValue({
+      ...empty,
+      walletIdentityHash: 'another-wallet',
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ARRR_POLL_ACTIVE_MS);
+    });
+    expect(result.current.snapshot?.syncedBlocks).toBeNull();
+    expect(result.current.progress.percent).toBeNull();
+  });
+
   it('does nothing while disabled', async () => {
     const { result } = renderHook(() => useArrrSyncStatus(false, 'acct-a'));
     await flush();

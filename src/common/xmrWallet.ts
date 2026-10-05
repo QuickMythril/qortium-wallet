@@ -29,6 +29,7 @@ export type XmrSnapshot = {
   scanStart?: { mode: string; height: number };
   scanStartError?: string;
   read?: WalletReadStatus;
+  display?: { data: XmrSnapshot['wallet']; updatedAt: number };
   wallet: null | {
     address: string;
     height: number;
@@ -195,6 +196,19 @@ export function parseXmrSnapshot(v: unknown): XmrSnapshot {
     progress,
     ...(read ? { read } : {}),
   };
+  if (v.display != null) {
+    const d = v.display;
+    if (!record(d) || !integer(d.updatedAt, 8640000000000000) || d.data == null)
+      throw Error('Invalid wallet display');
+    const projected = parseXmrSnapshot({
+      ...v,
+      display: undefined,
+      wallet: d.data,
+    });
+    Object.assign(base, {
+      display: { data: projected.wallet, updatedAt: d.updatedAt },
+    });
+  }
   if (v.wallet === null) return { ...base, wallet: null };
   const w = v.wallet;
   if (

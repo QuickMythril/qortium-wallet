@@ -1,3 +1,4 @@
+import { clearWalletDisplay } from '../../../common/walletDisplay';
 import i18n from '../../../i18n/i18n';
 import { clearXmrProgress } from '../../../common/xmrProgress';
 import { StrictMode } from 'react';
@@ -77,6 +78,7 @@ const view = () => (
 );
 const bridge = vi.fn();
 beforeEach(() => {
+  clearWalletDisplay('XMR');
   clearXmrProgress();
   void i18n.changeLanguage('en');
   account = 'account-A';
@@ -399,7 +401,10 @@ describe('XMR passive scan recovery', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(screen.getByText(/Waiting for a wallet update/)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/wallet_progress.syncing|Wallet is syncing|Syncing/i)
+        .length
+    ).toBeGreaterThan(0);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15000);
     });
@@ -892,4 +897,50 @@ it('shows chain preparation without a wallet-scan percentage or ETA', async () =
   expect(
     screen.getByText(/Preparing chain hashes up to block/)
   ).toBeInTheDocument();
+});
+
+it('reloads stale owner data from an explicit display snapshot without live readiness', async () => {
+  bridge.mockResolvedValue({
+    ...snapshot(),
+    state: 'UNAVAILABLE',
+    wallet: null,
+    display: { data: snapshot().wallet, updatedAt: Date.now() },
+    read: { state: 'OVERDUE', phase: 'SYNC', retryAt: null },
+  });
+  render(view());
+  await screen.findByText(address);
+  expect(screen.getByText(/Last observed/)).toBeInTheDocument();
+  expect(screen.getByText('9007.199254740993')).toBeInTheDocument();
+  expect(screen.queryByText('Synced', { exact: true })).toBeNull();
+});
+it('keeps approved last data after Stop but discards it on an unmounted host change', async () => {
+  bridge.mockImplementation(async (request) =>
+    request.action === 'STOP_XMR_WALLET'
+      ? { ...snapshot(), state: 'STOPPED', wallet: null }
+      : snapshot()
+  );
+  const mounted = render(
+    <MemoryRouter>
+      <XmrWalletPanel
+        chain={{
+          ...chain,
+          homeWallet: {
+            ...chain.homeWallet!,
+            stopContract: 'qortium-home-xmr-stop-v1',
+          },
+        }}
+      />
+    </MemoryRouter>
+  );
+  await screen.findByText(address);
+  fireEvent.click(screen.getByRole('button', { name: 'Stop syncing' }));
+  await screen.findByText(/Stop accepted/);
+  expect(screen.getByText(address)).toBeInTheDocument();
+  mounted.unmount();
+  window.dispatchEvent(new Event('qortiumBridgeStateChanged'));
+  bridge.mockRejectedValue({ code: 'ACCOUNT_LOCKED' });
+  render(view());
+  expect(screen.queryByText(address)).toBeNull();
+  await screen.findByRole('button', { name: 'Unlock account' });
+  expect(screen.queryByText(address)).toBeNull();
 });

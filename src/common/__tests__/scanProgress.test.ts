@@ -84,7 +84,7 @@ describe('shared ETA confidence', () => {
       1940
     );
   });
-  it('does not carry rates through the captured long gaps or unavailable recovery', () => {
+  it('retains sparse batch rates but resets on deliberate inactivity and owner change', () => {
     const points = [
       [0, 2349975],
       [60000, 2350107],
@@ -101,7 +101,7 @@ describe('shared ETA confidence', () => {
     expect(
       calculateScanProgress(obs(2350695), history, 180000, 180000)
         .remainingSeconds
-    ).toBeNull();
+    ).toBeGreaterThan(0);
     history = advanceScanProgress(
       history,
       { ...obs(2350695), active: false },
@@ -122,4 +122,29 @@ describe('shared ETA confidence', () => {
       ).remainingSeconds
     ).toBeNull();
   });
+});
+
+it('produces a rough ETA for sparse advancing batches and preserves counts while delayed', () => {
+  const { history, result } = replay([
+    [0, 0],
+    [120000, 1000],
+    [240000, 2000],
+    [360000, 3000],
+  ]);
+  expect(result.remainingSeconds).toBe(840);
+  const delayed = calculateScanProgress(
+    { ...observation(3000), stale: true },
+    history,
+    500000,
+    360000
+  );
+  expect(delayed).toMatchObject({
+    percent: 30,
+    remainingSeconds: 840,
+    stalled: true,
+  });
+  expect(
+    calculateScanProgress(observation(3000), history, 1300000, 360000)
+      .remainingSeconds
+  ).toBeNull();
 });

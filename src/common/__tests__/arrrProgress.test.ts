@@ -86,7 +86,7 @@ describe('ARRR progress estimates', () => {
     ).toMatchObject({ stalled: true, remainingSeconds: null });
     expect(
       calculateArrrProgress(at(203000), history, 150000, 90000).percent
-    ).toBeNull();
+    ).toBe(9.4);
     expect(
       calculateArrrProgress({ ...snapshot, stale: true }, history, 90000, 90000)
         .remainingSeconds
