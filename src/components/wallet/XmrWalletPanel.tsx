@@ -1,3 +1,8 @@
+import { WalletScanSetup } from './WalletScanSetup';
+import {
+  WALLET_SCAN_START_CONTRACT,
+  type WalletScanStart,
+} from '../../common/walletScanStart';
 import { useTranslation } from 'react-i18next';
 import {
   WalletPage,
@@ -44,6 +49,11 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
     progress,
     now,
   } = useXmrWallet(enabled);
+  const [scanStart, setScanStart] = useState<WalletScanStart | null>({
+    scanMode: 'RESUME',
+  });
+  const scanChoices =
+    chain.homeWallet?.scanStartContract === WALLET_SCAN_START_CONTRACT;
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
   const inactive =
     value &&
@@ -129,7 +139,7 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                     : value?.state === 'RESTART_REQUIRED'
                       ? 'The XMR wallet worker needs a Core restart.'
                       : value?.state === 'INACTIVE'
-                        ? 'Activate this wallet to scan. Saved progress is reused; a new wallet starts at block zero.'
+                        ? 'Start this wallet to scan, or resume its saved progress.'
                         : value?.state === 'ACTIVATION_REJECTED'
                           ? 'Activation did not complete. Check the local Core and retry.'
                           : value
@@ -154,6 +164,19 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                   }
                 />
               )}
+            {value?.scanStart && (
+              <Typography variant="body2" sx={{ mt: 2 }}>
+                Scan starts at block {value.scanStart.height.toLocaleString()}.
+              </Typography>
+            )}
+            {value?.scanStartError && (
+              <Typography role="alert" sx={{ mt: 2 }}>
+                {value.scanStartError === 'XMR_EXISTING_WALLET' ||
+                value.scanStartError === 'XMR_RESTORE_HEIGHT_MISMATCH'
+                  ? 'This wallet already has saved progress. Choose Resume saved progress; its scan start was preserved.'
+                  : 'The scan start could not be used. Check the server and choose a height before your first receipt.'}
+              </Typography>
+            )}
             <WalletControls
               primary={
                 canStop
@@ -168,8 +191,16 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                   : (!value || inactive) && !current?.locked
                     ? {
                         label: t('wallet_controls.start'),
-                        disabled: !current || current.busy || stopping,
-                        onClick: () => refresh('ACTIVATE_XMR_WALLET'),
+                        disabled:
+                          !current ||
+                          current.busy ||
+                          stopping ||
+                          (scanChoices && !scanStart),
+                        onClick: () =>
+                          refresh(
+                            'ACTIVATE_XMR_WALLET',
+                            scanChoices ? (scanStart ?? undefined) : undefined
+                          ),
                       }
                     : undefined
               }
@@ -183,7 +214,15 @@ export function XmrWalletPanel({ chain }: { chain: ChainConfig }) {
                   ? 'Stopping from Wallet requires an updated desktop Home.'
                   : 'Controls affect this account’s wallet. Saved scan progress is kept.'
               }
-            />
+            >
+              {scanChoices && inactive && !current?.locked && (
+                <WalletScanSetup
+                  key={`scan:${String(account)}:${revision}`}
+                  disabled={current?.busy || stopping}
+                  onChange={setScanStart}
+                />
+              )}
+            </WalletControls>
             {wallet &&
               (current?.error ||
                 (value?.state !== 'READY' && value?.state !== 'SCANNING')) && (

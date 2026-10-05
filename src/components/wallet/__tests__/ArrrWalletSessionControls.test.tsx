@@ -126,3 +126,36 @@ describe('explicit ARRR account activation', () => {
     );
   });
 });
+
+it('shares scan choices, sends the approved custom height and observed revision once', async () => {
+  const request = vi.fn(async () => ({ ...value, relation: 'SELF' }));
+  (globalThis as any).qdnRequest = request;
+  render(
+    <ArrrWalletSessionControls
+      scanStartContract="qortium-home-wallet-scan-start-v1"
+      session={{ value, active: false, error: null, refresh: vi.fn() }}
+    />
+  );
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Wallet scan' }));
+  fireEvent.click(
+    screen.getByRole('option', { name: 'Restore from block height' })
+  );
+  expect(
+    screen.getByRole('button', { name: 'Switch to this account' })
+  ).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Restore height'), {
+    target: { value: '3000000' },
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Switch to this account' })
+  );
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledExactlyOnceWith({
+      action: 'ACTIVATE_ARRR_WALLET',
+      coin: 'ARRR',
+      expectedRevision: value.revision,
+      scanMode: 'RESTORE_FROM_HEIGHT',
+      restoreHeight: 3000000,
+    })
+  );
+});

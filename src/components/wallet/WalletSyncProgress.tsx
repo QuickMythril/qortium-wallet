@@ -10,6 +10,7 @@ export function WalletSyncProgress({
   syncing,
   progress,
   compact = false,
+  showEta = true,
   scanned,
   total,
   height,
@@ -21,6 +22,7 @@ export function WalletSyncProgress({
   syncing: boolean;
   progress: ScanProgress;
   compact?: boolean;
+  showEta?: boolean;
   scanned?: number | null;
   total?: number | null;
   height?: number | null;
@@ -56,7 +58,9 @@ export function WalletSyncProgress({
         fontSize: compact ? '0.75rem' : undefined,
       }}
     >
-      <Tooltip title={active && syncing ? `${label} · ${eta}` : label}>
+      <Tooltip
+        title={active && syncing && showEta ? `${label} · ${eta}` : label}
+      >
         <Box
           sx={{
             display: 'flex',
@@ -74,7 +78,7 @@ export function WalletSyncProgress({
           <Box>{label}</Box>
         </Box>
       </Tooltip>
-      {compact && active && syncing && (
+      {compact && active && syncing && showEta && (
         <Box sx={{ fontSize: '0.65rem', mt: 0.25 }}>{eta}</Box>
       )}
       {!compact && syncing && (
@@ -87,7 +91,7 @@ export function WalletSyncProgress({
             value={percent ?? 0}
             sx={{ my: 1.5, borderRadius: 1 }}
           />
-          {active && <Box sx={{ fontSize: '0.85rem' }}>{eta}</Box>}
+          {active && showEta && <Box sx={{ fontSize: '0.85rem' }}>{eta}</Box>}
           {scanned != null && total != null && (
             <Box sx={{ mt: 0.5, fontSize: '0.78rem' }}>
               {t('wallet_progress.scanned', {
