@@ -9,7 +9,8 @@ export interface ScanObservation {
   total: number | null;
 }
 export const SCAN_PROGRESS_STALE_MS = 60_000;
-const WINDOW_MS = 180_000;
+const WINDOW_MS = 30 * 60_000;
+const MAX_GAP_MS = 15 * 60_000;
 const MIN_SAMPLE_MS = 60_000;
 const RATE_INTERVAL_MS = 20_000;
 
@@ -33,7 +34,6 @@ export function advanceScanProgress(
   const identity = snapshot.identity;
   if (
     !snapshot.active ||
-    snapshot.stale ||
     snapshot.restartRequired ||
     blocks == null ||
     total == null ||
@@ -47,7 +47,7 @@ export function advanceScanProgress(
   // the old rate. Absolute chain height is deliberately not a denominator.
   if (
     last &&
-    (now - last.at > SCAN_PROGRESS_STALE_MS ||
+    (now - last.at > MAX_GAP_MS ||
       now < last.at ||
       blocks < last.blocks ||
       total < last.total)
@@ -66,25 +66,15 @@ export function calculateScanProgress(
   receivedAt: number
 ): ScanProgress {
   const empty = { percent: null, remainingSeconds: null, stalled: false };
-  if (
-    !snapshot ||
-    snapshot.stale ||
-    snapshot.restartRequired ||
-    now - receivedAt >= SCAN_PROGRESS_STALE_MS
-  )
-    return empty;
+  if (!snapshot || snapshot.restartRequired || now < receivedAt) return empty;
   if (snapshot.ready) return { ...empty, percent: 100 };
   const { blocks, total } = snapshot;
-  if (
-    !snapshot.active ||
-    blocks == null ||
-    total == null ||
-    total <= 0 ||
-    blocks > total
-  )
+  if (blocks == null || total == null || total <= 0 || blocks > total)
     return empty;
   // Never round an unfinished scan to 100%, even at 99.99%.
   const percent = Math.min(99.9, Math.floor((blocks / total) * 1000) / 10);
+  if (!snapshot.active)
+    return { percent, remainingSeconds: null, stalled: false };
   const samples =
     history?.identity === snapshot.identity ? history.samples : [];
   const first = samples[0];
@@ -95,13 +85,12 @@ export function calculateScanProgress(
     : (first?.at ?? now);
   const stalled = now - unchangedSince >= SCAN_PROGRESS_STALE_MS;
   if (
-    stalled ||
     !first ||
     !last ||
     samples.length < 3 ||
     last.at - first.at < MIN_SAMPLE_MS ||
     last.blocks <= first.blocks ||
-    now - last.at >= SCAN_PROGRESS_STALE_MS
+    now - last.at >= MAX_GAP_MS
   ) {
     return { percent, remainingSeconds: null, stalled };
   }
@@ -118,12 +107,15 @@ export function calculateScanProgress(
     );
     anchor = sample;
   }
+  const batchBaseline =
+    last.at - first.at >= 180_000 && rates.filter((r) => r > 0).length >= 2;
   if (
-    rates.length < 3 ||
-    Math.min(...rates) <= 0 ||
-    Math.max(...rates) / Math.min(...rates) > 2 ||
-    wholeRate > Math.max(...rates) * 2 ||
-    wholeRate < Math.min(...rates) / 2 ||
+    (rates.length < 3 && !batchBaseline) ||
+    (!batchBaseline &&
+      (Math.min(...rates) <= 0 ||
+        Math.max(...rates) / Math.min(...rates) > 2 ||
+        wholeRate > Math.max(...rates) * 2 ||
+        wholeRate < Math.min(...rates) / 2)) ||
     (last.blocks - anchor.blocks) /
       Math.max(RATE_INTERVAL_MS / 1000, (last.at - anchor.at) / 1000) >
       Math.max(...rates) * 2

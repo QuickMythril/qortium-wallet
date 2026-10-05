@@ -1,3 +1,9 @@
+import {
+  readWalletDisplay,
+  writeWalletDisplay,
+  clearWalletDisplay,
+  retainWalletDisplay,
+} from '../common/walletDisplay';
 import type { WalletScanStart } from '../common/walletScanStart';
 import { requestWalletAction } from '../common/walletRequest';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -39,7 +45,10 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
   });
   const previousAccount = useRef(account);
   useEffect(() => {
-    if (previousAccount.current !== account) clearXmrProgress();
+    if (previousAccount.current !== account) {
+      clearXmrProgress();
+      clearWalletDisplay('XMR');
+    }
     previousAccount.current = account;
   }, [account]);
   const generation = useRef(0);
@@ -56,6 +65,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
   const lane = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     const invalidate = () => {
+      clearWalletDisplay('XMR');
       clearXmrProgress();
       generation.current++;
       setRevision((n) => n + 1);
@@ -121,24 +131,48 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
           if (id !== generation.current) return;
           const next = parseXmrSnapshot(response);
           // Only financial display may be retained, never readiness. Scope is checked again below.
-          const value = next;
+          const previous = readWalletDisplay<XmrSnapshot>('XMR', account);
+          const keep = [
+            'INACTIVE',
+            'SCANNING',
+            'STALE',
+            'UNAVAILABLE',
+            'READY',
+            'STOPPED',
+            'CLOSING',
+            'RESTART_REQUIRED',
+          ].includes(next.state);
+          const sameScan =
+            action !== 'ACTIVATE_XMR_WALLET' &&
+            (!next.preparation ||
+              next.preparation.scanId === previous?.progress?.scanId);
+          if (!sameScan) clearXmrProgress();
+          const observed = next.wallet
+            ? { data: next.wallet, updatedAt: next.updatedAt ?? Date.now() }
+            : (next.display ?? null);
+          const display = keep
+            ? retainWalletDisplay(previous?.display ?? null, observed)
+            : null;
+          const value = {
+            ...next,
+            ...(display ? { display } : {}),
+            progress:
+              keep && sameScan
+                ? retainWalletDisplay(previous?.progress ?? null, next.progress)
+                : next.progress,
+          };
+          writeWalletDisplay('XMR', account, value);
           if (action === 'STOP_XMR_WALLET') {
             stopped = true;
             clearXmrProgress();
           }
-          recordXmrProgress(account, next);
+          recordXmrProgress(account, value);
           setNow(Date.now());
 
-          setState((old) => ({
+          setState(() => ({
             account,
             revision,
-            value:
-              next.wallet === null &&
-              ['STALE', 'UNAVAILABLE'].includes(next.state) &&
-              old.account === account &&
-              old.revision === revision
-                ? { ...next, wallet: old.value?.wallet ?? null }
-                : value,
+            value,
             error: null,
             locked: false,
             busy: false,
@@ -165,19 +199,34 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
         await work;
       } catch (error) {
         if (id !== generation.current) return;
-        clearXmrProgress();
         stopped = true; // Polls never reopen a declined or expired approval.
-        const code = describeBridgeError(error).code;
+        const decoded = describeBridgeError(error);
+        const code = decoded.code;
+        const revoked =
+          code === 'XMR_ACCESS_UNAVAILABLE' ||
+          code === 'PERMISSION_DENIED' ||
+          decoded.message === 'Account access was denied.';
         const locked = code === 'ACCOUNT_LOCKED';
+        if (locked || revoked || code === 'XMR_READ_APPROVAL_REQUIRED') {
+          clearWalletDisplay('XMR');
+          clearXmrProgress();
+        }
         setState((old) => ({
           account,
           revision,
           value:
-            (action === 'STOP_XMR_WALLET' ||
-              code === 'XMR_READ_APPROVAL_REQUIRED') &&
+            !locked &&
+            !revoked &&
             old.account === account &&
             old.revision === revision
-              ? old.value
+              ? code === 'XMR_READ_APPROVAL_REQUIRED' && old.value
+                ? {
+                    ...old.value,
+                    wallet: null,
+                    display: undefined,
+                    progress: null,
+                  }
+                : old.value
               : null,
           error:
             action === 'STOP_XMR_WALLET'
@@ -233,7 +282,7 @@ export function useXmrWallet(enabled: boolean, passiveOnly = false) {
       ? state
       : null;
   const value = current?.value;
-  const wallet = value?.wallet;
+  const wallet = value?.wallet ?? value?.display?.data;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 5000);

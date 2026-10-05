@@ -35,7 +35,8 @@ export function WalletSyncProgress({
   let eta = t(
     compact ? 'wallet_progress.estimating_short' : 'wallet_progress.estimating'
   );
-  if (stalled) eta = t('wallet_progress.waiting');
+  if (stalled && remainingSeconds === null)
+    eta = 'Waiting for more scan progress…';
   else if (remainingSeconds !== null) {
     const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
     const duration =
@@ -49,6 +50,8 @@ export function WalletSyncProgress({
       duration,
     });
   }
+  if (remainingSeconds !== null)
+    eta = (stalled ? 'Last rough estimate: ' : 'Rough estimate: ') + eta;
   return (
     <Box
       role="status"
@@ -81,7 +84,7 @@ export function WalletSyncProgress({
       {compact && active && syncing && showEta && (
         <Box sx={{ fontSize: '0.65rem', mt: 0.25 }}>{eta}</Box>
       )}
-      {!compact && syncing && (
+      {!compact && (syncing || scanned != null || height != null) && (
         <>
           <LinearProgress
             aria-label={t('wallet_progress.syncing')}

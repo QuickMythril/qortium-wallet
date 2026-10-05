@@ -4,6 +4,10 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+### Preserve wallet display data and estimate sparse scans
+
+- Keep last observed data and block counts through slow ARRR/XMR reads, separate from current custody and spending readiness. Label old observations and use a longer batch-aware window for rough scan estimates. Account, node, lock and read-permission changes still invalidate private display data.
+
 ## [1.7.33] - 2026-10-04 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.33 with reliable scan status messages

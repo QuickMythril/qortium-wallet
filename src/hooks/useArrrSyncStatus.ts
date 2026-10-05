@@ -1,3 +1,5 @@
+import { walletDisplayEpoch } from '../common/walletDisplay';
+import { retainWalletDisplay } from '../common/walletDisplay';
 import { requestWalletAction } from '../common/walletRequest';
 import {
   advanceArrrProgress,
@@ -27,6 +29,7 @@ import {
 } from '../common/bridgeErrors';
 
 export interface UseArrrSyncStatusResult {
+  displayEpoch?: number;
   snapshot: ArrrSyncSnapshot | null;
   progress: ArrrProgress;
   loading: boolean;
@@ -73,6 +76,7 @@ export function useArrrSyncStatus(
   observeOnly = false,
   ownerConfirmed = false
 ): UseArrrSyncStatusResult {
+  const [snapshotEpoch, setSnapshotEpoch] = useState(walletDisplayEpoch);
   const [snapshot, setSnapshot] = useState<ArrrSyncSnapshot | null>(null);
   const [snapshotKey, setSnapshotKey] = useState<unknown>(resetKey);
   const [loading, setLoading] = useState(enabled);
@@ -136,6 +140,7 @@ export function useArrrSyncStatus(
     async (revision: number) => {
       if (revision !== revisionRef.current || !isMountedRef.current) return;
       const requestKey = keyRef.current;
+      const requestEpoch = walletDisplayEpoch();
       if (!enabledRef.current) return;
       if (typeof document !== 'undefined' && document.hidden) {
         // Paused while hidden - the visibilitychange listener below resumes
@@ -148,6 +153,7 @@ export function useArrrSyncStatus(
       // the tab going hidden (Codex round 5 review finding 4).
       const shouldAbort = () =>
         revision !== revisionRef.current ||
+        requestEpoch !== walletDisplayEpoch() ||
         requestKey !== keyRef.current ||
         !enabledRef.current ||
         !isMountedRef.current ||
@@ -190,7 +196,39 @@ export function useArrrSyncStatus(
         receivedAtRef.current = receivedAt;
         setNow(receivedAt);
         setSnapshotKey(requestKey);
-        setSnapshot(parsed);
+        setSnapshotEpoch(requestEpoch);
+        setSnapshot((previous) =>
+          previous &&
+          parsed.walletIdentityHash !== null &&
+          parsed.walletIdentityHash === previous.walletIdentityHash &&
+          requestKey === visibleStateRef.current.snapshotKey &&
+          !parsed.restartRequired &&
+          parsed.syncedBlocks === null &&
+          parsed.totalBlocks === null &&
+          parsed.scannedHeight === null &&
+          parsed.tipHeight === null
+            ? {
+                ...parsed,
+                observedAt: previous.observedAt,
+                syncedBlocks: retainWalletDisplay(
+                  previous.syncedBlocks,
+                  parsed.syncedBlocks
+                ),
+                totalBlocks: retainWalletDisplay(
+                  previous.totalBlocks,
+                  parsed.totalBlocks
+                ),
+                scannedHeight: retainWalletDisplay(
+                  previous.scannedHeight,
+                  parsed.scannedHeight
+                ),
+                tipHeight: retainWalletDisplay(
+                  previous.tipHeight,
+                  parsed.tipHeight
+                ),
+              }
+            : parsed
+        );
         setError(null);
         setConsentDenied(false);
         setSwitching(false);
@@ -390,6 +428,7 @@ export function useArrrSyncStatus(
     receivedAtRef.current
   );
   return {
+    displayEpoch: snapshotEpoch,
     snapshot: currentSnapshot,
     progress,
     loading,

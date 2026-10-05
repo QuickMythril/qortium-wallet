@@ -21,8 +21,10 @@ import { notifyArrrWalletSessionChanged } from '../../../hooks/useArrrWalletSess
 import {
   __resetBalanceCacheForTests,
   getCachedBalance,
+  setCachedBalance,
 } from '../../../common/balanceCache';
 import { __resetPendingSendsForTests } from '../../../common/pendingSends';
+import { readWalletDisplay } from '../../../common/walletDisplay';
 import { invalidateCachedAccountUnlocked } from '../../../common/accountUnlockState';
 
 vi.mock('react-qr-code', () => ({
@@ -137,6 +139,7 @@ describe('CoinDetail ARRR structured state rendering', () => {
   let syncStatusResponse: unknown;
 
   beforeEach(async () => {
+    window.dispatchEvent(new Event('qortiumBridgeStateChanged'));
     await i18n.changeLanguage('en');
     currentAccount = 'qort-user-address';
     getDefaultStore().set(walletReadyAtom, true);
@@ -468,6 +471,97 @@ describe('CoinDetail ARRR structured state rendering', () => {
     expect(screen.getByText('verifying…')).toBeInTheDocument();
   });
 
+  it('rejects a deferred verified reply after an account rerender before any host event', async () => {
+    const original = qdnRequestMock.getMockImplementation()!;
+    let reply!: (value: string) => void;
+    qdnRequestMock.mockImplementation((opts) =>
+      opts.action === 'GET_WALLET_BALANCE'
+        ? new Promise<string>((resolve) => {
+            reply = resolve;
+          })
+        : original(opts)
+    );
+    const view = renderDetail();
+    await waitFor(() => expect(reply).toBeTypeOf('function'));
+    currentAccount = 'account-b';
+    view.rerender(
+      <MemoryRouter>
+        <ThemeProviderWrapper>
+          <CoinDetail chain={arrrChain} />
+        </ThemeProviderWrapper>
+      </MemoryRouter>
+    );
+    await act(async () => reply('900000000'));
+    expect(screen.queryByText('9.00000000')).not.toBeInTheDocument();
+    expect(getCachedBalance('qort-user-address', 'ARRR')).toBeUndefined();
+    expect(
+      readWalletDisplay('ARRR-balances', 'qort-user-address:ARRR')
+    ).toBeNull();
+    expect(
+      qdnRequestMock.mock.calls.filter(
+        ([opts]) =>
+          opts.action === 'GET_WALLET_BALANCE' && opts.verified === false
+      )
+    ).toHaveLength(0);
+  });
+
+  it.each(['PERMISSION_DENIED', 'ACCOUNT_LOCKED'])(
+    'clears financial display when the secondary total read rejects with %s',
+    async (code) => {
+      setCachedBalance(currentAccount, 'ARRR', { balance: '7.00000000' });
+      const original = qdnRequestMock.getMockImplementation()!;
+      qdnRequestMock.mockImplementation(async (opts) => {
+        if (opts.action === 'GET_WALLET_BALANCE' && opts.verified === false)
+          throw { code, message: 'Read access was revoked.' };
+        return original(opts);
+      });
+      renderDetail();
+      await screen.findByText(i18n.t('balance_unavailable', { ns: 'core' }));
+      expect(screen.queryByText('1.40000000')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('zs1qtestarrraddress0000000000000000')
+      ).not.toBeInTheDocument();
+      expect(
+        readWalletDisplay('ARRR-balances', 'qort-user-address:ARRR')
+      ).toBeNull();
+      expect(getCachedBalance(currentAccount, 'ARRR')).toBeUndefined();
+    }
+  );
+
+  it('retains approved history on remount when the next history read fails transiently', async () => {
+    const original = qdnRequestMock.getMockImplementation()!;
+    let fail = false;
+    qdnRequestMock.mockImplementation(async (opts) => {
+      if (opts.action === 'GET_USER_WALLET_TRANSACTIONS') {
+        if (fail)
+          throw { code: 'NETWORK_ERROR', message: 'Temporary read failure.' };
+        return [
+          {
+            txHash: 'a'.repeat(64),
+            totalAmount: 200000000,
+            timestamp: 1000000,
+            pending: false,
+          },
+        ];
+      }
+      return original(opts);
+    });
+    const view = renderDetail();
+    await screen.findByText('+2.00000000 ARRR');
+    view.unmount();
+    fail = true;
+    renderDetail();
+    await waitFor(() =>
+      expect(
+        qdnRequestMock.mock.calls.filter(
+          ([opts]) => opts.action === 'GET_USER_WALLET_TRANSACTIONS'
+        )
+      ).toHaveLength(2)
+    );
+    await act(async () => {});
+    expect(await screen.findByText('+2.00000000 ARRR')).toBeInTheDocument();
+  });
+
   it('never renders a null balance as 0', async () => {
     syncStatusResponse = baseSnapshot({ state: 'READY', ready: true });
     qdnRequestMock.mockImplementation(async (opts: Record<string, unknown>) => {
@@ -586,6 +680,7 @@ describe('CoinDetail ARRR busy retry', () => {
   let qdnRequestMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    window.dispatchEvent(new Event('qortiumBridgeStateChanged'));
     await i18n.changeLanguage('en');
     currentAccount = 'qort-user-address';
     getDefaultStore().set(walletReadyAtom, true);
@@ -673,6 +768,7 @@ describe('CoinDetail ARRR account switch (session relation SELF)', () => {
   };
 
   beforeEach(async () => {
+    window.dispatchEvent(new Event('qortiumBridgeStateChanged'));
     await i18n.changeLanguage('en');
     currentAccount = 'qort-user-address';
     getDefaultStore().set(walletReadyAtom, true);
