@@ -2,7 +2,11 @@
 
 All notable changes to Qortium Wallet will be documented in this file.
 
-## [Unreleased]
+## [1.7.34] - 2026-10-05 (QuickMythril fork test build)
+
+### Release Wallet 1.7.34
+
+- Publish approved display retention and sparse-scan ETA improvements for local Core/Home testing.
 
 ### Preserve wallet display data and estimate sparse scans
 
