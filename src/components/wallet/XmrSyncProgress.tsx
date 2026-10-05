@@ -3,6 +3,7 @@ import { WalletSyncProgress } from './WalletSyncProgress';
 import { useTranslation } from 'react-i18next';
 import type { XmrSnapshot } from '../../common/xmrWallet';
 import type { ScanProgress } from '../../common/scanProgress';
+import { walletReadMessage } from '../../common/walletReadStatus';
 
 export function XmrSyncProgress({
   value,
@@ -18,6 +19,7 @@ export function XmrSyncProgress({
   const { t, i18n } = useTranslation();
   const number = (n: number) => n.toLocaleString(i18n.resolvedLanguage);
   const { percent } = progress;
+  const message = walletReadMessage(value.read);
   const syncing = ['SCANNING', 'STALE'].includes(value.state);
   const ready =
     value.state === 'READY' &&
@@ -29,19 +31,22 @@ export function XmrSyncProgress({
     !!value.preparation &&
     now >= value.preparation.updatedAt &&
     now - value.preparation.updatedAt < 60000;
-  const label = preparing
-    ? 'Preparing chain history…'
-    : ready
-      ? t('wallet_progress.ready')
-      : syncing
-        ? percent === null
-          ? t('wallet_progress.syncing')
-          : t('wallet_progress.percent', { percent: number(percent) })
-        : value.state === 'UNAVAILABLE'
-          ? 'Waiting for the XMR wallet. Retrying automatically…'
-          : value.state === 'READY'
-            ? t('wallet_progress.outdated')
-            : `Wallet status: ${value.state.toLowerCase().replace(/_/g, ' ')}`;
+  const label =
+    message && ['SCANNING', 'STALE', 'UNAVAILABLE'].includes(value.state)
+      ? message
+      : preparing
+        ? 'Preparing chain history…'
+        : ready
+          ? t('wallet_progress.ready')
+          : syncing
+            ? percent === null
+              ? t('wallet_progress.syncing')
+              : t('wallet_progress.percent', { percent: number(percent) })
+            : value.state === 'UNAVAILABLE'
+              ? 'Waiting for a wallet update…'
+              : value.state === 'READY'
+                ? t('wallet_progress.outdated')
+                : `Wallet status: ${value.state.toLowerCase().replace(/_/g, ' ')}`;
   const p = value.progress;
   return (
     <WalletSyncProgress
@@ -54,7 +59,7 @@ export function XmrSyncProgress({
           : progress
       }
       compact={compact}
-      showEta={!preparing}
+      showEta={!preparing && !message}
       scanned={
         preparing
           ? undefined
@@ -79,7 +84,7 @@ export function XmrSyncProgress({
       )}
       {value.state === 'STALE' && (
         <Box sx={{ mt: 1 }}>
-          Updating balances and history. The scan continues automatically.
+          Balances and history will refresh after a complete wallet update.
         </Box>
       )}
     </WalletSyncProgress>

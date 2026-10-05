@@ -44,14 +44,15 @@ describe('ARRR progress estimates', () => {
     let history: ArrrProgressHistory | null = null;
     for (const [time, blocks] of [
       [0, 200000],
-      [15000, 201500],
-      [30000, 203000],
+      [20000, 202000],
+      [40000, 204000],
+      [60000, 206000],
     ]) {
       history = advanceArrrProgress(history, at(blocks), time);
     }
     expect(
-      calculateArrrProgress(at(203000), history, 30000, 30000).remainingSeconds
-    ).toBe(19414);
+      calculateArrrProgress(at(206000), history, 60000, 60000).remainingSeconds
+    ).toBe(19384);
     const restarted = advanceArrrProgress(history, at(100), 45000);
     expect(
       calculateArrrProgress(at(100), restarted, 45000, 45000).remainingSeconds

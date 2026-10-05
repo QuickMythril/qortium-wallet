@@ -83,22 +83,20 @@ describe('useArrrSyncStatus', () => {
     }));
     const first = renderHook(() => useArrrSyncStatus(true, 'acct-a'));
     await flush();
-    blocks = 200;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
-    });
-    blocks = 300;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
-    });
-    expect(first.result.current.progress.remainingSeconds).toBe(105);
+    for (blocks = 200; blocks <= 700; blocks += 100) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+    }
+    blocks = 700;
+    expect(first.result.current.progress.remainingSeconds).toBe(45);
     first.unmount();
     const second = renderHook(
       ({ account }) => useArrrSyncStatus(true, account),
       { initialProps: { account: 'acct-a' } }
     );
     await flush();
-    expect(second.result.current.progress.remainingSeconds).toBe(105);
+    expect(second.result.current.progress.remainingSeconds).toBe(45);
     second.rerender({ account: 'acct-b' });
     await flush();
     expect(second.result.current.progress.remainingSeconds).toBeNull();
@@ -113,14 +111,12 @@ describe('useArrrSyncStatus', () => {
     }));
     const { result } = renderHook(() => useArrrSyncStatus(true, 'acct-a'));
     await flush();
-    blocks = 200;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
-    });
-    blocks = 300;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
-    });
+    for (blocks = 200; blocks <= 700; blocks += 100) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+    }
+    blocks = 700;
     expect(result.current.progress.remainingSeconds).not.toBeNull();
     act(() => window.dispatchEvent(new Event('qortiumBridgeStateChanged')));
     await flush();
