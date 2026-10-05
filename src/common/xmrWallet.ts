@@ -1,4 +1,8 @@
 import type { ChainConfig } from '../config/chains';
+import {
+  projectWalletReadStatus,
+  type WalletReadStatus,
+} from './walletReadStatus';
 export const XMR_STOP_CONTRACT = 'qortium-home-xmr-stop-v1';
 export const XMR_CONTRACT = 'qortium-home-xmr-custody-v1';
 export type XmrTx = {
@@ -24,6 +28,7 @@ export type XmrSnapshot = {
   preparation?: XmrScanProgress;
   scanStart?: { mode: string; height: number };
   scanStartError?: string;
+  read?: WalletReadStatus;
   wallet: null | {
     address: string;
     height: number;
@@ -181,12 +186,14 @@ export function parseXmrSnapshot(v: unknown): XmrSnapshot {
       updatedAt: p.updatedAt,
     };
   }
+  const read = projectWalletReadStatus(v.read);
   const base = {
     ...extra,
     contract: XMR_CONTRACT as typeof XMR_CONTRACT,
     state: String(v.state),
     updatedAt: (v.updatedAt ?? null) as number | null,
     progress,
+    ...(read ? { read } : {}),
   };
   if (v.wallet === null) return { ...base, wallet: null };
   const w = v.wallet;

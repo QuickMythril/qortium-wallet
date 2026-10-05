@@ -10,7 +10,8 @@ export interface ScanObservation {
 }
 export const SCAN_PROGRESS_STALE_MS = 60_000;
 const WINDOW_MS = 180_000;
-const MIN_SAMPLE_MS = 30_000;
+const MIN_SAMPLE_MS = 60_000;
+const RATE_INTERVAL_MS = 20_000;
 
 type Sample = { at: number; blocks: number; total: number };
 export interface ScanProgressHistory {
@@ -84,7 +85,8 @@ export function calculateScanProgress(
     return empty;
   // Never round an unfinished scan to 100%, even at 99.99%.
   const percent = Math.min(99.9, Math.floor((blocks / total) * 1000) / 10);
-  const samples = history?.samples ?? [];
+  const samples =
+    history?.identity === snapshot.identity ? history.samples : [];
   const first = samples[0];
   const last = samples[samples.length - 1];
   const lastDifferent = [...samples].reverse().find((s) => s.blocks < blocks);
@@ -103,7 +105,34 @@ export function calculateScanProgress(
   ) {
     return { percent, remainingSeconds: null, stalled };
   }
-  const rate = (last.blocks - first.blocks) / ((last.at - first.at) / 1000);
+  const wholeRate =
+    (last.blocks - first.blocks) / ((last.at - first.at) / 1000);
+  // Per-block callbacks can be noisy. Compare independent spans rather than
+  // callback intervals, and withhold precise times during bursts/pauses.
+  const rates: number[] = [];
+  let anchor = first;
+  for (const sample of samples.slice(1)) {
+    if (sample.at - anchor.at < RATE_INTERVAL_MS) continue;
+    rates.push(
+      (sample.blocks - anchor.blocks) / ((sample.at - anchor.at) / 1000)
+    );
+    anchor = sample;
+  }
+  if (
+    rates.length < 3 ||
+    Math.min(...rates) <= 0 ||
+    Math.max(...rates) / Math.min(...rates) > 2 ||
+    wholeRate > Math.max(...rates) * 2 ||
+    wholeRate < Math.min(...rates) / 2 ||
+    (last.blocks - anchor.blocks) /
+      Math.max(RATE_INTERVAL_MS / 1000, (last.at - anchor.at) / 1000) >
+      Math.max(...rates) * 2
+  ) {
+    return { percent, remainingSeconds: null, stalled };
+  }
+  // The incomplete trailing span never changes the estimated rate. A large
+  // tail burst above is rejected instead of manufacturing a fast forecast.
+  const rate = (anchor.blocks - first.blocks) / ((anchor.at - first.at) / 1000);
   return {
     percent,
     remainingSeconds: Math.ceil((total - blocks) / rate),

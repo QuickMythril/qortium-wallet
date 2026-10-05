@@ -345,7 +345,7 @@ describe('XMR receive and history', () => {
     bridge.mockResolvedValue({ ...snapshot(), state: 'STALE' });
     render(view());
     await screen.findByText(
-      'Updating balances and history. The scan continues automatically.'
+      'Balances and history will refresh after a complete wallet update.'
     );
     expect(
       screen.queryByText('Synced', { exact: true })
@@ -399,7 +399,7 @@ describe('XMR passive scan recovery', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(screen.getByText(/Retrying automatically/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for a wallet update/)).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15000);
     });

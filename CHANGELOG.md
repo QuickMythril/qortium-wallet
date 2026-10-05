@@ -4,6 +4,10 @@ All notable changes to Qortium Wallet will be documented in this file.
 
 ## [Unreleased]
 
+### Explain wallet read waits and require stable scan estimates
+
+Use shared read-status wording to distinguish an overdue operation from a scheduled retry, and stop labeling old balances as an active balance/history update. Shared ARRR/XMR ETA math waits for sustained, consistent progress, rejects bursts and stale gaps, and keeps backend readiness separate from display diagnostics.
+
 ## [1.7.32] - 2026-10-04 (QuickMythril fork test build)
 
 ### Release Wallet 1.7.32 with shared scan-start controls

@@ -29,39 +29,41 @@ describe('XMR native progress observations', () => {
   it('waits for real samples and does not count repeated UI polls as progress', () => {
     for (const [height, at] of [
       [1100, 100000],
-      [1200, 115000],
-      [1300, 130000],
+      [1200, 120000],
+      [1300, 140000],
+      [1400, 160000],
     ]) {
       vi.setSystemTime(at);
       recordXmrProgress('A', snap(height, at));
     }
-    const s = snap(1300, 130000);
-    expect(xmrProgress('A', s, 130000)).toEqual({
-      percent: 30,
-      remainingSeconds: 105,
+    const s = snap(1400, 160000);
+    expect(xmrProgress('A', s, 160000)).toEqual({
+      percent: 40,
+      remainingSeconds: 120,
       stalled: false,
     });
-    for (let at = 135000; at <= 185000; at += 5000) {
+    for (let at = 165000; at <= 215000; at += 5000) {
       vi.setSystemTime(at);
       recordXmrProgress('A', s);
     }
-    expect(xmrProgress('A', s, 190000).remainingSeconds).toBeNull();
-    expect(xmrProgress('A', s, 190000).stalled).toBe(true);
-    expect(xmrProgress('B', s, 130000).remainingSeconds).toBeNull();
+    expect(xmrProgress('A', s, 220000).remainingSeconds).toBeNull();
+    expect(xmrProgress('A', s, 220000).stalled).toBe(true);
+    expect(xmrProgress('B', s, 160000).remainingSeconds).toBeNull();
   });
   it('uses callback time for ETA even when balances are stale and resets on scan change, rewind and gaps', () => {
     for (const [height, at] of [
       [1100, 100000],
-      [1200, 115000],
-      [1300, 130000],
+      [1200, 120000],
+      [1300, 140000],
+      [1400, 160000],
     ]) {
       vi.setSystemTime(at);
       recordXmrProgress('A', snap(height, at));
     }
     expect(
-      xmrProgress('A', { ...snap(1300, 130000), state: 'STALE' }, 130000)
+      xmrProgress('A', { ...snap(1400, 160000), state: 'STALE' }, 160000)
         .remainingSeconds
-    ).toBe(105);
+    ).toBe(120);
     for (const s of [
       snap(1100, 135000),
       snap(1400, 200000),
